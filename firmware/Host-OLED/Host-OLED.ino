@@ -1,7 +1,7 @@
 /**
  * @file      Host-OLED.ino
  * @brief     เฟิร์มแวร์เครื่องส่วนกลาง รุ่นจอ OLED รับข้อมูลทุกเตียงและแจ้งเตือนพยาบาล
- * @version   4.9.1-OLED
+ * @version   4.9.2-OLED
  * @date      2026-09-23
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
@@ -22,6 +22,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 4.9.2-OLED | 2026-11-20 | แก้บั๊ก: สุนัขเฝ้าบ้านและการบันทึกสาเหตุรีบูตทำงานทุกครั้งที่เปิดเครื่อง เดิมทำงานเฉพาะตอนปลุกจาก deep sleep เพราะวงเล็บปิดบล็อก if อยู่ผิดที่ ตอนเสียบไฟปกติจึงไม่มีสุนัขเฝ้าบ้าน |
  * | 4.9.1-OLED | 2026-09-28 | นาฬิกาและหัวเรื่องหน้าพักจออยู่กึ่งกลางจริง เดิมนาฬิกาชิดซ้ายเหลือที่ว่างขวาราว 35 พิกเซล |
  * | 4.9.0-OLED | 2026-09-28 | หน้าจอใช้ภาษาการออกแบบเดียวกับ Station: หัวจอป้าย/นาฬิกา/สัญญาณ หน้ารายเตียงแบบถุงน้ำเกลือ ป้ายสถานะเม็ดยา |
  * | 4.8.1-OLED | 2026-09-28 | Sync บอกเตียงด้วยว่า Host ได้ยินมันอยู่หรือไม่ (บิตว่างใน flags ขนาดโครงสร้างไม่เปลี่ยน) |
@@ -172,7 +173,7 @@
 esp_reset_reason_t bootResetReason = ESP_RST_UNKNOWN;
 
 
-#define APP_VERSION         "4.9.1-OLED"
+#define APP_VERSION         "4.9.2-OLED"
 #define DEV_NAME            "กิตติพันธ์ รัตนคร"
 #define DEV_ROLE            "นักวิชาการคอมพิวเตอร์"
 #define DEV_INSTITUTION     "มหาวิทยาลัยมหาจุฬาลงกรณราชวิทยาลัย วิทยาเขตแพร่"
@@ -1891,11 +1892,12 @@ void setup() {
 
     while (digitalRead(POWER_BTN_PIN) == LOW) { feedWatchdog(); delay(10); }
     delay(150);
-  
+  }   // [4.9.2-OLED] แก้: ปิดบล็อก if ตรงนี้ เดิม 3 บรรทัดข้างล่างตกอยู่ข้างในและทำงานเฉพาะตอนปลุกจาก deep sleep
+
+  // [4.9.2-OLED] แก้: ทุกครั้งที่เปิดเครื่อง ทั้ง cold boot และปลุกจาก deep sleep (ต้องเรียกก่อนช่วงที่ setup() ใช้เวลานาน)
   bootResetReason = esp_reset_reason();   // [4.8.0-OLED] เพิ่ม: จำไว้ว่ารีบูตครั้งล่าสุดเพราะอะไร
   Serial.printf("[boot] reset reason: %s\n", resetReasonText(bootResetReason));
   setupLoopWatchdog();
-}
 
   analogReadResolution(12);
   analogSetAttenuation(ADC_11db);
@@ -1984,8 +1986,10 @@ void setup() {
   server.begin();
 
   lastUserActivityTime = millis();
+  feedWatchdog();   // [4.9.2-OLED] เพิ่ม: สุนัขเฝ้าบ้านเริ่มทำงานตั้งแต่ต้น setup() แล้ว ป้อนก่อนช่วงเสียงต้อนรับ
   playWelcomeMelody();
   delay(1400);
+  feedWatchdog();   // [4.9.2-OLED] เพิ่ม: ป้อนหลังหน่วง 1.4 วินาที
 
   unsigned long nowMs = millis();
   lastCalcTime = nowMs;

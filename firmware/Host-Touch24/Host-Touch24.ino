@@ -1,7 +1,7 @@
 /**
  * @file      Host-Touch24.ino
  * @brief     เฟิร์มแวร์เครื่องส่วนกลาง รุ่นจอสัมผัส 2.4 นิ้ว ตั้งค่าได้ที่หน้าเครื่อง
- * @version   4.10.1-TOUCH
+ * @version   4.10.2-TOUCH
  * @date      2026-09-23
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
@@ -22,6 +22,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 4.10.2-TOUCH | 2026-11-20 | แก้บั๊ก: สุนัขเฝ้าบ้านและการบันทึกสาเหตุรีบูตทำงานทุกครั้งที่เปิดเครื่อง เดิมทำงานเฉพาะตอนปลุกจาก deep sleep เพราะวงเล็บปิดบล็อก if อยู่ผิดที่ ตอนเสียบไฟปกติจึงไม่มีสุนัขเฝ้าบ้าน |
  * | 4.10.1-TOUCH | 2026-09-28 | Sync บอกเตียงด้วยว่า Host ได้ยินมันอยู่หรือไม่ (บิตว่างใน flags ขนาดโครงสร้างไม่เปลี่ยน) |
  * | 4.10.0-TOUCH | 2026-09-23 | เตียงที่หายไประหว่างให้น้ำเกลือมีเสียงเตือนแล้ว เพิ่มสุนัขเฝ้าบ้าน รายงานสาเหตุการรีบูต และปฏิเสธแพ็กเก็ตที่ค่าเป็นไปไม่ได้ |
  * | 4.9.3-TOUCH | 2026-09-23 | ย้ายโค้ดวาดจอออกไปไว้ที่ `HostScreen.h` ตรรกะไม่เปลี่ยนแม้แต่บรรทัดเดียว |
@@ -139,7 +140,7 @@
 esp_reset_reason_t bootResetReason = ESP_RST_UNKNOWN;
 
 
-#define APP_VERSION         "4.10.1-TOUCH"
+#define APP_VERSION         "4.10.2-TOUCH"
 #define DEV_NAME            "กิตติพันธ์ รัตนคร"
 #define DEV_ROLE            "นักวิชาการคอมพิวเตอร์"
 #define DEV_INSTITUTION     "มหาวิทยาลัยมหาจุฬาลงกรณราชวิทยาลัย วิทยาเขตแพร่"
@@ -2490,11 +2491,12 @@ void setup() {
 
     while (digitalRead(POWER_BTN_PIN) == LOW) { feedWatchdog(); delay(10); }
     delay(150);
-  
+  }   // [4.10.2-TOUCH] แก้: ปิดบล็อก if ตรงนี้ เดิม 3 บรรทัดข้างล่างตกอยู่ข้างในและทำงานเฉพาะตอนปลุกจาก deep sleep
+
+  // [4.10.2-TOUCH] แก้: ทุกครั้งที่เปิดเครื่อง ทั้ง cold boot และปลุกจาก deep sleep (ต้องเรียกก่อนช่วงที่ setup() ใช้เวลานาน)
   bootResetReason = esp_reset_reason();   // [4.10.0-TOUCH] เพิ่ม: จำไว้ว่ารีบูตครั้งล่าสุดเพราะอะไร
   Serial.printf("[boot] reset reason: %s\n", resetReasonText(bootResetReason));
   setupLoopWatchdog();
-}
 
   analogReadResolution(12);
   analogSetAttenuation(ADC_11db);
@@ -2599,8 +2601,10 @@ void setup() {
 
   drawSplashScreen();
   lastUserActivityTime = millis();
+  feedWatchdog();   // [4.10.2-TOUCH] เพิ่ม: สุนัขเฝ้าบ้านเริ่มทำงานตั้งแต่ต้น setup() แล้ว ป้อนก่อนช่วงเสียงต้อนรับ
   playWelcomeMelody();
   delay(1400);
+  feedWatchdog();   // [4.10.2-TOUCH] เพิ่ม: ป้อนหลังหน่วง 1.4 วินาที
   uiScreen = touchCalibrated ? SCR_HOME : SCR_CALIB;   // ยังไม่เคยปรับจอสัมผัส -> ปรับก่อนใช้งาน
   uiScreenDrawn = (UiScreen)-1;
   uiNeedFramework = true;

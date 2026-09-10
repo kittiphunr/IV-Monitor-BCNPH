@@ -1,7 +1,7 @@
 /**
  * @file      Host-TFT-Gateway.ino
  * @brief     เครื่องส่วนกลางจอ TFT 2.8" รุ่นเกตเวย์ คำนวณทุกอย่างแทน Station แล้วส่งขึ้นพีซี
- * @version   1.1.0-TG
+ * @version   1.1.1-TG
  * @date      2026-11-20
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
@@ -28,6 +28,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 1.1.1-TG | 2026-11-20 | แก้บั๊ก: สุนัขเฝ้าบ้านและการบันทึกสาเหตุรีบูตทำงานทุกครั้งที่เปิดเครื่อง เดิมทำงานเฉพาะตอนปลุกจาก deep sleep เพราะวงเล็บปิดบล็อก if อยู่ผิดที่ ตอนเสียบไฟปกติจึงไม่มีสุนัขเฝ้าบ้าน |
  * | 1.1.0-TG | 2026-11-20 | ตรวจระดับแบตเตอรี่ทั้งของ Host เองและของทุกเตียง: ไอคอน แถบล่าง เสียงเตือนเบา ๆ เว้นช่วงนาน และส่งระดับขึ้นพีซี |
  * | 1.0.0-TG | 2026-11-19 | รุ่นแรก แตกจาก Host-TFT28 4.9.1-TFT ตัดเว็บ ล็อก CSV และ AP ออก เพิ่มลิงก์ขึ้นพีซี ใช้ Protocol v4 ให้ Host เป็นผู้คำนวณอัตราไหลและส่งผลกลับให้ Station แสดง |
  * | ↓ | ↓ | ป้ายรุ่นด้านล่างสืบมาจากโค้ดของ Host-TFT28 ที่ยกมาโดยไม่แก้ ใช้ตามรอยเหตุผลได้ใน Host-TFT28.ino |
@@ -99,7 +100,7 @@
 esp_reset_reason_t bootResetReason = ESP_RST_UNKNOWN;
 
 
-#define APP_VERSION         "1.1.0-TG"
+#define APP_VERSION         "1.1.1-TG"
 #define DEV_NAME            "กิตติพันธ์ รัตนคร"
 #define DEV_ROLE            "นักวิชาการคอมพิวเตอร์"
 #define DEV_INSTITUTION     "มหาวิทยาลัยมหาจุฬาลงกรณราชวิทยาลัย วิทยาเขตแพร่"
@@ -2002,11 +2003,12 @@ void setup() {
 
     while (digitalRead(POWER_BTN_PIN) == LOW) { feedWatchdog(); delay(10); }
     delay(150);
-  
+  }   // [1.1.1-TG] แก้: ปิดบล็อก if ตรงนี้ เดิม 3 บรรทัดข้างล่างตกอยู่ข้างในและทำงานเฉพาะตอนปลุกจาก deep sleep
+
+  // [1.1.1-TG] แก้: ทุกครั้งที่เปิดเครื่อง ทั้ง cold boot และปลุกจาก deep sleep (ต้องเรียกก่อนช่วงที่ setup() ใช้เวลานาน)
   bootResetReason = esp_reset_reason();   // [4.9.0-TFT] เพิ่ม: จำไว้ว่ารีบูตครั้งล่าสุดเพราะอะไร
   Serial.printf("[boot] reset reason: %s\n", resetReasonText(bootResetReason));
   setupLoopWatchdog();
-}
 
   analogReadResolution(12);
   analogSetAttenuation(ADC_11db);
@@ -2098,8 +2100,10 @@ void setup() {
 
   drawSplashScreen();
   lastUserActivityTime = millis();
+  feedWatchdog();   // [1.1.1-TG] เพิ่ม: สุนัขเฝ้าบ้านเริ่มทำงานตั้งแต่ต้น setup() แล้ว ป้อนก่อนช่วงเสียงต้อนรับ
   playWelcomeMelody();
   delay(1400);
+  feedWatchdog();   // [1.1.1-TG] เพิ่ม: ป้อนหลังหน่วง 1.4 วินาที
   uiMode = -1;
 
   unsigned long nowMs = millis();
