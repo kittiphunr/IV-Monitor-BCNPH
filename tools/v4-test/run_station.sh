@@ -8,7 +8,7 @@ SKETCH=../../firmware/Station-Thin
 python3 ../check-ino-types.py "$SKETCH/Station-Thin.ino" >/dev/null
 cp "$SKETCH/Station-Thin.ino" station_thin.cpp
 for h in "$SKETCH"/*.h; do cp "$h" "$(basename "$h")"; done
-trap 'rm -f station_thin.cpp StationScreen.h drop_detector.h protocol_v4.h stthin ops.txt' EXIT
+trap 'rm -f station_thin.cpp StationScreen.h drop_detector.h protocol_v4.h battery_check.h stthin ops.txt' EXIT
 g++ -std=gnu++17 -I../screen-preview -I. -DESP_ARDUINO_VERSION_MAJOR=3 -Wall -Wno-unused-variable \
     -Wno-format-truncation -o stthin station_driver.cpp
 ./stthin ops.txt

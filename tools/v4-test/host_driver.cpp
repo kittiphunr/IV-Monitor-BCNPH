@@ -28,7 +28,7 @@ void delayMicroseconds(unsigned long us){ g_millis += us/1000; }
 void pinMode(int,int){} void digitalWrite(int,int){} int digitalRead(int){return 1;}
 int analogRead(int){ return 2400; }
 void analogReadResolution(int){} void analogSetAttenuation(adc_attenuation_t){}
-void tone(int,unsigned int,unsigned long){} void noTone(int){}
+int g_tones = 0; void tone(int,unsigned int,unsigned long){ g_tones++; } void noTone(int){}
 void randomSeed(unsigned long){} long random(long m){return 0;} long random(long a,long){return a;}
 void rgbLedWrite(int,int,int,int){} void neopixelWrite(int,int,int,int){}
 long map(long x,long a,long b,long c,long d){return (x-a)*(d-c)/(b-a)+c;}
@@ -172,6 +172,7 @@ static int simMain() {
 
 int main(int argc, char** argv) {
   if (argc > 1 && !strcmp(argv[1], "sim")) return simMain();
+  g_ops = fopen("/dev/null", "w");   // ตัวจำลองจอ (Adafruit_GFX) เขียนคำสั่งวาดลงไฟล์นี้ ทดสอบนี้ไม่ใช้ภาพ
   printf("ขนาด: ขึ้น %d ลง %d ไบต์, StationData=%d ไบต์, stations[%d]=%.1f KB\n",
          (int)sizeof(struct_up_v4), (int)sizeof(struct_down_v4), (int)sizeof(StationData),
          MAX_SUPPORTED_STATIONS, sizeof(stations) / 1024.0);
@@ -284,6 +285,93 @@ int main(int argc, char** argv) {
   printf("\n8) ข้อความสถานะ\n");
   portalActive = false; staConfigured = true; pcConfigured = true; pcLinkUp = true;
   check(gatewayLine().length() <= 26, "ข้อความสถานะลิงก์ยาวไม่เกินความกว้างจอ");
+
+
+  printf("\n9) ตรวจระดับแบตเตอรี่ (Host เอง และทุกเตียง)\n");
+  {
+    auto chime = [&](unsigned long ms) {
+      int before = g_tones;
+      for (unsigned long t = 0; t < ms; t += 10) { g_millis += 10; handleBatteryChime(); }
+      return g_tones - before;
+    };
+    auto reset = [&]() {
+      resetWorld(3); hostBat = BatteryMonitor(); hostBatteryVolts = 4.1f; hostBatteryPct = 90;
+      batChimeRemaining = 0; batChimeNextRound = 0; nearChimeRemaining = 0; globalAlarmTriggered = false;
+      globalSnoozeUntil = 0; cacheBottom = "";
+    };   // hostBat เริ่มที่ BAT_NONE การอ่านครั้งแรกจึงตัดสินทันที (ตรงกับการเปิดเครื่องจริง)
+
+    // เตียง: ตัดสินจากแรงดันในแพ็กเก็ตขึ้น
+    reset();
+    sendUp(1, 10, 100, V4_UP_RUNNING, 3400); sendUp(2, 10, 100, V4_UP_RUNNING, 3900); sendUp(3, 10, 100, V4_UP_RUNNING, 0);
+    check(stations[0].bat.level == BAT_LOW, "เตียงที่ส่ง 3.40 V -> ต่ำ ทันที");
+    check(stations[1].bat.level == BAT_OK, "เตียงที่ส่ง 3.90 V -> ปกติ");
+    check(stations[2].bat.level == BAT_NONE, "เตียงที่ส่ง 0 mV (ไม่มีวงจรวัด) -> ไม่ตรวจ");
+    for (int i = 0; i < 31; i++) { g_millis += 1000; sendUp(2, 10 + i, 100, V4_UP_RUNNING, 3300); }
+    check(stations[1].bat.level == BAT_CRIT, "เตียงที่ต่ำกว่า 3.35 V ต่อเนื่อง 30 วินาที -> วิกฤต");
+    check(worstBatteryLevel() == BAT_CRIT, "ระดับแย่สุดคือวิกฤต");
+
+    // เตียงออฟไลน์ไม่นับ
+    reset();
+    sendUp(1, 10, 100, V4_UP_RUNNING, 3300);
+    check(worstBatteryLevel() == BAT_CRIT, "เตียงออนไลน์ที่แบตวิกฤตนับ");
+    g_millis += ONLINE_TIMEOUT_MS + 2000;
+    check(worstBatteryLevel() == BAT_NONE, "เตียงออฟไลน์แล้วไม่นับ (ระดับเก่า)");
+
+    // Host เอง
+    reset();
+    hostBatteryVolts = 3.4f; hostBatteryPct = calculateBatteryPct(hostBatteryVolts); serviceHostBattery(g_millis);
+    check(hostBat.level == BAT_LOW, "แบตเตอรี่ Host 3.40 V -> ต่ำ");
+    check(chime(3000) == 2, "ต่ำ: เสียงสองครั้ง");
+    check(chime(290000) == 0, "ต่ำ: เงียบระหว่าง 5 นาที");
+    check(chime(20000) == 2, "ต่ำ: รอบถัดไปหลังครบ 5 นาที");
+    hostBatteryVolts = 0.0f; serviceHostBattery(g_millis);
+    check(hostBat.level == BAT_NONE && chime(60000) == 0, "Host ใช้ไฟ USB (0 V) -> ล้างการเตือน เงียบ");
+
+    // ไม่แย่งเสียงสำคัญกว่า / พักเสียงได้
+    reset(); hostBatteryVolts = 3.3f; serviceHostBattery(g_millis);
+    check(hostBat.level == BAT_CRIT, "Host 3.30 V -> วิกฤต");
+    globalAlarmTriggered = true;
+    check(chime(5000) == 0, "มีเหตุวิกฤตทางคลินิกที่ยังไม่พักเสียง -> เงียบ");
+    globalAlarmTriggered = false; batChimeNextRound = 0;
+    nearChimeRemaining = 2;
+    check(chime(2000) == 0, "กำลังเตือนใกล้หมด -> เงียบ");
+    nearChimeRemaining = 0; batChimeNextRound = 0;
+    globalSnoozeUntil = g_millis + 120000;
+    check(chime(5000) == 0, "พักเสียงอยู่ -> เงียบ (พักด้วยปุ่มเดียวกับเตือนปกติ)");
+    globalSnoozeUntil = 0; batChimeNextRound = 0;
+    check(chime(3000) == 3, "วิกฤต: เสียงสามครั้ง");
+    check(chime(55000) == 0, "วิกฤต: เงียบระหว่าง 1 นาที");
+    check(chime(8000) == 3, "วิกฤต: รอบถัดไปหลังครบ 1 นาที");
+    // แย่ลงจากต่ำเป็นวิกฤต: เตือนวิกฤตทันที ไม่รอรอบ 5 นาทีของระดับต่ำ
+    reset(); hostBatteryVolts = 3.4f; serviceHostBattery(g_millis);
+    chime(3000);
+    hostBatteryVolts = 3.3f; for (int i = 0; i < 31; i++) { g_millis += 1000; serviceHostBattery(g_millis); }
+    check(hostBat.level == BAT_CRIT, "Host แย่ลงจากต่ำเป็นวิกฤต");
+    check(chime(3000) == 3, "ต่ำ -> วิกฤต: เตือนวิกฤตทันที ไม่รอรอบ 5 นาทีของระดับต่ำ");
+
+    // แถบล่าง
+    reset();
+    sendUp(1, 10, 100, V4_UP_RUNNING, 3400);
+    updateBottomBar();
+    check(cacheBottom == String("BED 01  LOW BATT  20%"), "แถบล่างบอกเตียงที่แบตต่ำ + เปอร์เซ็นต์");
+    reset(); hostBatteryVolts = 3.3f; hostBatteryPct = calculateBatteryPct(hostBatteryVolts); serviceHostBattery(g_millis);
+    updateBottomBar();
+    check(strncmp(cacheBottom.c_str(), "HOST  BATT CRIT", 15) == 0, "แถบล่างบอกว่า Host แบตวิกฤต");
+    reset(); sendUp(1, 10, 100, V4_UP_RUNNING, 3400);
+    stations[1].alertCode = ALERT_OCCLUSION; stations[1].active = true; stations[1].lastRecvTime = g_millis; stations[1].isRunning = true;
+    cacheBottom = ""; updateBottomBar();
+    check(cacheBottom[0] == '!' , "เหตุวิกฤตทางคลินิกมาก่อนแบตต่ำในแถบล่าง");
+    reset(); sendUp(1, 10, 100, V4_UP_RUNNING, 3400); stations[2].alertCode = ALERT_NEAR_END; stations[2].lastRecvTime = g_millis;
+    cacheBottom = ""; updateBottomBar();
+    check(strstr(cacheBottom.c_str(), "PREPARE NEXT BAG") != nullptr, "เตือนใกล้หมดมาก่อนแบตต่ำในแถบล่าง");
+
+    // ขึ้นพีซี
+    reset(); hostBatteryVolts = 3.4f; serviceHostBattery(g_millis);
+    sendUp(1, 10, 100, V4_UP_RUNNING, 3300);
+    String js = buildUplinkJson();
+    check(strstr(js.c_str(), "\"batLevel\":2,\"linkWeakPct\"") != nullptr || strstr(js.c_str(), "\"batLevel\":2,") != nullptr, "JSON มีระดับแบตเตอรี่ของ Host");
+    check(strstr(js.c_str(), "\"battery\":3.30,\"batLevel\":3") != nullptr, "JSON มีระดับแบตเตอรี่ของเตียง");
+  }
 
   printf("\n%s\n", failures ? "มีข้อที่ไม่ผ่าน" : "ผ่านทุกข้อ");
   return failures ? 1 : 0;

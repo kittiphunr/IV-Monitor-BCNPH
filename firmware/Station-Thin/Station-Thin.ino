@@ -1,8 +1,8 @@
 /**
  * @file      Station-Thin.ino
  * @brief     เครื่องประจำเตียงแบบบาง ส่งแค่จำนวนหยด แล้วแสดงผลที่ Host คำนวณส่งกลับมา
- * @version   1.0.0-TH
- * @date      2026-11-19
+ * @version   1.1.0-TH
+ * @date      2026-11-20
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
  * @par Organization
@@ -26,6 +26,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 1.1.0-TH | 2026-11-20 | ตรวจระดับแบตเตอรี่ของตัวเอง: ต่ำ/วิกฤตขึ้นไอคอนที่หัวจอ เสียงเตือนเบา ๆ เว้นช่วงนาน ไม่ปนกับเหตุทางคลินิก |
  * | 1.0.0-TH | 2026-11-19 | รุ่นแรก แตกจาก Station 7.10.0 ตัดการคำนวณอัตราไหล ปริมาตร และการตัดสินเตือนออก ใช้ผลจาก Host ผ่าน Protocol v4 |
  * | ↓ | ↓ | ป้ายรุ่นด้านล่างสืบมาจากโค้ดของ Station ที่ยกมาโดยไม่แก้ ใช้ตามรอยเหตุผลได้ใน Station.ino |
  * | 7.10.0 | 2026-09-28 | ไฟสถานะการเชื่อมต่อดูสองทาง ขึ้น ONE-WAY เมื่อได้ยิน Host แต่ Host ไม่ได้ยินเตียง |
@@ -54,6 +55,14 @@
  *   4) ตัดการตัดสินสายพับในเครื่องและการตัดสินใกล้หมด/ครบแผนในเครื่องออก รหัสเตือนมาจาก Host อย่างเดียว
  *   5) ยังเก็บยอดหยดสะสมลง NVS เหมือนเดิม รีบูตแล้วส่งยอดต่อได้ Host คำนวณต่อจากยอดนั้น
  *   6) ตัวตรวจจับหยด การเรียนรู้รูปคลื่น ปุ่ม จอ เสียง และไฟสถานะ ไม่เปลี่ยน
+ *
+ *  เปลี่ยนใน V1.1.0-TH: ตรวจระดับแบตเตอรี่ของเครื่องเอง (battery_check.h ใช้ร่วมกับ Host)
+ *   - ต่ำ (< 3.50 V) ไอคอนเหลืองที่หัวจอ + เสียงสองครั้งทุก 5 นาที
+ *   - วิกฤต (< 3.35 V) ไอคอนแดงกะพริบ + เสียงสามครั้งทุก 1 นาที
+ *   - ต้องต่ำต่อเนื่อง 30 วินาทีจึงเตือน (แรงดันตกตอนบัซเซอร์ดังไม่ทำให้เตือนผิด) และมีฮิสเทอรีซิส 50 mV
+ *   - ไม่มีวงจรวัด (STATION_BAT_ADC_PIN = -1) หรือใช้ไฟ USB = ไม่ตรวจ ไม่เตือน
+ *   - เสียงเตือนแบตเงียบเมื่อมีเหตุทางคลินิกหรือเตือนใกล้หมดอยู่ ไม่แย่งเสียงสำคัญ
+ *   - Host ได้แรงดันของเตียงนี้ในแพ็กเก็ตขึ้นอยู่แล้ว และตรวจซ้ำอีกชั้นที่ฝั่ง Host
  */
 
 #include <WiFi.h>
@@ -80,10 +89,11 @@
 esp_reset_reason_t bootResetReason = ESP_RST_UNKNOWN;
 
 
+#include "battery_check.h"      // [1.1.0-TH] เพิ่ม: ตัวตรวจระดับแบตเตอรี่ ใช้ร่วมกับ Host
 #include "protocol_v4.h"      // [1.0.0-TH] เพิ่ม: Protocol v4 ใช้ร่วมกับ Host-TFT-Gateway
 #include "drop_detector.h"   // อัลกอริทึมตรวจจับหยด (ทดสอบบน PC ได้: tools/detector-test)
 
-#define APP_VERSION         "1.0.0-TH"
+#define APP_VERSION         "1.1.0-TH"
 
 #define TFT_CS              9
 #define TFT_DC              10
@@ -253,6 +263,16 @@ unsigned long snoozeUntilTime       = 0;
 const unsigned long minDropInterval = 55;
 
 unsigned long buzzerBeepUntil       = 0;
+
+// ---- ตรวจระดับแบตเตอรี่ของเครื่องเอง ([1.1.0-TH] เพิ่ม) ----
+#define BAT_CHIME_LOW_MS        300000UL   // ต่ำ: เตือนทุก 5 นาที
+#define BAT_CHIME_CRIT_MS       60000UL    // วิกฤต: เตือนทุก 1 นาที
+BatteryMonitor selfBat;
+unsigned long  lastBatCheck       = 0;
+uint8_t        batChimeRemaining  = 0;
+unsigned long  batChimeNextBeep   = 0;
+unsigned long  batChimeNextRound  = 0;
+uint8_t        batChimeLevelSeen  = BAT_NONE;   // ระดับที่เสียงเตือนรอบล่าสุดอิงอยู่ ใช้ตรวจว่าแย่ลงหรือยัง
 unsigned long buzzerNextBeepTime    = 0;
 
 bool isDropFalling                  = false;
@@ -277,6 +297,7 @@ uint8_t uiAlertCode = ALERT_NONE;
 // ---- แคชของหน้าจอ: วาดใหม่เฉพาะเมื่อค่าที่แสดงเปลี่ยนจริง ----
 String cacheClock = "";
 int    cacheBars = -9999;
+int    cacheBatKey = -9999;     // [1.1.0-TH] เพิ่ม: ไอคอนแบตเตอรี่ที่หัวจอ
 int    cacheStatusBar = -1;
 bool   cacheBedChip = false;
 int    cacheRate = -9999, cacheTarget = -9999, cacheLeftMl = -9999;
@@ -568,6 +589,35 @@ void handlePassiveBuzzerEngine(uint8_t code) {
     case ALERT_TOO_FAST:  beepNonBlocking(2200, 80);  buzzerNextBeepTime = now + 700;  break;
     case ALERT_TOO_SLOW:  beepNonBlocking(1200, 120); buzzerNextBeepTime = now + 1200; break;
     case ALERT_COMPLETE:  beepNonBlocking(1500, 250); buzzerNextBeepTime = now + 1500; break;
+  }
+}
+
+// [1.1.0-TH] เพิ่ม: อ่านแรงดันของเครื่องเองแล้วตัดสินระดับ เรียกวินาทีละครั้ง
+// volts = 0 คือไม่มีวงจรวัด/ใช้ไฟ USB (readStationBattery คืน 0) ระดับเป็น BAT_NONE ไม่เตือน
+void serviceBattery(unsigned long now, float volts) {
+  uint16_t mv = (volts > 0.0f) ? (uint16_t)(volts * 1000.0f + 0.5f) : 0;
+  selfBat.update((uint32_t)now, mv);
+}
+
+// [1.1.0-TH] เพิ่ม: เสียงเตือนแบตเตอรี่เบา ๆ เว้นช่วงนาน เป็นเรื่องบำรุงรักษา ไม่ใช่เหตุทางคลินิก
+// จึงเงียบเมื่อมีเหตุวิกฤต เตือนใกล้หมดกำลังดัง หรือเสียงอื่นกำลังเล่นอยู่ ไม่แย่งเสียงที่สำคัญกว่า
+void serviceBatteryChime(unsigned long now, uint8_t alertCode) {
+  if (!selfBat.isLow()) { batChimeRemaining = 0; batChimeNextRound = 0; batChimeLevelSeen = BAT_NONE; return; }
+  // ระดับเปลี่ยน (โดยเฉพาะต่ำ -> วิกฤต) ต้องเตือนทันที ไม่รอรอบเดิมที่นับตามช่วงของระดับก่อนหน้าซึ่งนานสุด 5 นาที
+  if (selfBat.level != batChimeLevelSeen) { batChimeLevelSeen = selfBat.level; batChimeNextRound = 0; }
+  if (isCriticalAlert(alertCode) || isNearEndPending(alertCode) || nearChimeRemaining > 0) {
+    batChimeRemaining = 0;
+    return;
+  }
+  if (batChimeRemaining == 0 && (batChimeNextRound == 0 || now >= batChimeNextRound)) {
+    batChimeRemaining = (selfBat.level == BAT_CRIT) ? 3 : 2;
+    batChimeNextBeep  = now;
+    batChimeNextRound = now + ((selfBat.level == BAT_CRIT) ? BAT_CHIME_CRIT_MS : BAT_CHIME_LOW_MS);
+  }
+  if (batChimeRemaining > 0 && now >= batChimeNextBeep && buzzerBeepUntil == 0) {
+    beepNonBlocking(1500, 70);
+    batChimeNextBeep = now + 250;
+    batChimeRemaining--;
   }
 }
 
@@ -1525,6 +1575,11 @@ void loop() {
   updateTrendAccumulator(currentMillis);                  // เก็บข้อมูลกราฟตลอดเวลา
   if (!isCriticalAlert(alertCode)) snoozeUntilTime = 0;   // เหตุการณ์หายไปแล้ว ยกเลิก snooze
   handlePassiveBuzzerEngine(alertCode);
+  if (currentMillis - lastBatCheck >= 1000) {        // [1.1.0-TH] เพิ่ม: ตรวจแบตเตอรี่วินาทีละครั้ง
+    lastBatCheck = currentMillis;
+    serviceBattery(currentMillis, readStationBattery());
+  }
+  serviceBatteryChime(currentMillis, alertCode);
   updateStatusLed(alertCode);
 
   // ---- ส่งข้อมูลให้ Host ทุก 1 วินาที (ส่งแม้อยู่ในหน้าตั้งค่า) ----

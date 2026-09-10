@@ -168,13 +168,20 @@ def main():
     print('Host-TFT-Gateway: ฟังก์ชันลิงก์พีซีร่วมกับ Host-Gateway %d ตัว' % len(TFT_SHARED_WITH_GW))
     s28 = functions(io.open(os.path.join(ROOT, 'Host-TFT28', 'HostScreen.h'), encoding='utf-8').read())
     stg = functions(io.open(os.path.join(ROOT, 'Host-TFT-Gateway', 'HostScreen.h'), encoding='utf-8').read())
-    if s28 != stg:
-        print('  ** HostScreen.h ของ Host-TFT-Gateway ต่างจาก Host-TFT28 (ต้องเหมือนทุกฟังก์ชัน) **'); problems += 1
-    print('HostScreen.h (TFT): %d ฟังก์ชันเหมือน Host-TFT28' % len(s28))
+    # updateBottomBar แก้ไว้ตั้งใจ (เพิ่มบรรทัดแบตเตอรี่ต่ำ [1.1.0-TG]) ที่เหลือต้องเหมือนทุกฟังก์ชัน
+    s28c = {k: v for k, v in s28.items() if k != 'updateBottomBar'}
+    stgc = {k: v for k, v in stg.items() if k != 'updateBottomBar'}
+    if s28c != stgc or set(s28) != set(stg):
+        print('  ** HostScreen.h ของ Host-TFT-Gateway ต่างจาก Host-TFT28 (ต้องเหมือนทุกฟังก์ชัน ยกเว้น updateBottomBar) **'); problems += 1
+    print('HostScreen.h (TFT): %d ฟังก์ชันเหมือน Host-TFT28 (ยกเว้น updateBottomBar)' % len(s28c))
     dd = [io.open(os.path.join(ROOT, d, 'drop_detector.h'), 'rb').read() for d in ('Station', 'Station-Thin')]
     if dd[0] != dd[1]:
         print('  ** drop_detector.h ของ Station-Thin ต่างจาก Station (ต้องเหมือนทุกไบต์) **'); problems += 1
     print('drop_detector.h: Station-Thin เหมือน Station ทุกไบต์' if dd[0] == dd[1] else '')
+    bc = [io.open(os.path.join(ROOT, d, 'battery_check.h'), 'rb').read() for d in ('Station-Thin', 'Host-TFT-Gateway')]
+    if bc[0] != bc[1]:
+        print('  ** battery_check.h สองฝั่งไม่เหมือนกัน (เกณฑ์แบตเตอรี่จะไม่ตรงกัน) **'); problems += 1
+    print('battery_check.h: สองฝั่งเหมือนกันทุกไบต์' if bc[0] == bc[1] else '')
     p4 = [io.open(os.path.join(ROOT, d, 'protocol_v4.h'), 'rb').read() for d in ('Station-Thin', 'Host-TFT-Gateway')]
     if p4[0] != p4[1]:
         print('  ** protocol_v4.h สองฝั่งไม่เหมือนกัน **'); problems += 1
