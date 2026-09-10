@@ -1,8 +1,8 @@
 /**
  * @file      Host-TFT-Gateway.ino
  * @brief     เครื่องส่วนกลางจอ TFT 2.8" รุ่นเกตเวย์ คำนวณทุกอย่างแทน Station แล้วส่งขึ้นพีซี
- * @version   1.1.0-TG
- * @date      2026-11-20
+ * @version   1.2.0-TG
+ * @date      2026-11-21
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
  * @par Organization
@@ -28,6 +28,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 1.2.0-TG | 2026-11-21 | เหลือปุ่มเดียว (GPIO 4) ทำทุกอย่างตามจังหวะกด ตัดปุ่มเปลี่ยนหน้า (GPIO 5) ออก |
  * | 1.1.0-TG | 2026-11-20 | ตรวจระดับแบตเตอรี่ทั้งของ Host เองและของทุกเตียง: ไอคอน แถบล่าง เสียงเตือนเบา ๆ เว้นช่วงนาน และส่งระดับขึ้นพีซี |
  * | 1.0.0-TG | 2026-11-19 | รุ่นแรก แตกจาก Host-TFT28 4.9.1-TFT ตัดเว็บ ล็อก CSV และ AP ออก เพิ่มลิงก์ขึ้นพีซี ใช้ Protocol v4 ให้ Host เป็นผู้คำนวณอัตราไหลและส่งผลกลับให้ Station แสดง |
  * | ↓ | ↓ | ป้ายรุ่นด้านล่างสืบมาจากโค้ดของ Host-TFT28 ที่ยกมาโดยไม่แก้ ใช้ตามรอยเหตุผลได้ใน Host-TFT28.ino |
@@ -56,6 +57,15 @@
  *   4) ตัด WebServer ล็อก CSV และ AP ออก ใช้ลิงก์ขึ้นพีซีแบบ Host-Gateway เวลามาจากพีซี
  *   5) การตัดสินเตือนทั้งหมดยังอยู่ที่ Host เหมือนเดิม ไม่ผ่านพีซี
  *   6) จอ TFT แสดงสถานะลิงก์พีซีแทนจำนวนอุปกรณ์ที่ต่อ AP
+ *
+ *  เปลี่ยนใน V1.2.0-TG: เหลือปุ่มเดียว
+ *   - ปุ่มเปิด-ปิด/พักเสียง (GPIO 4) ทำทุกอย่างตามจังหวะกด และตัดปุ่มเปลี่ยนหน้า (GPIO 5) ออก
+ *     กดสั้นขณะมีเสียงเตือน = พักเสียง, ขณะเตือนใกล้หมด = รับทราบ, ปกติ: 1 ครั้ง = เตียงถัดไป
+ *     2 ครั้ง = โหมดนาฬิกา, 3 ครั้ง = ดับ/เปิดจอ, กดค้าง 2 วินาที = ปิดเครื่อง
+ *   - เหตุทางคลินิกมาก่อนเสมอ และตอบสนองทันที ไม่ต้องรอช่องนับคลิก
+ *   - ล้างค่าเครือข่าย: กดปุ่มค้างตอนเปิดเครื่อง 8 วินาที (เดิม 3 วินาทีบนปุ่มเปลี่ยนหน้า) ยาวขึ้นเพราะ
+ *     ปุ่มเดียวกันใช้ปลุกเครื่อง (ค้าง 1.5 วินาที) การค้างเผลอ ๆ จึงต้องไม่ลบค่าเครือข่ายทิ้ง
+ *   - ข้อความบนจอบอกปุ่มเดียว ("PRESS BUTTON = SNOOZE", "PRESS BUTTON TO WAKE")
  *
  *  เปลี่ยนใน V1.1.0-TG: ตรวจระดับแบตเตอรี่ทั้งสองฝั่ง (battery_check.h ใช้ร่วมกับ Station-Thin)
  *   - Host ตรวจแบตเตอรี่ของตัวเอง และของทุกเตียงจากแรงดัน (batteryMv) ที่เตียงส่งมาในแพ็กเก็ตขึ้น
@@ -99,7 +109,7 @@
 esp_reset_reason_t bootResetReason = ESP_RST_UNKNOWN;
 
 
-#define APP_VERSION         "1.1.0-TG"
+#define APP_VERSION         "1.2.0-TG"
 #define DEV_NAME            "กิตติพันธ์ รัตนคร"
 #define DEV_ROLE            "นักวิชาการคอมพิวเตอร์"
 #define DEV_INSTITUTION     "มหาวิทยาลัยมหาจุฬาลงกรณราชวิทยาลัย วิทยาเขตแพร่"
@@ -109,7 +119,6 @@ esp_reset_reason_t bootResetReason = ESP_RST_UNKNOWN;
 // ----------------------------------------------------------------------------
 #define HOST_BAT_ADC_PIN    1   // ขาอ่านแบตเตอรี่ Host
 #define POWER_BTN_PIN       4   // ปุ่มเปิด-ปิดหน้าจอ / พักเสียงเตือน (Snooze) — ต้องเป็น RTC GPIO (0-21)
-#define PAGE_BTN_PIN        5   // ปุ่มเปลี่ยนหน้าจอ / ดับเบิ้ลคลิกเรียก Screensaver
 #define BUZZER_PIN          7   // ขาต่อลำโพง Passive Buzzer
 
 // ---- จอ TFT 2.8" ST7789V (SPI 14 ขา ไม่มีทัช) ----
@@ -164,7 +173,7 @@ esp_reset_reason_t bootResetReason = ESP_RST_UNKNOWN;
 #define STA_RECONNECT_MAX_MS    300000   // แล้วเว้นห่างขึ้นเท่าตัวทุกครั้งที่พลาด สูงสุด 5 นาที
                                          // เพราะทุกครั้งที่ WiFi.begin() ค้นหาเราเตอร์ วิทยุจะกระโดดข้ามช่อง
                                          // แพ็กเก็ต ESP-NOW จากเตียงหายไประหว่างนั้น ยิ่งถี่ยิ่งเสียหาย
-#define SETUP_HOLD_MS           3000     // กดปุ่มเปลี่ยนหน้าค้างตอนเปิดเครื่องนานเท่านี้ = ล้างค่าเครือข่าย
+#define SETUP_HOLD_MS           8000     // [1.2.0-TG] แก้: กดปุ่มค้างตอนเปิดเครื่องนานเท่านี้ = ล้างค่าเครือข่าย (เดิม 3000 บนปุ่มเปลี่ยนหน้า)
 #define SETUP_AP_MAX_CLIENTS    2        // หน้าตั้งค่าใช้ครั้งเดียว ไม่ต้องรองรับหลายเครื่อง
 #define SYNC_SLOT_MIN_MS        60       // ช่องเวลาต่ำสุดระหว่างแพ็กเก็ตลงสองใบ (เฉลี่ยช่อง ไม่ใช้ delay)
 #define LINK_WINDOW_MS          10000UL  // หน้าต่างวัดคุณภาพลิงก์ (คาดหวัง 10 ใบ)
@@ -986,109 +995,106 @@ void handleBatteryChime() {
   }
 }
 
-void checkSmartphonePowerButton() {
-  static unsigned long btnPressStart = 0;
-  static unsigned long lastProgressFrameTime = 0;
-  static bool isHolding = false;
+// ----------------------------------------------------------------------------
+// ปุ่มเดียว ([1.2.0-TG] แก้: เดิมมีสองปุ่ม คือปุ่มเปิด-ปิด/พักเสียง กับปุ่มเปลี่ยนหน้า)
+// ----------------------------------------------------------------------------
+// ปุ่มเดียว (POWER_BTN_PIN ต้องเป็น RTC GPIO เพราะใช้ปลุกจาก deep sleep ด้วย) ทำทุกอย่างตามจังหวะกด
+//
+//   กดสั้นขณะมีเสียงเตือนที่ยังไม่พัก   = พักเสียง 2 นาที (ทันที ไม่รอจับดับเบิลคลิก)
+//   กดสั้นขณะมีเตือนใกล้หมดยังไม่รับทราบ = รับทราบทุกเตียง (ทันที)
+//   กดสั้นปกติ  : 1 ครั้ง = เลื่อนดูเตียงถัดไปเอง (กลับเป็นอัตโนมัติเมื่อครบเวลาหรือมีเหตุใหม่)
+//                 2 ครั้ง = โหมดนาฬิกา (Screensaver)
+//                 3 ครั้ง = ดับ/เปิดจอ
+//                 (จอดับอยู่หรืออยู่ในโหมดนาฬิกา: กดครั้งแรกแค่ปลุกจอ ไม่ทำอย่างอื่น)
+//   กดค้าง 0.45 วินาทีขึ้นไป = ขึ้นหน้าถามปิดเครื่อง กดค้างต่อถึง 2 วินาที = ปิดเครื่อง (ปล่อยก่อน = ยกเลิก)
+//
+// เหตุทางคลินิกมาก่อนเสมอ: ขณะมีเสียงเตือนหรือเตือนใกล้หมด กดสั้นครั้งแรกเป็นการพัก/รับทราบเท่านั้น
+// เลื่อนหน้าได้อีกครั้งหลังจากนั้น กลุ่มกดสั้นปกตินับในช่อง 280 มิลลิวินาทีหลังปล่อยครั้งล่าสุด
+void checkHostButton() {
+  static bool          isHolding = false;
+  static unsigned long pressStart = 0;
+  static unsigned long lastProgressFrame = 0;
+  static unsigned long lastReleaseTime = 0;
+  static uint8_t       clickCount = 0;
 
-  int btnState = digitalRead(POWER_BTN_PIN);
+  unsigned long now = millis();
 
-  if (btnState == LOW) {
-    if (!isHolding) {
-      btnPressStart = millis();
-      isHolding = true;
-    }
-
-    unsigned long holdDuration = millis() - btnPressStart;
+  if (digitalRead(POWER_BTN_PIN) == LOW) {
+    if (!isHolding) { pressStart = now; isHolding = true; }
+    unsigned long holdDuration = now - pressStart;
 
     if (holdDuration >= 450 && !displaySleeping) {
       isPowerOffProgressActive = true;
-
-      if (millis() - lastProgressFrameTime >= 60) {
-        lastProgressFrameTime = millis();
+      if (now - lastProgressFrame >= 60) {
+        lastProgressFrame = now;
         int progressPct = map(holdDuration, 450, 2000, 0, 100);
         drawPowerOffProgress(progressPct);
       }
     }
-
     if (holdDuration >= 2000) powerOffSystem();
+    return;
   }
-  else {
-    if (isHolding) {
-      unsigned long totalHoldTime = millis() - btnPressStart;
-      lastUserActivityTime = millis();
 
-      if (totalHoldTime < 400 && globalAlarmTriggered && !isSnoozed()) {
-        // กดสั้นขณะมีเสียงเตือน = พักเสียง 2 นาที
-        globalSnoozeUntil = millis() + SNOOZE_MS;
+  // ---- ปล่อยปุ่ม ----
+  if (isHolding) {
+    unsigned long held = now - pressStart;
+    isHolding = false;
+    pressStart = 0;
+    lastUserActivityTime = now;
+
+    if (isPowerOffProgressActive) {          // ปล่อยก่อนครบ 2 วินาที = ยกเลิกการปิดเครื่อง
+      isPowerOffProgressActive = false;
+      uiMode = -1;
+      updateHostDisplay();
+    }
+
+    if (held < 400) {
+      if (globalAlarmTriggered && !isSnoozed()) {
+        // กดสั้นขณะมีเสียงเตือน = พักเสียง 2 นาที ทันที
+        globalSnoozeUntil = now + SNOOZE_MS;
         noTone(BUZZER_PIN);
         tone(BUZZER_PIN, 2200, 40);
         if (displaySleeping) setDisplaySleep(false);
         screensaverActive = false;
-        isPowerOffProgressActive = false;
+        clickCount = 0;
         uiMode = -1;
         updateHostDisplay();
-      } else if (totalHoldTime < 400 && anyNearEndPending()) {
-        // กดสั้นขณะมีเตือนใกล้หมดที่ยังไม่รับทราบ = รับทราบทุกเตียง
+      } else if (anyNearEndPending()) {
+        // กดสั้นขณะมีเตือนใกล้หมดที่ยังไม่รับทราบ = รับทราบทุกเตียง ทันที
         acknowledgeAllNearEnd();
         tone(BUZZER_PIN, 2600, 40);
         if (displaySleeping) setDisplaySleep(false);
         screensaverActive = false;
-        isPowerOffProgressActive = false;
+        clickCount = 0;
         uiMode = -1;
         updateHostDisplay();
-      } else if (screensaverActive) {
-        screensaverActive = false;
-        isPowerOffProgressActive = false;
-        uiMode = -1;
-        updateHostDisplay();
-      } else if (totalHoldTime < 400) {
-        setDisplaySleep(!displaySleeping);
-        tone(BUZZER_PIN, 1800, 25);
-        if (!displaySleeping) {
-          isPowerOffProgressActive = false;
-          updateHostDisplay();
-        }
+      } else {
+        if (clickCount < 255) clickCount++;
+        lastReleaseTime = now;
       }
-      else if (isPowerOffProgressActive && !displaySleeping) {
-        isPowerOffProgressActive = false;
-        uiMode = -1;
-        updateHostDisplay();
-      }
-      isPowerOffProgressActive = false;
-      isHolding = false;
-      btnPressStart = 0;
-    }
-  }
-}
-
-void checkPageButton() {
-  static bool isPageHolding = false;
-  static int clickCount = 0;
-  static unsigned long lastReleaseTime = 0;
-
-  int reading = digitalRead(PAGE_BTN_PIN);
-  unsigned long now = millis();
-
-  if (reading == LOW) {
-    if (!isPageHolding) { isPageHolding = true; }
-  } else {
-    if (isPageHolding) {
-      isPageHolding = false;
-      clickCount++;
-      lastReleaseTime = now;
-    }
-  }
-
-  if (clickCount > 0 && (now - lastReleaseTime > 280)) {
-    lastUserActivityTime = now;
-    if (displaySleeping) setDisplaySleep(false);
-    if (screensaverActive) {
-      screensaverActive = false;              // ปลุกจอก่อน
-    } else if (clickCount >= 2) {
-      screensaverActive = true;               // ดับเบิลคลิก = โหมดนาฬิกา
     } else {
-      // คลิกเดียว = เลื่อนไปดูเตียงถัดไปเอง (กลับเป็นอัตโนมัติเมื่อครบเวลาหรือมีเหตุใหม่)
+      clickCount = 0;                         // กดนานกว่ากดสั้นแต่ไม่ถึงปิดเครื่อง ไม่นับเป็นคลิก
+    }
+  }
+
+  // ---- ครบช่องนับคลิก: ตัดสินตามจำนวนครั้ง ----
+  if (clickCount > 0 && (now - lastReleaseTime > 280)) {
+    uint8_t n = clickCount;
+    clickCount = 0;
+    lastUserActivityTime = now;
+    if (displaySleeping) {                    // จอดับอยู่: ปลุกจออย่างเดียว
+      setDisplaySleep(false);
+      tone(BUZZER_PIN, 1800, 25);
+    } else if (screensaverActive) {           // โหมดนาฬิกา: ปลุกกลับหน้าปกติอย่างเดียว
+      screensaverActive = false;
+    } else if (n >= 3) {                      // สามครั้ง = ดับจอ
+      setDisplaySleep(true);
+      tone(BUZZER_PIN, 1800, 25);
+      return;
+    } else if (n == 2) {                      // สองครั้ง = โหมดนาฬิกา
+      screensaverActive = true;
+    } else {
+      // ครั้งเดียว = เลื่อนไปดูเตียงถัดไปเอง (กลับเป็นอัตโนมัติเมื่อครบเวลาหรือมีเหตุใหม่)
       int base = (manualFocusBed >= 0) ? manualFocusBed : currentFocusBed();
       manualFocusBed = (base + 1) % activeStationCount;
       manualFocusUntil = now + MANUAL_FOCUS_HOLD_MS;
@@ -1096,7 +1102,6 @@ void checkPageButton() {
     }
     uiMode = -1;
     updateHostDisplay();
-    clickCount = 0;
   }
 }
 
@@ -1980,6 +1985,7 @@ void setup() {
   rtc_gpio_deinit((gpio_num_t)POWER_BTN_PIN);   // คืนขาจากโหมด RTC หลังตื่นจาก deep sleep
   pinMode(POWER_BTN_PIN, INPUT_PULLUP);
   esp_sleep_wakeup_cause_t wakeup_reason = esp_sleep_get_wakeup_cause();
+  bool bootClearRequested = false;           // [1.2.0-TG] เพิ่ม: กดค้างครบเวลาตอนปลุกเครื่อง
 
   if (wakeup_reason == ESP_SLEEP_WAKEUP_EXT0 || wakeup_reason == ESP_SLEEP_WAKEUP_GPIO) {
     unsigned long pressStart = millis();
@@ -2000,7 +2006,12 @@ void setup() {
       enterDeepSleepWaitPowerButton();
     }
 
-    while (digitalRead(POWER_BTN_PIN) == LOW) { feedWatchdog(); delay(10); }
+    // [1.2.0-TG] เพิ่ม: กดค้างต่อจนครบ SETUP_HOLD_MS ตอนปลุกเครื่อง = ขอล้างค่าเครือข่าย (ทำหลังจอพร้อมแล้ว)
+    while (digitalRead(POWER_BTN_PIN) == LOW) {
+      feedWatchdog();
+      if (millis() - pressStart >= SETUP_HOLD_MS) bootClearRequested = true;
+      delay(10);
+    }
     delay(150);
   
   bootResetReason = esp_reset_reason();   // [4.9.0-TFT] เพิ่ม: จำไว้ว่ารีบูตครั้งล่าสุดเพราะอะไร
@@ -2012,7 +2023,6 @@ void setup() {
   analogSetAttenuation(ADC_11db);
   pinMode(HOST_BAT_ADC_PIN, INPUT);
 
-  pinMode(PAGE_BTN_PIN, INPUT_PULLUP);
   pinMode(BUZZER_PIN, OUTPUT);
   digitalWrite(BUZZER_PIN, LOW);
 
@@ -2052,22 +2062,23 @@ void setup() {
   // ESP-NOW ใช้ช่องของเราเตอร์ได้เลย เพราะ Station ไล่หาช่องเองอัตโนมัติ
   WiFi.persistent(false);
 
-  // [1.0.0-TG] เพิ่ม: กดปุ่มเปลี่ยนหน้าค้างตอนเปิดเครื่อง = ล้างค่าเครือข่ายแล้วเข้าโหมดตั้งค่า
+  // [1.2.0-TG] แก้: กดปุ่มค้างตอนเปิดเครื่อง SETUP_HOLD_MS (8 วินาที) = ล้างค่าเครือข่ายแล้วเข้าโหมดตั้งค่า
   // เป็นทางเดียวที่ตั้งค่าใหม่ได้โดยไม่ต้องต่อสาย เพราะเครื่องนี้ไม่มีหน้าเว็บตั้งค่าในโหมดปกติ
-  if (digitalRead(PAGE_BTN_PIN) == LOW) {
+  // สองทาง: ปลุกจาก deep sleep (วัดไว้แล้วข้างบน) หรือเสียบไฟใหม่ขณะกดปุ่มค้าง (วัดตรงนี้)
+  if (!bootClearRequested && digitalRead(POWER_BTN_PIN) == LOW) {
     unsigned long holdStart = millis();
-    while (digitalRead(PAGE_BTN_PIN) == LOW) {
+    while (digitalRead(POWER_BTN_PIN) == LOW) {
       feedWatchdog();
-      if (millis() - holdStart >= SETUP_HOLD_MS) {
-        clearWifiConfig();
-        tft.fillScreen(0x0000);
-        textAt("WIFI CLEARED", 40, 100, 2, C_YELLOW, 0x0000);
-        textAt("RELEASE BUTTON", 40, 130, 2, C_WHITE, 0x0000);
-        while (digitalRead(PAGE_BTN_PIN) == LOW) { feedWatchdog(); delay(10); }
-        break;
-      }
+      if (millis() - holdStart >= SETUP_HOLD_MS) { bootClearRequested = true; break; }
       delay(10);
     }
+  }
+  if (bootClearRequested) {
+    clearWifiConfig();
+    tft.fillScreen(0x0000);
+    textAt("WIFI CLEARED", 40, 100, 2, C_YELLOW, 0x0000);
+    textAt("RELEASE BUTTON", 40, 130, 2, C_WHITE, 0x0000);
+    while (digitalRead(POWER_BTN_PIN) == LOW) { feedWatchdog(); delay(10); }
   }
   loadWifiConfig();
 
@@ -2117,8 +2128,7 @@ void loop() {
   if (portalActive) server.handleClient();   // [1.0.0-TG] แก้: เฉพาะโหมดตั้งค่า
   serviceCommands();                         // [1.0.0-TG] เพิ่ม: ทำคำสั่งที่เธรดส่งรับมาจากพีซี
 
-  checkSmartphonePowerButton();
-  checkPageButton();
+  checkHostButton();                         // [1.2.0-TG] แก้: ปุ่มเดียวทำทุกอย่าง
   handleBuzzerAlarm();
   handleBatteryChime();                      // [1.1.0-TG] เพิ่ม: เสียงเตือนแบตเตอรี่ต่ำ
 

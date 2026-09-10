@@ -24,8 +24,10 @@ SHARED_INO = [
     'alertTextEn', 'handleBuzzerAlarm', 'handleNearEndChime', 'anyNearEndPending',
     'acknowledgeAllNearEnd', 'dripAnimPhase', 'anyBedDripping', 'bedNeedsAttention',
     'macTail', 'jsonEscape', 'readHostBattery', 'calculateBatteryPct',
-    'checkPageButton', 'checkSmartphonePowerButton', 'loadBedConfigs', 'saveBedConfig',
+    'loadBedConfigs', 'saveBedConfig',
 ]
+# ฟังก์ชันปุ่มของ Host-OLED/Host-TFT28 (checkPageButton, checkSmartphonePowerButton) ไม่อยู่ในรายการที่ต้องเหมือน:
+# Host-Gateway และ Host-TFT-Gateway รวมเป็นปุ่มเดียว (checkHostButton) โดยตั้งใจ ทดสอบด้วย tools/gateway-test และ tools/v4-test
 # ใน HostScreen.h ฟังก์ชันที่ Host-Gateway แก้ไว้ตั้งใจ (ที่เหลือต้องเหมือน)
 SCREEN_DIFFERS = {'updateHostOLED', 'drawTopBar'}
 
@@ -43,7 +45,7 @@ SHARED_DEFINES = [
     'ID_CONFLICT_MIN_FLIPS', 'HEARD_REMEMBER_MS', 'MIN_OCCLUSION_MS', 'NO_SIGNAL_MS',
     'MAX_OCCLUSION_MS', 'RATE_DEVIATION_HOLD_MS', 'SNOOZE_MS', 'NEAR_END_REMIND_MS',
     'DEFAULT_NEAR_END_PCT', 'MAX_SUPPORTED_STATIONS', 'OLED_ANIM_INTERVAL_MS', 'OLED_IDLE_INTERVAL_MS',
-    'DROP_FALL_MS', 'HOST_BAT_ADC_PIN', 'POWER_BTN_PIN', 'PAGE_BTN_PIN', 'BUZZER_PIN',
+    'DROP_FALL_MS', 'HOST_BAT_ADC_PIN', 'POWER_BTN_PIN', 'BUZZER_PIN',
     'OLED_SDA_PIN', 'OLED_SCL_PIN', 'OLED_I2C_HZ',
 ]
 
@@ -53,8 +55,8 @@ TFT_SHARED_WITH_TFT28 = [
     'isStationOccluded', 'alertCodeForStation', 'isCriticalAlert', 'safeDropFactor', 'safeNearPct',
     'isSnoozed', 'alertTextEn', 'handleBuzzerAlarm', 'handleNearEndChime', 'anyNearEndPending',
     'acknowledgeAllNearEnd', 'bedUiStatus', 'bedPct', 'bedMinutesLeft', 'autoFocusBed',
-    'currentFocusBed', 'readHostBattery', 'calculateBatteryPct', 'checkPageButton',
-    'checkSmartphonePowerButton', 'loadBedConfigs', 'saveBedConfig', 'updateMainScreen',
+    'currentFocusBed', 'readHostBattery', 'calculateBatteryPct',
+    'loadBedConfigs', 'saveBedConfig', 'updateMainScreen',
     'updateHostDisplay', 'resetUiCaches',
 ]
 # ส่วนลิงก์พีซีต้องเหมือน Host-Gateway (ข้อความและคำสั่งฝั่งพีซีใช้เซิร์ฟเวอร์ตัวเดียวกัน)
@@ -169,11 +171,13 @@ def main():
     s28 = functions(io.open(os.path.join(ROOT, 'Host-TFT28', 'HostScreen.h'), encoding='utf-8').read())
     stg = functions(io.open(os.path.join(ROOT, 'Host-TFT-Gateway', 'HostScreen.h'), encoding='utf-8').read())
     # updateBottomBar แก้ไว้ตั้งใจ (เพิ่มบรรทัดแบตเตอรี่ต่ำ [1.1.0-TG]) ที่เหลือต้องเหมือนทุกฟังก์ชัน
-    s28c = {k: v for k, v in s28.items() if k != 'updateBottomBar'}
-    stgc = {k: v for k, v in stg.items() if k != 'updateBottomBar'}
+    # drawAlarmFramework/drawSaverFramework แก้ข้อความให้บอกปุ่มเดียว [1.2.0-TG]
+    TFT_SCREEN_EDITED = {'updateBottomBar', 'drawAlarmFramework', 'drawSaverFramework'}
+    s28c = {k: v for k, v in s28.items() if k not in TFT_SCREEN_EDITED}
+    stgc = {k: v for k, v in stg.items() if k not in TFT_SCREEN_EDITED}
     if s28c != stgc or set(s28) != set(stg):
-        print('  ** HostScreen.h ของ Host-TFT-Gateway ต่างจาก Host-TFT28 (ต้องเหมือนทุกฟังก์ชัน ยกเว้น updateBottomBar) **'); problems += 1
-    print('HostScreen.h (TFT): %d ฟังก์ชันเหมือน Host-TFT28 (ยกเว้น updateBottomBar)' % len(s28c))
+        print('  ** HostScreen.h ของ Host-TFT-Gateway ต่างจาก Host-TFT28 (ต้องเหมือนทุกฟังก์ชัน ยกเว้น updateBottomBar กับข้อความปุ่ม) **'); problems += 1
+    print('HostScreen.h (TFT): %d ฟังก์ชันเหมือน Host-TFT28 (ยกเว้นที่แก้ตั้งใจ 3 ตัว)' % len(s28c))
     dd = [io.open(os.path.join(ROOT, d, 'drop_detector.h'), 'rb').read() for d in ('Station', 'Station-Thin')]
     if dd[0] != dd[1]:
         print('  ** drop_detector.h ของ Station-Thin ต่างจาก Station (ต้องเหมือนทุกไบต์) **'); problems += 1

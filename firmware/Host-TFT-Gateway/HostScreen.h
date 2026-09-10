@@ -1,8 +1,8 @@
 /**
  * @file      HostScreen.h
  * @brief     ทุกอย่างที่วาดลงจอสี TFT 2.8 นิ้ว ของเครื่องส่วนกลาง
- * @version   1.1.0-TG
- * @date      2026-11-20
+ * @version   1.2.0-TG
+ * @date      2026-11-21
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
  * @par Organization
@@ -17,6 +17,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 1.2.0-TG | 2026-11-21 | ข้อความบนจอบอกปุ่มเดียว (หน้าเตือนและหน้านาฬิกา) |
  * | 1.1.0-TG | 2026-11-20 | แถบล่างบอกเตียงที่แบตเตอรี่ต่ำและ Host ต่ำ (ต่อจากเหตุวิกฤตและเตือนใกล้หมด) |
  * | 1.0.0-TG | 2026-11-19 | แยกมาจาก Host-TFT28: ไม่มีการเปลี่ยนในไฟล์นี้ (แท่งสัญญาณบนหัวจอส่งค่าแท่งแทนจำนวนอุปกรณ์ที่ต่อ AP โดยไม่แก้ฟังก์ชันวาด) |
  * | 4.8.1 | 2026-09-23 | แยกออกมาจากไฟล์หลัก ย้ายที่อยู่ล้วน ๆ ไม่ได้แก้เนื้อในแม้แต่บรรทัดเดียว |
@@ -292,7 +293,7 @@ void drawAlarmFramework() {
   textRight(pct >= 0 ? ("INFUSED " + String(pct) + "%") : String("INFUSED --"), 288, 130, 1, C_DIM, C_BG);
 
   tft.fillRoundRect(10, 198, 300, 32, 8, C_WHITE);
-  textCenterIn("PRESS POWER = SNOOZE 2 MIN", 0, SCR_W, 208, 1, C_RED, C_WHITE);
+  textCenterIn("PRESS BUTTON = SNOOZE 2 MIN", 0, SCR_W, 208, 1, C_RED, C_WHITE);   // [1.2.0-TG] แก้: ปุ่มเดียว
   cacheAlarmRate = "";
 }
 
@@ -310,7 +311,7 @@ void updateAlarmScreen() {
 void drawSaverFramework() {
   tft.fillScreen(C_BG);
   textCenterIn("SMART IV HOST", 0, SCR_W, 24, 1, C_DIM, C_BG);
-  textCenterIn("PRESS ANY BUTTON TO WAKE", 0, SCR_W, 210, 1, C_DIM, C_BG);
+  textCenterIn("PRESS BUTTON TO WAKE", 0, SCR_W, 210, 1, C_DIM, C_BG);   // [1.2.0-TG] แก้: ปุ่มเดียว
   cacheClock = ""; cacheBottom = "";
 }
 

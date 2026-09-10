@@ -1,10 +1,11 @@
 #pragma once
 #include "Arduino.h"
 // สตับ Preferences (NVS) ฝั่ง PC — รวมทุกเมธอดที่เฟิร์มแวร์ทั้งสามตัวเรียกใช้
+inline int g_prefsClears = 0;   // นับครั้งที่เฟิร์มแวร์เรียก clear() ให้ชุดทดสอบตรวจว่าล้างค่าเครือข่ายจริงหรือไม่
 class Preferences {
 public:
   bool begin(const char*, bool = false) { return true; }
-  void end() {} void clear() {}
+  void end() {} void clear() { g_prefsClears++; }
   bool isKey(const char*) { return false; }
   int           getInt(const char* k, int d = 0) { return d; }
   unsigned int  getUInt(const char*, unsigned int d = 0) { return d; }

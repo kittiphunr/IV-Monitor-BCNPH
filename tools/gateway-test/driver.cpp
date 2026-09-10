@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <vector>
 
 FILE* g_ops = nullptr;
 SerialClass Serial;
@@ -23,7 +24,15 @@ unsigned long millis(){ return g_millis; }
 unsigned long micros(){ return g_millis*1000UL; }
 void delay(unsigned long ms){ g_millis += ms; }
 void delayMicroseconds(unsigned long us){ g_millis += us/1000; }
-void pinMode(int,int){} void digitalWrite(int,int){} int digitalRead(int){return 1;}
+void pinMode(int,int){} void digitalWrite(int,int){}
+// ปุ่ม (GPIO 4) ตามสคริปต์เวลา: g_btnEv คือรายการ (เวลา, ระดับ) ที่เรียงตามเวลา ไม่มีสคริปต์ = ปล่อยปุ่ม (HIGH)
+std::vector<std::pair<unsigned long,int>> g_btnEv;
+int digitalRead(int pin) {
+  if (pin != 4) return 1;
+  int lvl = 1;
+  for (auto& e : g_btnEv) { if (e.first <= g_millis) lvl = e.second; else break; }
+  return lvl;
+}
 int analogRead(int){ return 2400; }
 void analogReadResolution(int){} void analogSetAttenuation(adc_attenuation_t){}
 void tone(int,unsigned int,unsigned long){} void noTone(int){}
@@ -50,8 +59,9 @@ bool getLocalTime(struct tm* info, unsigned long){
 }
 void rtc_gpio_pullup_en(int){} void rtc_gpio_pulldown_dis(int){} void rtc_gpio_deinit(int){}
 int  esp_sleep_enable_ext0_wakeup(int,int){ return 0; }
-void esp_deep_sleep_start(){}
-esp_sleep_wakeup_cause_t esp_sleep_get_wakeup_cause(){ return (esp_sleep_wakeup_cause_t)0; }
+int g_deepSleeps = 0; int g_wakeCause = 0;
+void esp_deep_sleep_start(){ g_deepSleeps++; }
+esp_sleep_wakeup_cause_t esp_sleep_get_wakeup_cause(){ return (esp_sleep_wakeup_cause_t)g_wakeCause; }
 int  esp_now_deinit(){ return 0; }
 int  esp_wifi_set_ps(int){ return 0; }
 bool ledcAttach(int,int,int) { return true; }
@@ -108,6 +118,7 @@ static void setupIdentity() {
 
 // ---------------------------------------------------------------------------
 static void unitTests() {
+  g_ops = fopen("/dev/null", "w");   // ตัวจำลองจอเขียนคำสั่งวาดลงไฟล์นี้ การทดสอบนี้ไม่ใช้ภาพ
   printf("ขนาดโครงสร้าง: struct_message=%d, struct_host_sync=%d, StationData=%d ไบต์, stations[%d]=%.1f KB\n\n",
          (int)sizeof(struct_message), (int)sizeof(struct_host_sync), (int)sizeof(StationData),
          MAX_SUPPORTED_STATIONS, sizeof(stations) / 1024.0);
@@ -222,6 +233,86 @@ static void unitTests() {
   check(gatewayLine().length() <= 25, "ข้อความยาวไม่เกินความกว้างจอ (25 ตัวอักษร)");
   pcConfigured = false;
   check(gatewayLine() == String("NO PC SET") || gatewayLine() == String("NO ROUTER"), "ยังไม่ตั้งพีซีแสดงสถานะที่ถูกต้อง");
+  printf("\nปุ่มเดียว (Host-Gateway จอ OLED)\n");
+  {
+    auto press = [&](unsigned long at, unsigned long dur) { g_btnEv.push_back({at, 0}); g_btnEv.push_back({at + dur, 1}); };
+    auto run = [&](unsigned long untilMs) { while (g_millis < untilMs) { g_millis += 10; checkHostButton(); } };
+    auto fresh = [&]() {
+      resetWorld(5); g_btnEv.clear(); g_deepSleeps = 0; g_millis += 5000;
+      currentOledPage = 0; oledDisplaySleeping = false; oledScreensaverActive = false;
+      globalAlarmTriggered = false; globalSnoozeUntil = 0; isPowerOffProgressActive = false;
+    };
+    unsigned long t;
+
+    fresh(); t = g_millis; press(t + 100, 100); run(t + 800);
+    check(currentOledPage == 1, "กดสั้นครั้งเดียว -> หน้าถัดไป");
+
+    fresh(); t = g_millis; press(t + 100, 100); press(t + 350, 100); run(t + 1200);
+    check(oledScreensaverActive && currentOledPage == 0, "กดสองครั้ง -> โหมดนาฬิกา (หน้าไม่เลื่อน)");
+
+    fresh(); t = g_millis; press(t + 100, 100); press(t + 350, 100); press(t + 600, 100); run(t + 1500);
+    check(oledDisplaySleeping && !oledScreensaverActive, "กดสามครั้ง -> ดับจอ");
+    t = g_millis; g_btnEv.clear(); press(t + 100, 100); run(t + 800);
+    check(!oledDisplaySleeping && currentOledPage == 0, "จอดับอยู่ กดครั้งเดียว -> ปลุกจออย่างเดียว ไม่เลื่อนหน้า");
+
+    fresh(); oledScreensaverActive = true; t = g_millis; press(t + 100, 100); run(t + 800);
+    check(!oledScreensaverActive && currentOledPage == 0, "อยู่โหมดนาฬิกา กดครั้งเดียว -> กลับหน้าปกติอย่างเดียว ไม่เลื่อนหน้า");
+
+    fresh(); globalAlarmTriggered = true; t = g_millis; press(t + 100, 100); run(t + 215);
+    check(globalSnoozeUntil > g_millis, "มีเสียงเตือน กดสั้น -> พักเสียงทันที (ไม่รอช่องนับคลิก)");
+    run(t + 1500);
+    check(currentOledPage == 0, "กดพักเสียงแล้วไม่ถูกนับเป็นการเลื่อนหน้า");
+    globalAlarmTriggered = true;
+    check(globalSnoozeUntil > g_millis, "ระหว่างพักเสียง เสียงเตือนถูกพักอยู่");
+    t = g_millis; g_btnEv.clear(); press(t + 100, 100); run(t + 800);
+    check(currentOledPage == 1, "หลังพักเสียงแล้ว กดสั้นกลับไปเลื่อนหน้าได้ตามปกติ");
+
+    fresh(); stations[0].active = true; stations[0].isRunning = true; stations[0].lastRecvTime = g_millis; stations[0].alertCode = ALERT_NEAR_END; stations[0].nearEndAck = false; stations[0].cfg.planVolumeMl = 1000;
+    t = g_millis; press(t + 100, 100);
+    check(anyNearEndPending(), "ก่อนกด: มีเตือนใกล้หมดค้างอยู่");
+    run(t + 215);
+    check(stations[0].nearEndAck && !anyNearEndPending(), "มีเตือนใกล้หมด กดสั้น -> รับทราบทันที");
+    run(t + 1500);
+    check(currentOledPage == 0, "กดรับทราบแล้วไม่ถูกนับเป็นการเลื่อนหน้า");
+
+    fresh(); oledScreensaverActive = true; globalAlarmTriggered = true; t = g_millis; press(t + 100, 100); run(t + 215);
+    check(globalSnoozeUntil > g_millis && !oledScreensaverActive, "มีเสียงเตือนขณะโหมดนาฬิกา กดสั้น -> พักเสียงและออกจากโหมดนาฬิกา");
+
+    fresh(); t = g_millis; press(t + 100, 1000); run(t + 2500);
+    check(g_deepSleeps == 0 && !isPowerOffProgressActive && currentOledPage == 0, "กดค้าง 1 วินาทีแล้วปล่อย -> ยกเลิกการปิดเครื่อง ไม่เลื่อนหน้า");
+
+    fresh(); t = g_millis; press(t + 100, 420); run(t + 1500);
+    check(g_deepSleeps == 0 && currentOledPage == 0 && !oledScreensaverActive, "กด 0.42 วินาที (ยาวกว่ากดสั้นแต่ไม่ถึงค้าง) -> ไม่ทำอะไร");
+
+    fresh(); t = g_millis; press(t + 100, 2500); run(t + 4000);
+    check(g_deepSleeps == 1, "กดค้าง 2 วินาทีขึ้นไป -> ปิดเครื่อง (เข้า deep sleep)");
+
+    fresh(); t = g_millis; press(t + 100, 390); run(t + 1200);
+    check(currentOledPage == 1, "กด 0.39 วินาที ยังนับเป็นกดสั้น");
+  }
+
+  printf("\nปุ่มเดียว: ล้างค่าเครือข่ายตอนเปิดเครื่อง (Host-Gateway จอ OLED)\n");
+  {
+    auto bootWith = [&](int wakeCause, unsigned long holdMs) {
+      g_btnEv.clear(); g_millis = 0; g_prefsClears = 0; g_deepSleeps = 0; g_wakeCause = wakeCause;
+      if (holdMs > 0) { g_btnEv.push_back({0, 0}); g_btnEv.push_back({holdMs, 1}); }
+      setup();
+    };
+    bootWith(0, 0);
+    check(g_prefsClears == 0, "เสียบไฟปกติ ไม่กดปุ่ม -> ไม่ล้างค่า");
+    bootWith(0, 2000);
+    check(g_prefsClears == 0, "เสียบไฟขณะกดปุ่มค้าง 2 วินาที -> ไม่ล้างค่า (กันเผลอ)");
+    bootWith(0, 9000);
+    check(g_prefsClears >= 1, "เสียบไฟขณะกดปุ่มค้าง 8 วินาที -> ล้างค่าเครือข่าย");
+    bootWith(ESP_SLEEP_WAKEUP_EXT0, 2000);
+    check(g_prefsClears == 0 && g_deepSleeps == 0, "ปลุกเครื่องด้วยการกดค้าง 2 วินาที -> เปิดเครื่องปกติ ไม่ล้างค่า");
+    bootWith(ESP_SLEEP_WAKEUP_EXT0, 9000);
+    check(g_prefsClears >= 1, "ปลุกเครื่องแล้วกดค้างต่อถึง 8 วินาที -> ล้างค่าเครือข่าย");
+    bootWith(ESP_SLEEP_WAKEUP_EXT0, 600);
+    check(g_deepSleeps >= 1 && g_prefsClears == 0, "ปลุกเครื่องด้วยการกดสั้น (ไม่ถึง 1.5 วินาที) -> กลับไปหลับ ไม่ล้างค่า");
+    g_wakeCause = 0;
+  }
+
 }
 
 // ---------------------------------------------------------------------------
