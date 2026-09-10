@@ -19,11 +19,12 @@ const uint8_t u8g2_font_4x6_tf[1]={0}, u8g2_font_5x8_tf[1]={0}, u8g2_font_6x10_t
 const uint8_t u8g2_font_7x13_tf[1]={0}, u8g2_font_7x14B_tf[1]={0}, u8g2_font_helvB10_tf[1]={0};
 const uint8_t u8g2_font_helvB12_tf[1]={0}, u8g2_font_logisoso16_tf[1]={0}, u8g2_font_logisoso32_tf[1]={0};
 unsigned long g_millis = 0;
+unsigned long g_lowUntil = 0;   // ขา g_lowPin อ่านได้ LOW จนถึงเวลานี้ (จำลองการกดปุ่มค้าง)
 unsigned long millis(){ return g_millis; }
 unsigned long micros(){ return g_millis*1000UL; }
 void delay(unsigned long ms){ g_millis += ms; }
 void delayMicroseconds(unsigned long us){ g_millis += us/1000; }
-void pinMode(int,int){} void digitalWrite(int,int){} int digitalRead(int){return 1;}
+void pinMode(int,int){} void digitalWrite(int,int){} int g_lowPin = -1; int digitalRead(int p){ return (p == g_lowPin && g_millis < g_lowUntil) ? 0 : 1; }
 int analogRead(int){ return 2400; }
 void analogReadResolution(int){} void analogSetAttenuation(adc_attenuation_t){}
 void tone(int,unsigned int,unsigned long){} void noTone(int){}
@@ -50,8 +51,10 @@ bool getLocalTime(struct tm* info, unsigned long){
 }
 void rtc_gpio_pullup_en(int){} void rtc_gpio_pulldown_dis(int){} void rtc_gpio_deinit(int){}
 int  esp_sleep_enable_ext0_wakeup(int,int){ return 0; }
-void esp_deep_sleep_start(){}
-esp_sleep_wakeup_cause_t esp_sleep_get_wakeup_cause(){ return (esp_sleep_wakeup_cause_t)0; }
+int g_wakeCause = 0;   // 0 = เปิดเครื่องปกติ (cold boot), ESP_SLEEP_WAKEUP_EXT0 = ปลุกจาก deep sleep
+int g_deepSleepCalls = 0;
+void esp_deep_sleep_start(){ g_deepSleepCalls++; }
+esp_sleep_wakeup_cause_t esp_sleep_get_wakeup_cause(){ return (esp_sleep_wakeup_cause_t)g_wakeCause; }
 int  esp_now_deinit(){ return 0; }
 int  esp_wifi_set_ps(int){ return 0; }
 bool ledcAttach(int,int,int) { return true; }
@@ -225,10 +228,47 @@ static void unitTests() {
 }
 
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// [สุนัขเฝ้าบ้าน] setup() ต้องสมัครสุนัขเฝ้าบ้านทุกครั้งที่เปิดเครื่อง ทั้ง cold boot และปลุกจาก deep sleep
+// เดิมสามบรรทัด (bootResetReason / Serial.printf / setupLoopWatchdog) ตกอยู่ในบล็อก if ของการปลุก
+// จึงทำงานเฉพาะตอนปลุก ตอนเสียบไฟปกติไม่มีสุนัขเฝ้าบ้านเลย
+static void watchdogTests() {
+  printf("\nสุนัขเฝ้าบ้านถูกสมัครทุกครั้งที่เปิดเครื่อง (setup)\n");
+  g_lowPin = POWER_BTN_PIN;
+
+  // cold boot: ไม่มีสาเหตุการปลุก
+  wdtStatsReset(); g_wakeCause = 0; g_millis = 100000; g_lowUntil = 0; g_deepSleepCalls = 0;
+  bootResetReason = ESP_RST_UNKNOWN;
+  setup();
+  check(wdtStats().adds == 1, "cold boot: esp_task_wdt_add ถูกเรียกครั้งเดียว");
+  check(wdtStats().inits == 1, "cold boot: ตั้งค่าสุนัขเฝ้าบ้าน (esp_task_wdt_init) ครั้งเดียว");
+  check(bootResetReason == ESP_RST_POWERON, "cold boot: บันทึกสาเหตุการรีบูตแล้ว");
+  check(wdtMaxGapNow() < (unsigned long)LOOP_WDT_TIMEOUT_S * 1000UL, "cold boot: setup() ไม่ปล่อยเกิน LOOP_WDT_TIMEOUT_S โดยไม่ป้อน");
+  check(g_deepSleepCalls == 0, "cold boot: ไม่เข้า deep sleep");
+
+  // เส้นทางปิดเครื่อง ต้องเลิกเฝ้าและเข้า deep sleep ได้เหมือนเดิม
+  enterDeepSleepWaitPowerButton();
+  check(wdtStats().deletes == 1 && !wdtStats().registered, "ปิดเครื่อง: stopLoopWatchdog() ถอนสุนัขเฝ้าบ้านแล้ว");
+  check(g_deepSleepCalls == 1, "ปิดเครื่อง: เข้า deep sleep");
+
+  // ปลุกจาก deep sleep ด้วยการกดปุ่มค้างเกิน 1.5 วินาที
+  wdtStatsReset(); g_wakeCause = ESP_SLEEP_WAKEUP_EXT0; g_millis = 200000; g_lowUntil = g_millis + 2000; g_deepSleepCalls = 0;
+  bootResetReason = ESP_RST_UNKNOWN;
+  setup();
+  check(wdtStats().adds == 1, "ปลุก (EXT0): esp_task_wdt_add ถูกเรียกครั้งเดียว");
+  check(wdtStats().inits == 1, "ปลุก (EXT0): ตั้งค่าสุนัขเฝ้าบ้านครั้งเดียว");
+  check(bootResetReason == ESP_RST_POWERON, "ปลุก (EXT0): บันทึกสาเหตุการรีบูตแล้ว");
+  check(wdtMaxGapNow() < (unsigned long)LOOP_WDT_TIMEOUT_S * 1000UL, "ปลุก (EXT0): ลูปรอปุ่มและ setup() ป้อนสุนัขทันเวลา");
+  check(g_deepSleepCalls == 0, "ปลุก (EXT0): กดค้างพอ จึงไม่กลับไปหลับ");
+
+  g_wakeCause = 0; g_lowPin = -1;
+}
+
 int main(int argc, char** argv) {
   const char* mode = argc > 1 ? argv[1] : "unit";
   if (!strcmp(mode, "unit")) {
     unitTests();
+    watchdogTests();
     printf("\n%s\n", failures ? "มีข้อที่ไม่ผ่าน" : "ผ่านทุกข้อ");
     return failures ? 1 : 0;
   }
