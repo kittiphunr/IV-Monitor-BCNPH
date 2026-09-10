@@ -1,8 +1,8 @@
 /**
  * @file      StationScreen.h
  * @brief     ทุกอย่างที่วาดลงจอ TFT ของเครื่องประจำเตียง สายหลัก
- * @version   1.0.0-TH
- * @date      2026-11-19
+ * @version   1.1.0-TH
+ * @date      2026-11-20
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
  * @par Organization
@@ -17,6 +17,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 1.1.0-TH | 2026-11-20 | ไอคอนแบตเตอรี่ที่หัวจอเมื่อระดับต่ำ/วิกฤต และข้อความ LOW BATT ในหน้า 3 |
  * | 1.0.0-TH | 2026-11-19 | แยกมาจาก Station 7.10.0: สถานะสายพับบนภาพกระเปาะหยดมาจากรหัสเตือนของ Host แทนการตัดสินในเครื่อง ที่เหลือไม่แตะ |
  * | 7.10.0 | 2026-09-28 | การ์ดและแท่งสัญญาณแสดงสถานะ ONE-WAY |
  * | 7.8.0 | 2026-09-23 | แยกออกมาจากไฟล์หลัก ย้ายที่อยู่ล้วน ๆ ไม่ได้แก้เนื้อในแม้แต่บรรทัดเดียว |
@@ -80,6 +81,17 @@ void drawLinkBars(int x, int y, int rssi, bool online) {
   }
 }
 
+// [1.1.0-TH] เพิ่ม: ไอคอนแบตเตอรี่เล็ก ใช้เฉพาะตอนระดับต่ำ/วิกฤต (ปกติไม่วาดอะไร ไม่รกหัวจอ)
+// blink = true ตอนวิกฤตช่วงที่ต้อง "ดับ" ให้เหลือแต่กรอบ
+void drawBatteryGlyph(int x, int y, uint8_t level, bool blink) {
+  uint16_t col = (level == BAT_CRIT) ? COLOR_RED : COLOR_YELLOW;
+  tft.fillRect(x - 2, y - 3, 30, 15, UI_BAR);
+  if (level != BAT_LOW && level != BAT_CRIT) return;
+  tft.drawRoundRect(x, y, 20, 10, 2, col);
+  tft.fillRect(x + 20, y + 3, 2, 4, col);
+  if (!blink) tft.fillRect(x + 2, y + 2, (level == BAT_CRIT) ? 3 : 6, 6, col);
+}
+
 // ---- แถบบนสุด: ป้ายเตียงสีตามสถานะ | นาฬิกา | สัญญาณ ----
 void drawTopBar(bool force) {
   UiStatus st = uiStatusOf(uiAlertCode);
@@ -92,6 +104,7 @@ void drawTopBar(bool force) {
     cacheStatusBar = (int)st;
     cacheClock = "";
     cacheBars = -9999;
+    cacheBatKey = -9999;   // [1.1.0-TH] วาดไอคอนแบตเตอรี่ใหม่ด้วย
   } else if ((int)st != cacheStatusBar) {
     cacheStatusBar = (int)st;
     tft.fillRect(0, 22, 172, 2, uiStatusColor(st));
@@ -116,6 +129,14 @@ void drawTopBar(bool force) {
     cacheBars = barKey;
     tft.fillRect(148, 4, 18, 14, UI_BAR);
     drawLinkBars(150, 4, lastHostRssi, isHostOnline);
+  }
+
+  // [1.1.0-TH] เพิ่ม: ไอคอนแบตเตอรี่ต่ำ/วิกฤต (วิกฤตกะพริบครึ่งวินาที)
+  bool batBlink = (selfBat.level == BAT_CRIT) && (((millis() / 500) % 2) == 1);
+  int batKey = (int)selfBat.level * 2 + (batBlink ? 1 : 0);
+  if (batKey != cacheBatKey) {
+    cacheBatKey = batKey;
+    drawBatteryGlyph(118, 7, selfBat.level, batBlink);
   }
 }
 
@@ -385,13 +406,15 @@ void updatePage3Dynamic() {
   }
 
   float bv = readStationBattery();
-  String devKey = String(currentStationId) + ":" + String(safeDropFactor(dropFactor)) + ":" + String((int)(bv * 10)) + ":" + String(totalDrops);
+  String devKey = String(currentStationId) + ":" + String(safeDropFactor(dropFactor)) + ":" + String((int)(bv * 10)) + ":" + String(totalDrops) + ":" + String((int)selfBat.level);
   if (devKey != cacheP3c) {
     cacheP3c = devKey;
     char bed[12];
     snprintf(bed, sizeof(bed), "BED %02d", currentStationId);
     textAt(padTo(String(bed) + "  DF" + String(safeDropFactor(dropFactor)), 12), 14, 212, 2, COLOR_WHITE, UI_CARD);
     textAt(padTo("DROPS " + String(totalDrops), 22), 14, 236, 1, UI_DIM, UI_CARD);
+    if (selfBat.isLow())   // [1.1.0-TH] เพิ่ม: ระดับแบตเตอรี่ต่ำ/วิกฤตบอกเป็นคำ ๆ ท้ายบรรทัดหยด
+      textAt(batLevelWord(selfBat.level), 110, 236, 1, (selfBat.level == BAT_CRIT) ? COLOR_RED : COLOR_YELLOW, UI_CARD);
     String pw = (bv > 0.5f) ? ("BATT " + String(bv, 2) + " V") : String("POWER USB");
     textAt(padTo("FW " APP_VERSION "   " + pw, 22), 14, 252, 1, UI_DIM, UI_CARD);
   }

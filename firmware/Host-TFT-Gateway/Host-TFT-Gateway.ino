@@ -1,8 +1,8 @@
 /**
  * @file      Host-TFT-Gateway.ino
  * @brief     เครื่องส่วนกลางจอ TFT 2.8" รุ่นเกตเวย์ คำนวณทุกอย่างแทน Station แล้วส่งขึ้นพีซี
- * @version   1.0.0-TG
- * @date      2026-11-19
+ * @version   1.1.0-TG
+ * @date      2026-11-20
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
  * @par Organization
@@ -28,6 +28,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 1.1.0-TG | 2026-11-20 | ตรวจระดับแบตเตอรี่ทั้งของ Host เองและของทุกเตียง: ไอคอน แถบล่าง เสียงเตือนเบา ๆ เว้นช่วงนาน และส่งระดับขึ้นพีซี |
  * | 1.0.0-TG | 2026-11-19 | รุ่นแรก แตกจาก Host-TFT28 4.9.1-TFT ตัดเว็บ ล็อก CSV และ AP ออก เพิ่มลิงก์ขึ้นพีซี ใช้ Protocol v4 ให้ Host เป็นผู้คำนวณอัตราไหลและส่งผลกลับให้ Station แสดง |
  * | ↓ | ↓ | ป้ายรุ่นด้านล่างสืบมาจากโค้ดของ Host-TFT28 ที่ยกมาโดยไม่แก้ ใช้ตามรอยเหตุผลได้ใน Host-TFT28.ino |
  * | 4.9.1-TFT | 2026-09-28 | Sync บอกเตียงด้วยว่า Host ได้ยินมันอยู่หรือไม่ (บิตว่างใน flags ขนาดโครงสร้างไม่เปลี่ยน) |
@@ -55,6 +56,16 @@
  *   4) ตัด WebServer ล็อก CSV และ AP ออก ใช้ลิงก์ขึ้นพีซีแบบ Host-Gateway เวลามาจากพีซี
  *   5) การตัดสินเตือนทั้งหมดยังอยู่ที่ Host เหมือนเดิม ไม่ผ่านพีซี
  *   6) จอ TFT แสดงสถานะลิงก์พีซีแทนจำนวนอุปกรณ์ที่ต่อ AP
+ *
+ *  เปลี่ยนใน V1.1.0-TG: ตรวจระดับแบตเตอรี่ทั้งสองฝั่ง (battery_check.h ใช้ร่วมกับ Station-Thin)
+ *   - Host ตรวจแบตเตอรี่ของตัวเอง และของทุกเตียงจากแรงดัน (batteryMv) ที่เตียงส่งมาในแพ็กเก็ตขึ้น
+ *     เกณฑ์เดียวกับที่เครื่องเตียงตรวจตัวเอง: ต่ำ < 3.50 V วิกฤต < 3.35 V ต้องอยู่ต่อเนื่อง 30 วินาที
+ *   - ไอคอนแบตเตอรี่ที่หัวจอมีเครื่องหมาย ! เมื่อ Host เองต่ำ และแถบล่างบอกเตียงที่แบตต่ำ
+ *     (ลำดับความสำคัญ: เหตุวิกฤต > เตือนใกล้หมด > แบตต่ำ > ปกติ สีเหลือง/ส้ม ไม่ใช้แดงซึ่งสงวนไว้ให้เหตุทางคลินิก)
+ *   - เสียงเตือนเบา ๆ สองครั้งทุก 5 นาที (ต่ำ) หรือสามครั้งทุก 1 นาที (วิกฤต) เงียบเมื่อมีเหตุวิกฤตที่ยังไม่พักเสียง
+ *     หรือกำลังเตือนใกล้หมด และพักเสียงด้วยปุ่มเดียวกับเตือนปกติได้
+ *   - เตียงที่ออฟไลน์ไม่นับ (ระดับของมันเก่าแล้ว และมีเตือนเตียงหายอยู่แล้ว)
+ *   - ส่งระดับ batLevel ของ Host และของทุกเตียงขึ้นพีซีในสถานะที่ส่งทุกวินาที
  */
 
 #include <WiFi.h>
@@ -63,6 +74,7 @@
 #include <WebServer.h>
 #include <Preferences.h>
 #include <HTTPClient.h>          // [1.0.0-TG] เพิ่ม: ส่งสถานะขึ้นพีซี
+#include "battery_check.h"      // [1.1.0-TG] เพิ่ม: ตัวตรวจระดับแบตเตอรี่ ใช้ร่วมกับ Station-Thin
 #include "protocol_v4.h"        // [1.0.0-TG] เพิ่ม: Protocol v4 ใช้ร่วมกับ Station-Thin
 #include "rate_estimator.h"     // [1.0.0-TG] เพิ่ม: Host คำนวณอัตราไหลเอง
 #include <ctype.h>
@@ -87,7 +99,7 @@
 esp_reset_reason_t bootResetReason = ESP_RST_UNKNOWN;
 
 
-#define APP_VERSION         "1.0.0-TG"
+#define APP_VERSION         "1.1.0-TG"
 #define DEV_NAME            "กิตติพันธ์ รัตนคร"
 #define DEV_ROLE            "นักวิชาการคอมพิวเตอร์"
 #define DEV_INSTITUTION     "มหาวิทยาลัยมหาจุฬาลงกรณราชวิทยาลัย วิทยาเขตแพร่"
@@ -301,6 +313,7 @@ struct StationData {
 
   // [1.0.0-TG] เพิ่ม: ผลคำนวณอัตราไหลและคุณภาพลิงก์ (เดิมอัตราไหลมาจาก Station)
   RateEstimator est;
+  BatteryMonitor bat;            // [1.1.0-TG] เพิ่ม: ระดับแบตเตอรี่ของเตียงนี้ (จากแรงดันที่ส่งมา)
   bool     rateValid = false;
   uint8_t  srcMac[6] = {0};
   bool     macKnown = false;
@@ -313,7 +326,7 @@ struct StationData {
 struct SnapBed {
   bool     online, running, idConflict, macKnown, nearEndAck, caseActive;
   int8_t   rssi;
-  uint8_t  link, dropFactor, alertCode, nearEndPct, mac[6];
+  uint8_t  link, dropFactor, alertCode, nearEndPct, mac[6], batLevel;
   uint32_t rxTotal, totalDrops, msSinceLastDrop;
   float    battery, volumeMl, flowRateHr, targetRate, planVolume;
   char     patientName[64];
@@ -332,6 +345,15 @@ unsigned long lastOledUpdateTime     = 0;
 unsigned long lastSyncBroadcastTime  = 0;
 unsigned long globalSnoozeUntil      = 0;
 uint32_t globalMinuteCounter         = 0;
+
+// ---- ตรวจระดับแบตเตอรี่ ([1.1.0-TG] เพิ่ม) ----
+#define BAT_CHIME_LOW_MS        300000UL   // ต่ำ: เตือนทุก 5 นาที
+#define BAT_CHIME_CRIT_MS       60000UL    // วิกฤต: เตือนทุก 1 นาที
+BatteryMonitor hostBat;                    // แบตเตอรี่ของ Host เอง
+uint8_t        batChimeRemaining = 0;
+unsigned long  batChimeNextBeep  = 0;
+unsigned long  batChimeNextRound = 0;
+uint8_t        batChimeLevelSeen = BAT_NONE;   // ระดับที่เสียงเตือนรอบล่าสุดอิงอยู่ ใช้ตรวจว่าแย่ลงหรือยัง
 
 float hostBatteryVolts = 4.2;
 int hostBatteryPct = 100;
@@ -924,6 +946,46 @@ void handleBuzzerAlarm() {
   }
 }
 
+// [1.1.0-TG] เพิ่ม: อ่านระดับแบตเตอรี่ของ Host เอง (0 = ไม่มีวงจรวัด/ใช้ไฟ USB ไม่เตือน)
+void serviceHostBattery(unsigned long now) {
+  uint16_t mv = (hostBatteryVolts > 0.0f) ? (uint16_t)(hostBatteryVolts * 1000.0f + 0.5f) : 0;
+  hostBat.update((uint32_t)now, mv);
+}
+
+// ระดับแย่สุดในบรรดา Host และเตียงที่ยังออนไลน์ (เตียงออฟไลน์ไม่นับ ระดับของมันเก่าแล้ว)
+uint8_t worstBatteryLevel() {
+  uint8_t w = hostBat.level;
+  for (int i = 0; i < activeStationCount; i++) {
+    if (!isStationOnline(i)) continue;
+    if (stations[i].bat.level > w) w = stations[i].bat.level;
+  }
+  return w;
+}
+
+// เสียงเตือนแบตเตอรี่เบา ๆ เว้นช่วงนาน เป็นเรื่องบำรุงรักษา ไม่ใช่เหตุทางคลินิก
+// เงียบเมื่อมีเหตุวิกฤตที่ยังไม่พักเสียง หรือกำลังเตือนใกล้หมด และพักเสียงด้วยปุ่มเดียวกับเตือนปกติได้
+void handleBatteryChime() {
+  unsigned long now = millis();
+  uint8_t worst = worstBatteryLevel();
+  if (worst < BAT_LOW) { batChimeRemaining = 0; batChimeNextRound = 0; batChimeLevelSeen = BAT_NONE; return; }
+  // ระดับเปลี่ยน (โดยเฉพาะต่ำ -> วิกฤต) ต้องเตือนทันที ไม่รอรอบเดิมที่นับตามช่วงของระดับก่อนหน้าซึ่งนานสุด 5 นาที
+  if (worst != batChimeLevelSeen) { batChimeLevelSeen = worst; batChimeNextRound = 0; }
+  if ((globalAlarmTriggered && !isSnoozed()) || nearChimeRemaining > 0 || isSnoozed()) {
+    batChimeRemaining = 0;
+    return;
+  }
+  if (batChimeRemaining == 0 && (batChimeNextRound == 0 || now >= batChimeNextRound)) {
+    batChimeRemaining = (worst == BAT_CRIT) ? 3 : 2;
+    batChimeNextBeep  = now;
+    batChimeNextRound = now + ((worst == BAT_CRIT) ? BAT_CHIME_CRIT_MS : BAT_CHIME_LOW_MS);
+  }
+  if (batChimeRemaining > 0 && now >= batChimeNextBeep) {
+    tone(BUZZER_PIN, 1500, 70);
+    batChimeNextBeep = now + 250;
+    batChimeRemaining--;
+  }
+}
+
 void checkSmartphonePowerButton() {
   static unsigned long btnPressStart = 0;
   static unsigned long lastProgressFrameTime = 0;
@@ -1087,6 +1149,7 @@ void OnDataRecv(const uint8_t *mac, const uint8_t *incomingDataBytes, int len) {
   s.isRunning       = (incoming.flags & V4_UP_RUNNING) != 0;
   s.rssi            = pktRssi;
   s.batteryVolts    = incoming.batteryMv / 1000.0f;
+  s.bat.update(nowMs, incoming.batteryMv);   // [1.1.0-TG] เพิ่ม: ตรวจระดับแบตเตอรี่ของเตียง (0 = ไม่มีวงจรวัด ไม่เตือน)
   s.totalDrops      = incoming.totalDrops;
   s.msSinceLastDrop = incoming.msSinceLastDrop;
   s.lastRecvTime    = nowMs;
@@ -1269,11 +1332,17 @@ void updateTopBar() {
     if (lastStaRssi >= -60) bars = 4; else if (lastStaRssi >= -70) bars = 3;
     else if (lastStaRssi >= -80) bars = 2; else bars = 1;
   }
-  String right = String(bars) + (pcLinkUp ? "P" : "-") + ":" + String(hostBatteryPct / 5);
+  // [1.1.0-TG] เพิ่ม: เครื่องหมาย ! ข้างไอคอนแบตเตอรี่เมื่อแบตเตอรี่ของ Host ต่ำ (วิกฤตกะพริบครึ่งวินาที)
+  bool batBlink = (hostBat.level == BAT_CRIT) && (((millis() / 500) % 2) == 1);
+  String right = String(bars) + (pcLinkUp ? "P" : "-") + ":" + String(hostBatteryPct / 5) + ":" +
+                 String((int)hostBat.level) + (batBlink ? "b" : "");
   if (right != cacheTopRight) {
     cacheTopRight = right;
     drawWifiIcon(SCR_W - 52, 6, pcLinkUp ? bars : 0);
     drawBatteryIcon(SCR_W - 30, 7, hostBatteryPct);
+    tft.fillRect(SCR_W - 70, 4, 14, 16, C_TOPBAR);
+    if (hostBat.isLow() && !batBlink)
+      textAt("!", SCR_W - 66, 6, 2, (hostBat.level == BAT_CRIT) ? C_RED : C_YELLOW, C_TOPBAR);
   }
 }
 
@@ -1785,6 +1854,7 @@ void snapBeds(SnapBed *out, uint8_t n) {
     b.totalDrops      = s.totalDrops;
     b.msSinceLastDrop = s.msSinceLastDrop;
     b.battery         = s.batteryVolts;
+    b.batLevel        = s.bat.level;
     b.volumeMl        = s.totalVolumeMl;
     b.flowRateHr      = s.flowRate_ml_hr;
     b.targetRate      = s.cfg.targetRateHr;
@@ -1817,6 +1887,7 @@ String buildUplinkJson() {
   json += "\"channel\":" + String(currentWifiChannel()) + ",";
   json += "\"bat\":" + String(hostBatteryVolts, 2) + ",";
   json += "\"batPct\":" + String(hostBatteryPct) + ",";
+  json += "\"batLevel\":" + String(hostBat.level) + ",";
   json += "\"snooze\":" + String(isSnoozed() ? "true" : "false") + ",";
   json += "\"linkWeakPct\":" + String(LINK_WEAK_PCT) + ",";
   json += "\"syncFail\":" + String(syncSendFail) + ",";
@@ -1838,6 +1909,7 @@ String buildUplinkJson() {
     json += "\"mac\":\"" + String(mac) + "\",";
     json += "\"rxTotal\":" + String(b.rxTotal) + ",";
     json += "\"battery\":" + String(b.battery, 2) + ",";
+    json += "\"batLevel\":" + String(b.batLevel) + ",";
     json += "\"totalDrops\":" + String(b.totalDrops) + ",";
     json += "\"volumeMl\":" + String(b.volumeMl, 2) + ",";
     json += "\"flowRateHr\":" + String(b.flowRateHr, 2) + ",";
@@ -2048,6 +2120,7 @@ void loop() {
   checkSmartphonePowerButton();
   checkPageButton();
   handleBuzzerAlarm();
+  handleBatteryChime();                      // [1.1.0-TG] เพิ่ม: เสียงเตือนแบตเตอรี่ต่ำ
 
   unsigned long currentMillis = millis();
 
@@ -2074,6 +2147,7 @@ void loop() {
   if (currentMillis - lastCalcTime >= 2000) {
     hostBatteryVolts = readHostBattery();
     hostBatteryPct = calculateBatteryPct(hostBatteryVolts);
+    serviceHostBattery(currentMillis);       // [1.1.0-TG] เพิ่ม: ตัดสินระดับแบตเตอรี่ของ Host เอง
 
     portENTER_CRITICAL(&dataMux);
     for (int i = 0; i < MAX_SUPPORTED_STATIONS; i++) {

@@ -1,8 +1,8 @@
 /**
  * @file      HostScreen.h
  * @brief     ทุกอย่างที่วาดลงจอสี TFT 2.8 นิ้ว ของเครื่องส่วนกลาง
- * @version   1.0.0-TG
- * @date      2026-11-19
+ * @version   1.1.0-TG
+ * @date      2026-11-20
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
  * @par Organization
@@ -17,6 +17,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 1.1.0-TG | 2026-11-20 | แถบล่างบอกเตียงที่แบตเตอรี่ต่ำและ Host ต่ำ (ต่อจากเหตุวิกฤตและเตือนใกล้หมด) |
  * | 1.0.0-TG | 2026-11-19 | แยกมาจาก Host-TFT28: ไม่มีการเปลี่ยนในไฟล์นี้ (แท่งสัญญาณบนหัวจอส่งค่าแท่งแทนจำนวนอุปกรณ์ที่ต่อ AP โดยไม่แก้ฟังก์ชันวาด) |
  * | 4.8.1 | 2026-09-23 | แยกออกมาจากไฟล์หลัก ย้ายที่อยู่ล้วน ๆ ไม่ได้แก้เนื้อในแม้แต่บรรทัดเดียว |
  *
@@ -89,10 +90,13 @@ void drawTopBarFramework() {
 
 // ---- แถบสรุปเหตุการณ์ด้านล่าง ----
 void updateBottomBar() {
-  int alarm = -1, near = -1;
+  int alarm = -1, near = -1, batBed = -1;
   for (int i = 0; i < activeStationCount; i++) {
     if (alarm < 0 && bedIsAlarm(bedUiStatus(i))) alarm = i;
     if (near < 0 && stations[i].alertCode == ALERT_NEAR_END && !stations[i].nearEndAck) near = i;
+    // [1.1.0-TG] เพิ่ม: เตียงที่ออนไลน์และแบตเตอรี่แย่สุด (เตียงออฟไลน์ไม่นับ)
+    if (isStationOnline(i) && stations[i].bat.isLow() &&
+        (batBed < 0 || stations[i].bat.level > stations[batBed].bat.level)) batBed = i;
   }
   int online = 0;
   for (int i = 0; i < activeStationCount; i++) if (isStationOnline(i)) online++;
@@ -105,6 +109,17 @@ void updateBottomBar() {
   } else if (near >= 0) {
     snprintf(buf, sizeof(buf), "BED %02d  PREPARE NEXT BAG", near + 1);
     bg = C_ORANGE; fg = C_BG;
+  } else if (batBed >= 0 || hostBat.isLow()) {
+    // [1.1.0-TG] เพิ่ม: แบตเตอรี่ต่ำเป็นเรื่องบำรุงรักษา อยู่ต่อจากเหตุวิกฤตและเตือนใกล้หมด ใช้เหลือง/ส้ม ไม่ใช้แดง
+    uint8_t lvl = hostBat.level;
+    if (batBed >= 0 && stations[batBed].bat.level > lvl) {
+      snprintf(buf, sizeof(buf), "BED %02d  %s  %d%%", batBed + 1, batLevelWord(stations[batBed].bat.level),
+               batteryPctFromMv((uint16_t)(stations[batBed].batteryVolts * 1000.0f + 0.5f)));
+      lvl = stations[batBed].bat.level;
+    } else {
+      snprintf(buf, sizeof(buf), "HOST  %s  %d%%", batLevelWord(hostBat.level), hostBatteryPct);
+    }
+    bg = (lvl == BAT_CRIT) ? C_ORANGE : C_YELLOW; fg = C_BG;
   } else {
     snprintf(buf, sizeof(buf), "ALL NORMAL   ONLINE %d/%d", online, activeStationCount);
     bg = C_CARD; fg = C_GREEN;

@@ -27,7 +27,7 @@ int analogRead(int){
   return v;
 }
 void analogReadResolution(int){} void analogSetAttenuation(adc_attenuation_t){}
-void tone(int,unsigned int,unsigned long){} void noTone(int){}
+int g_tones = 0; void tone(int,unsigned int,unsigned long){ g_tones++; } void noTone(int){}
 void randomSeed(unsigned long){} long random(long m){return 0;} long random(long a,long){return a;}
 void rgbLedWrite(int,int,int,int){} void neopixelWrite(int,int,int,int){}
 long map(long x,long a,long b,long c,long d){return (x-a)*(d-c)/(b-a)+c;}
@@ -198,6 +198,59 @@ int main(int argc,char** argv){
     esp_now_recv_info_t info; memset(&info, 0, sizeof(info)); OnHostDisplayRecv(&info, (const uint8_t*)&d, sizeof(d)); }
   check(currentFlowRate_ml_hr == rateKeep, "แพ็กเก็ตของเตียงอื่นไม่เปลี่ยนค่าบนจอเรา");
 
+
+  printf("\n7) ตรวจระดับแบตเตอรี่ของเครื่องเอง\n");
+  {
+    // วิ่งตัวเล่นเสียงทีละ 10 ms นาน ms มิลลิวินาที คืนจำนวนบีบที่ดัง (ผ่าน serviceBatteryChime และตัวคุมบัซเซอร์จริง)
+    auto chime = [&](unsigned long ms, uint8_t alert) {
+      int before = g_tones;
+      // ตัวคุมบัซเซอร์จริงเล่นเสียงเตือนเหตุวิกฤตเองด้วย จึงเรียกเฉพาะตอนไม่มีเหตุ เพื่อนับเฉพาะเสียงแบตเตอรี่
+      for (unsigned long t = 0; t < ms; t += 10) { g_millis += 10; if (alert == ALERT_NONE) handlePassiveBuzzerEngine(alert); serviceBatteryChime(g_millis, alert); }
+      return g_tones - before;
+    };
+    feedDown(F_OK, ALERT_NONE, 98, 1000, 100, 500, 10);
+    nearChimeRemaining = 0; nearNextChimeTime = 0; buzzerBeepUntil = 0;
+    g_millis += 1000; selfBat = BatteryMonitor();
+
+    // ไม่มีวงจรวัด (ค่าปริยายของสเก็ตช์) = ไม่ตรวจ ไม่เตือน
+    serviceBattery(g_millis, 0.0f);
+    check(selfBat.level == BAT_NONE, "ไม่มีวงจรวัด -> ไม่มีระดับ");
+    check(chime(600000, ALERT_NONE) == 0, "ไม่มีวงจรวัด -> ไม่มีเสียงเตือนเลยใน 10 นาที");
+    for (int i = 0; i < 3; i++) { g_millis += 1000; loop(); }
+    check(selfBat.level == BAT_NONE, "loop() ของเครื่องที่ไม่มีวงจรวัดไม่ตั้งระดับแบตเตอรี่");
+
+    // ต่ำ
+    selfBat = BatteryMonitor(); batChimeNextRound = 0; batChimeRemaining = 0;
+    serviceBattery(g_millis, 3.45f);
+    check(selfBat.level == BAT_LOW, "เปิดเครื่องที่ 3.45 V -> ต่ำ ทันที");
+    check(chime(3000, ALERT_NONE) == 2, "ต่ำ: เสียงสองครั้ง");
+    check(chime(290000, ALERT_NONE) == 0, "ต่ำ: เงียบระหว่าง 5 นาที (ไม่ถี่)");
+    check(chime(20000, ALERT_NONE) == 2, "ต่ำ: รอบถัดไปหลังครบ 5 นาที");
+
+    // วิกฤต
+    for (int i = 0; i < 31; i++) { g_millis += 1000; serviceBattery(g_millis, 3.30f); }
+    check(selfBat.level == BAT_CRIT, "ต่ำกว่า 3.35 V ต่อเนื่อง 30 วินาที -> วิกฤต");
+    int c = chime(3000, ALERT_NONE);
+    check(c == 3, "ต่ำ -> วิกฤต: เตือนวิกฤตทันที (สามครั้ง) ไม่รอรอบ 5 นาทีของระดับต่ำ");
+    check(chime(55000, ALERT_NONE) == 0, "วิกฤต: เงียบระหว่าง 1 นาที");
+    check(chime(8000, ALERT_NONE) == 3, "วิกฤต: รอบถัดไปหลังครบ 1 นาที");
+
+    // ไม่แย่งเสียงที่สำคัญกว่า
+    batChimeNextRound = 0; batChimeRemaining = 0; nearChimeRemaining = 0; buzzerBeepUntil = 0;
+    check(chime(5000, ALERT_OCCLUSION) == 0, "มีเหตุวิกฤตทางคลินิก -> เสียงเตือนแบตเตอรี่เงียบ");
+    batChimeNextRound = 0;
+    hostNearEndAck = false; nearEndAckRequest = false;
+    check(chime(5000, ALERT_NEAR_END) == 0, "กำลังเตือนใกล้หมดที่ยังไม่รับทราบ -> เสียงเตือนแบตเตอรี่เงียบ");
+
+    // กลับมาปกติ
+    for (int i = 0; i < 31; i++) { g_millis += 1000; serviceBattery(g_millis, 4.1f); }
+    check(selfBat.level == BAT_OK, "ชาร์จเต็ม -> ปกติ");
+    check(chime(60000, ALERT_NONE) == 0, "ปกติ -> ไม่มีเสียงเตือนแบตเตอรี่");
+    serviceBattery(g_millis, 3.30f); selfBat = BatteryMonitor(); serviceBattery(g_millis, 3.30f);
+    serviceBattery(g_millis + 1, 0.0f);
+    check(selfBat.level == BAT_NONE && chime(60000, ALERT_NONE) == 0, "เสียบ USB (แรงดัน 0) -> ล้างการเตือนทันที");
+  }
+
   printf("\n%s\n", failures ? "มีข้อที่ไม่ผ่าน" : "ผ่านทุกข้อ");
   if (failures) { fclose(g_ops); return 1; }
 
@@ -223,6 +276,17 @@ int main(int argc,char** argv){
   currentState = STATE_NORMAL_VIEW; stateNeedsRedraw = true; currentNursePage = 1;
   drawPage1Framework(); updatePage1Dynamic(); emitMark("p1_hostlost");
   stateNeedsRedraw = true; currentNursePage = 2; drawPage2Framework(); updatePage2Dynamic(); emitMark("p2_hostlost");
+  // ระดับแบตเตอรี่ต่ำ/วิกฤต: ไอคอนที่หัวจอและข้อความในหน้า 3
+  isHostOnline = true; lastHostRecvTime = g_millis;
+  feedDown(F_OK, ALERT_NONE, 98, 1000, 620, 232, 62);
+  currentState = STATE_NORMAL_VIEW;
+  selfBat = BatteryMonitor(); selfBat.update(g_millis, 3450);
+  stateNeedsRedraw = true; currentNursePage = 1; drawPage1Framework(); updatePage1Dynamic(); emitMark("p1_batlow");
+  stateNeedsRedraw = true; currentNursePage = 3; drawPage3Framework(); updatePage3Dynamic(); emitMark("p3_batlow");
+  selfBat = BatteryMonitor(); selfBat.update(g_millis, 3300);
+  g_millis = (g_millis / 1000) * 1000;           // ให้อยู่ช่วงสว่างของการกะพริบ
+  stateNeedsRedraw = true; currentNursePage = 1; drawPage1Framework(); updatePage1Dynamic(); emitMark("p1_batcrit");
+  drawTopBar(false); emitMark("p1_batcrit_b");
   fclose(g_ops);
   return 0;
 }
