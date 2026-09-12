@@ -47,6 +47,26 @@ SHARED_DEFINES = [
     'OLED_SDA_PIN', 'OLED_SCL_PIN', 'OLED_I2C_HZ',
 ]
 
+# Host-TFT-Gateway ต้องเหมือน Host-TFT28 ในตรรกะเตือน/ปุ่ม/แบตเตอรี่/การตัดสินสถานะเตียง
+TFT_SHARED_WITH_TFT28 = [
+    'evaluateClinicalAlerts', 'isStationOnline', 'isStationLostLink', 'occlusionThresholdMs',
+    'isStationOccluded', 'alertCodeForStation', 'isCriticalAlert', 'safeDropFactor', 'safeNearPct',
+    'isSnoozed', 'alertTextEn', 'handleBuzzerAlarm', 'handleNearEndChime', 'anyNearEndPending',
+    'acknowledgeAllNearEnd', 'bedUiStatus', 'bedPct', 'bedMinutesLeft', 'autoFocusBed',
+    'currentFocusBed', 'readHostBattery', 'calculateBatteryPct', 'checkPageButton',
+    'checkSmartphonePowerButton', 'loadBedConfigs', 'saveBedConfig', 'updateMainScreen',
+    'updateHostDisplay', 'resetUiCaches',
+]
+# ส่วนลิงก์พีซีต้องเหมือน Host-Gateway (ข้อความและคำสั่งฝั่งพีซีใช้เซิร์ฟเวอร์ตัวเดียวกัน)
+TFT_SHARED_WITH_GW = [
+    'urlDecode', 'cmdArg', 'enqueueCmd', 'parsePcReply', 'applyStationConfig', 'applyStationAck',
+    'applyPcTime', 'serviceCommands', 'pushToPc', 'uplinkTask', 'handlePortalRoot', 'handlePortalSave',
+    'htmlEscape', 'startSetupPortal', 'startStaMode', 'onStaConnected', 'serviceWifi', 'forceRadioAwake',
+    'attachEspNowPeer', 'loadWifiConfig', 'saveWifiConfig', 'savePcConfig', 'clearWifiConfig', 'jsonEscape',
+    'gatewayLine', 'syncSlotIntervalMs', 'requestSyncNow', 'requestSyncAll',
+    'serviceLinkQuality',
+]
+
 START = re.compile(r'^[A-Za-z_][\w:<>,\*& ]*?\b(\w+)\s*\([^;]*\)\s*\{\s*$')
 
 
@@ -125,6 +145,40 @@ def main():
         if a is None or a != b:
             print('  ** #define %s ต่าง: OLED=%r Gateway=%r **' % (d, a, b)); problems += 1
     print('ค่าคงที่ร่วม: %d ตัว' % len(SHARED_DEFINES))
+
+    # ---- Host-TFT-Gateway: ตรรกะเตือนต้องเหมือน Host-TFT28 และส่วนลิงก์พีซีต้องเหมือน Host-Gateway ----
+    tg = io.open(os.path.join(ROOT, 'Host-TFT-Gateway', 'Host-TFT-Gateway.ino'), encoding='utf-8').read()
+    t28 = io.open(os.path.join(ROOT, 'Host-TFT28', 'Host-TFT28.ino'), encoding='utf-8').read()
+    ftg, ft28 = functions(tg), functions(t28)
+    for name in TFT_SHARED_WITH_TFT28:
+        if name not in ft28:
+            print('  ไม่พบ %s ใน Host-TFT28 (รายการในตัวตรวจล้าสมัย?)' % name); problems += 1
+        elif name not in ftg:
+            print('  ไม่พบ %s ใน Host-TFT-Gateway' % name); problems += 1
+        elif ft28[name] != ftg[name]:
+            print('  ** Host-TFT-Gateway: %s ต่างจาก Host-TFT28 **' % name); problems += 1
+    print('Host-TFT-Gateway: ฟังก์ชันร่วมกับ Host-TFT28 %d ตัว' % len(TFT_SHARED_WITH_TFT28))
+    for name in TFT_SHARED_WITH_GW:
+        if name not in fg:
+            print('  ไม่พบ %s ใน Host-Gateway' % name); problems += 1
+        elif name not in ftg:
+            print('  ไม่พบ %s ใน Host-TFT-Gateway' % name); problems += 1
+        elif fg[name] != ftg[name]:
+            print('  ** Host-TFT-Gateway: %s ต่างจาก Host-Gateway **' % name); problems += 1
+    print('Host-TFT-Gateway: ฟังก์ชันลิงก์พีซีร่วมกับ Host-Gateway %d ตัว' % len(TFT_SHARED_WITH_GW))
+    s28 = functions(io.open(os.path.join(ROOT, 'Host-TFT28', 'HostScreen.h'), encoding='utf-8').read())
+    stg = functions(io.open(os.path.join(ROOT, 'Host-TFT-Gateway', 'HostScreen.h'), encoding='utf-8').read())
+    if s28 != stg:
+        print('  ** HostScreen.h ของ Host-TFT-Gateway ต่างจาก Host-TFT28 (ต้องเหมือนทุกฟังก์ชัน) **'); problems += 1
+    print('HostScreen.h (TFT): %d ฟังก์ชันเหมือน Host-TFT28' % len(s28))
+    dd = [io.open(os.path.join(ROOT, d, 'drop_detector.h'), 'rb').read() for d in ('Station', 'Station-Thin')]
+    if dd[0] != dd[1]:
+        print('  ** drop_detector.h ของ Station-Thin ต่างจาก Station (ต้องเหมือนทุกไบต์) **'); problems += 1
+    print('drop_detector.h: Station-Thin เหมือน Station ทุกไบต์' if dd[0] == dd[1] else '')
+    p4 = [io.open(os.path.join(ROOT, d, 'protocol_v4.h'), 'rb').read() for d in ('Station-Thin', 'Host-TFT-Gateway')]
+    if p4[0] != p4[1]:
+        print('  ** protocol_v4.h สองฝั่งไม่เหมือนกัน **'); problems += 1
+    print('protocol_v4.h: สองฝั่งเหมือนกันทุกไบต์' if p4[0] == p4[1] else '')
 
     print()
     if problems:
