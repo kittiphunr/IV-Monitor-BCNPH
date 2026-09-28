@@ -1,7 +1,7 @@
 /**
  * @file      Host-TFT28.ino
  * @brief     เฟิร์มแวร์เครื่องส่วนกลาง รุ่นจอสี TFT 2.8 นิ้ว
- * @version   4.9.0-TFT
+ * @version   4.9.1-TFT
  * @date      2026-09-23
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
@@ -21,6 +21,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 4.9.1-TFT | 2026-09-28 | Sync บอกเตียงด้วยว่า Host ได้ยินมันอยู่หรือไม่ (บิตว่างใน flags ขนาดโครงสร้างไม่เปลี่ยน) |
  * | 4.9.0-TFT | 2026-09-23 | เตียงที่หายไประหว่างให้น้ำเกลือมีเสียงเตือนแล้ว เพิ่มสุนัขเฝ้าบ้าน รายงานสาเหตุการรีบูต และปฏิเสธแพ็กเก็ตที่ค่าเป็นไปไม่ได้ |
  * | 4.8.1-TFT | 2026-09-23 | ย้ายโค้ดวาดจอออกไปไว้ที่ `HostScreen.h` ตรรกะไม่เปลี่ยนแม้แต่บรรทัดเดียว |
  * | 4.8.0-TFT | 2026-09-12 | เปลี่ยนจาก OLED 1.3" ขาวดำ เป็นจอสี TFT 2.8" พร้อมหน้าจอแนวทาง FOCUS |
@@ -106,7 +107,7 @@
 esp_reset_reason_t bootResetReason = ESP_RST_UNKNOWN;
 
 
-#define APP_VERSION         "4.9.0-TFT"
+#define APP_VERSION         "4.9.1-TFT"
 #define DEV_NAME            "กิตติพันธ์ รัตนคร"
 #define DEV_ROLE            "นักวิชาการคอมพิวเตอร์"
 #define DEV_INSTITUTION     "มหาวิทยาลัยมหาจุฬาลงกรณราชวิทยาลัย วิทยาเขตแพร่"
@@ -243,6 +244,8 @@ typedef struct __attribute__((packed)) struct_host_sync {
   uint8_t  hostChannel;
   uint8_t  nearEndPct;       // % ของปริมาตรตามแผนที่เริ่มเตือนใกล้หมด
   uint8_t  flags;            // bit0 = รับทราบเตือนใกล้หมดแล้ว
+                             // bit1 = Host ได้ยินเตียงนี้อยู่ ([4.9.1-TFT])
+                             // bit2 = Host รุ่นนี้รายงาน bit1 ([4.9.1-TFT]) รุ่นเก่าเป็น 0 เสมอ
 } struct_host_sync;          // 20 bytes
 
 static_assert(sizeof(struct_message) == 23, "struct_message must be 23 bytes (match Station)");
@@ -563,7 +566,10 @@ void broadcastSyncToNodes() {
     syncMsg.resetSeq     = stations[i].cfg.resetSeq;
     syncMsg.hostChannel  = ch;
     syncMsg.nearEndPct   = safeNearPct(stations[i].nearEndPct);
-    syncMsg.flags        = stations[i].nearEndAck ? 0x01 : 0x00;
+    // [4.9.1-TFT] แก้: บอกเตียงด้วยว่า Host ได้ยินมันอยู่หรือไม่ เดิมเตียงขึ้น ONLINE
+    // ได้ทั้งที่ Host ไม่เคยได้ยินมันเลย เพราะเตียงรู้แค่ว่าตัวเองได้ยิน Host
+    syncMsg.flags        = (stations[i].nearEndAck ? 0x01 : 0x00) | 0x04 |
+                           (isStationOnline(i) ? 0x02 : 0x00);
 
     esp_err_t r = esp_now_send(broadcastAddress, (uint8_t *)&syncMsg, sizeof(syncMsg));
     if (r != ESP_OK) {

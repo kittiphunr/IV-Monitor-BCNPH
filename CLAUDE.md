@@ -132,6 +132,7 @@ bash tools/split-check/run.sh            # การแยกโค้ดวา�
 bash tools/protocol-test/run.sh         # โครงสร้างแพ็กเก็ตตรงกันทุกรุ่น
 bash tools/detector-test/run.sh         # อัลกอริทึมตรวจจับหยด
 bash tools/host-rx-test/run.sh          # เส้นทางรับข้อมูลฝั่ง Host
+bash tools/link-state-test/run.sh       # ไฟสถานะการเชื่อมต่อสองทางของเครื่องประจำเตียง
 bash tools/rate-test/run.sh             # สูตรคำนวณอัตราการไหล
 bash tools/oled-check/run.sh            # คอมไพล์ Host รุ่นจอ OLED
 bash tools/touch-preview/run.sh         # คอมไพล์และเรนเดอร์ Host รุ่นจอสัมผัส

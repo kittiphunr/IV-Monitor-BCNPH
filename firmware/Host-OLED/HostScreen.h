@@ -1,7 +1,7 @@
 /**
  * @file      HostScreen.h
  * @brief     ทุกอย่างที่วาดลงจอ OLED 128x64 ของเครื่องส่วนกลาง
- * @version   4.7.7
+ * @version   4.9.0-OLED
  * @date      2026-09-23
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
@@ -17,6 +17,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 4.9.0-OLED | 2026-09-28 | ออกแบบหน้าจอใหม่ตาม Station ทั้งหัวจอ การ์ด ป้ายเตียงแบบทึบ แถบบอกหน้า และหน้ารายเตียงแบบ IV BAG |
  * | 4.7.7 | 2026-09-23 | แยกออกมาจากไฟล์หลัก ย้ายที่อยู่ล้วน ๆ ไม่ได้แก้เนื้อในแม้แต่บรรทัดเดียว |
  *
  * @warning  ถูก `#include` ท้ายไฟล์หลักก่อน `setup()` ห้ามย้ายขึ้นไปบนสุด
@@ -86,42 +87,193 @@ void drawDripMini(int x, int y, int h, int i) {
   }
 }
 
-// กระเปาะเต็มรูปแบบ กว้าง 15 px — ใช้ในหน้า 1-2 เตียง และหน้ารายละเอียด
-void drawDripChamber(int x, int y, int h, int i) {
-  u8g2.drawRFrame(x, y, 15, h, 3);
-  u8g2.drawBox(x + 6, y + 2, 3, 3);         // หัวหยด
+// ============================================================================
+// ชิ้นส่วนหน้าจอที่ใช้ภาษาการออกแบบเดียวกับ Station ([4.9.0-OLED] เพิ่มทั้งหมด)
+//
+// Station (จอ TFT สี 172x320) มีองค์ประกอบประจำอยู่สี่อย่าง
+//   1) แถบบนสุด: ป้ายเตียงแบบทึบ | นาฬิกากลางจอ | แท่งสัญญาณ แล้วมีแถบสีขีดใต้
+//   2) การ์ดขอบมน ป้ายเล็กตัวพิมพ์ใหญ่อยู่มุมบนซ้าย ตัวเลขใหญ่อยู่ใต้ป้าย
+//   3) ป้ายสถานะแบบเม็ดยา (NORMAL) และถุงน้ำเกลือที่ระดับน้ำลดลงจริง
+//   4) จุดบอกหน้าที่ขอบล่าง
+// จอนี้ขาวดำ 128x64 จึงแปลงดังนี้
+//   - สีของป้ายเตียงบอกสถานะ -> ป้ายกะพริบทึบ/โปร่งเมื่อมีเหตุวิกฤตที่ยังไม่พักเสียง
+//   - จุดบอกหน้า -> ใช้แถบใต้หัวจอแทน ช่วงของหน้าปัจจุบันหนา 3 พิกเซล
+//     เพราะจอสูงแค่ 64 พิกเซล ไม่มีแถวเหลือให้วางจุดที่ขอบล่าง
+//   - สีของการ์ดเตือน -> การ์ดทึบทั้งใบ (เหมือนเดิม)
+// ============================================================================
 
-  DripMode m = dripModeOf(i);
-  int poolTop = y + h - 9;
+// แถบบนสุด: ป้าย (ALL / B03 / NET) | นาฬิกา | สัญญาณเราเตอร์ หรือ AP
+void drawTopBar(const char *chip) {
+  bool alarm  = globalAlarmTriggered && !isSnoozed();
+  bool chipOn = !alarm || ((millis() / 400) % 2 == 0);
+  u8g2.setFont(u8g2_font_5x8_tf);
 
-  if (m == DRIP_OFFLINE) {
-    u8g2.drawLine(x + 4, y + 10, x + 10, y + h - 6);
-    u8g2.drawLine(x + 10, y + 10, x + 4, y + h - 6);
-    return;
-  }
-  if (m == DRIP_PAUSED) {
-    u8g2.drawBox(x + 4, y + 11, 2, h - 20);
-    u8g2.drawBox(x + 9, y + 11, 2, h - 20);
-    return;
-  }
-  if (m == DRIP_ALERT) {
-    u8g2.drawBox(x + 7, y + 10, 2, h - 22);
-    u8g2.drawBox(x + 7, y + h - 10, 2, 2);
-    return;
-  }
-
-  u8g2.drawBox(x + 2, poolTop, 11, 7);      // น้ำที่ก้นกระเปาะ
-  int pct = dripAnimPhase(i);
-  if (pct == -2) {
-    u8g2.setDrawColor(0);                   // คลื่นกระเพื่อมบนผิวน้ำ
-    u8g2.drawHLine(x + 3, poolTop + 1, 9);
+  int cw = (int)strlen(chip) * 5 + 6;
+  if (chipOn) {
+    u8g2.drawRBox(0, 0, cw, 9, 2);
+    u8g2.setDrawColor(0);
+    u8g2.drawStr(3, 7, chip);
     u8g2.setDrawColor(1);
-    u8g2.drawHLine(x + 2, poolTop - 1, 11);
-  } else if (pct >= 0) {
-    int top = y + 7;
-    int bot = poolTop - 3;
-    int dy  = top + ((bot - top) * pct) / 100;
-    u8g2.drawBox(x + 6, dy, 3, 3);
+  } else {
+    u8g2.drawRFrame(0, 0, cw, 9, 2);
+    u8g2.drawStr(3, 7, chip);
+  }
+
+  String clk = getOledClockStr();
+  u8g2.drawStr((128 - (int)clk.length() * 5) / 2, 7, clk.c_str());
+
+  // ขวาสุด: เกาะเราเตอร์ = แท่งสัญญาณสี่ขีดแบบเดียวกับ Station / เปิด AP เอง = คำว่า AP
+  if (netMode == NET_MODE_STA) {
+    int bars = 0;
+    if (lastStaRssi != 0) {
+      if (lastStaRssi >= -60)      bars = 4;
+      else if (lastStaRssi >= -70) bars = 3;
+      else if (lastStaRssi >= -80) bars = 2;
+      else                         bars = 1;
+    }
+    for (int b = 0; b < 4; b++) {
+      int h = 2 + b * 2;
+      int bx = 115 + b * 4;
+      if (b < bars) u8g2.drawBox(bx, 8 - h, 3, h);
+      else          u8g2.drawHLine(bx, 7, 3);   // ขีดที่ยังว่างเหลือแค่ฐาน
+    }
+  } else {
+    u8g2.drawStr(118, 7, "AP");
+  }
+
+  // แถบใต้หัวจอ = จุดบอกหน้า: หน้าปัจจุบันหนาขึ้น
+  int pages = activeStationCount + 2;               // หน้ารวม + รายเตียง + LINK DIAG
+  int seg   = 128 / pages;
+  int sx    = currentOledPage * seg;
+  int sw    = (currentOledPage >= pages - 1) ? (128 - sx) : seg;
+  u8g2.drawHLine(0, 10, 128);
+  u8g2.drawBox(sx, 9, sw, 3);
+}
+
+// ป้ายเม็ดยาแบบ Station — เหตุผิดปกติ = ทึบ ตัวอักษรกลับสี / ปกติ = โปร่ง
+void drawPill(int x, int y, int w, int h, const char *text, bool filled) {
+  u8g2.setFont(u8g2_font_5x8_tf);
+  int tx = x + (w - (int)strlen(text) * 5) / 2;
+  int ty = y + h - 2;
+  if (filled) {
+    u8g2.drawRBox(x, y, w, h, 3);
+    u8g2.setDrawColor(0);
+    u8g2.drawStr(tx, ty, text);
+    u8g2.setDrawColor(1);
+  } else {
+    u8g2.drawRFrame(x, y, w, h, 3);
+    u8g2.drawStr(tx, ty, text);
+  }
+}
+
+// คำในป้ายเม็ดยา — ถ้อยคำเดียวกับป้ายสถานะของ Station (NORMAL ฯลฯ) ไม่เกิน 7 ตัวอักษร
+const char* pillWordOf(int i) {
+  const StationData &s = stations[i];
+  if (!isStationOnline(i))  return (s.alertCode == ALERT_LOST_LINK) ? "LOST" : "OFFLINE";
+  if (s.idConflict)         return "DUP ID";
+  if (!s.isRunning)         return "PAUSED";
+  switch (s.alertCode) {
+    case ALERT_TOO_FAST:  return "FAST";
+    case ALERT_TOO_SLOW:  return "SLOW";
+    case ALERT_OCCLUSION: return "NO FLOW";
+    case ALERT_NO_SIGNAL: return "NO DRIP";
+    case ALERT_COMPLETE:  return "DONE";
+    case ALERT_NEAR_END:  return s.nearEndAck ? "NEAR" : "NEW BAG";
+    default:              return "NORMAL";
+  }
+}
+
+// ป้ายเล็กของการ์ด (RATE, LEFT ...) ตามแบบ Station ใช้ฟอนต์ 4x6
+void drawCardLabel(int x, int y, const char *s) {
+  u8g2.setFont(u8g2_font_4x6_tf);
+  u8g2.drawStr(x, y, s);
+}
+
+// ถุงน้ำเกลือที่ระดับน้ำ = ปริมาตรที่เหลือตามแผน แบบเดียวกับหน้า IV BAG ของ Station
+void drawIvBag(int x, int y, int w, int h, int i) {
+  const StationData &s = stations[i];
+  u8g2.drawBox(x + w / 2 - 2, y - 2, 4, 2);          // หูแขวน
+  u8g2.drawRFrame(x, y, w, h, 3);
+  for (int k = 1; k <= 3; k++) {                      // ขีดบอกระดับ 25/50/75%
+    int ty = y + 2 + (h - 4) * k / 4;
+    u8g2.drawHLine(x + w - 4, ty, 2);
+  }
+  if (s.cfg.planVolumeMl <= 0) {                      // ยังไม่มีแผน = ไม่รู้ว่าเหลือเท่าไร
+    u8g2.setFont(u8g2_font_5x8_tf);
+    u8g2.drawStr(x + w / 2 - 2, y + h / 2 + 3, "?");
+    return;
+  }
+  float left = 1.0f - s.totalVolumeMl / s.cfg.planVolumeMl;
+  if (left < 0.0f) left = 0.0f;
+  if (left > 1.0f) left = 1.0f;
+  int fh = (int)((h - 4) * left + 0.5f);
+  if (fh > 0) u8g2.drawBox(x + 2, y + h - 2 - fh, w - 5, fh);
+}
+
+// เวลาที่เหลือของถุงนี้ เช่น 3h52m — ไม่มีแผนหรือไม่ไหล = "--"
+String timeLeftStr(int i) {
+  const StationData &s = stations[i];
+  float rate = s.flowRate_ml_hr;
+  float left = s.cfg.planVolumeMl - s.totalVolumeMl;
+  if (s.cfg.planVolumeMl <= 0 || rate <= 0.5f || !isStationOnline(i) || !s.isRunning) return "--";
+  if (left <= 0) return "0m";
+  long mins = (long)(left / rate * 60.0f + 0.5f);
+  char b[12];
+  if (mins >= 60) snprintf(b, sizeof(b), "%ldh%02ldm", mins / 60, mins % 60);
+  else            snprintf(b, sizeof(b), "%ldm", mins);
+  return String(b);
+}
+
+// ----------------------------------------------------------------------------
+// หน้ารายเตียง — ผังเดียวกับหน้า IV BAG ของ Station ([4.9.0-OLED] เพิ่ม)
+//   ซ้าย  ถุงน้ำเกลือ + กระเปาะหยด (จังหวะหยดล็อกกับหยดจริงที่เตียง)
+//   ขวา   RATE ตัวใหญ่ | ป้ายสถานะเม็ดยา | mL/h และ SET
+//   ล่าง  LEFT ปริมาตรที่เหลือ และเวลาที่เหลือ
+// ----------------------------------------------------------------------------
+void renderBedDetail(int idx) {
+  const StationData &s = stations[idx];
+  bool isOnline = isStationOnline(idx);
+  bool flowing  = isOnline && s.isRunning;
+
+  drawIvBag(1, 14, 18, 28, idx);
+  u8g2.drawVLine(9, 42, 3);                           // สายจากถุงลงกระเปาะ
+  drawDripMini(7, 45, 12, idx);
+  u8g2.drawVLine(9, 57, 5);                           // สายต่อลงไปหาผู้ป่วย
+
+  drawCardLabel(24, 18, "RATE");
+  drawPill(86, 12, 42, 10, pillWordOf(idx), bedNeedsAttention(idx) ||
+           (s.alertCode == ALERT_NEAR_END && !s.nearEndAck));
+
+  char b[16];
+  if (flowing) {
+    snprintf(b, sizeof(b), "%.0f", s.flowRate_ml_hr);
+    u8g2.setFont(s.flowRate_ml_hr >= 999.5f ? u8g2_font_logisoso16_tf : u8g2_font_logisoso32_tf);
+    u8g2.drawStr(24, 51, b);            // เว้นสี่แถวเหนือบรรทัด LEFT ไม่ให้ตัวเลขชนกัน
+  } else {
+    u8g2.setFont(u8g2_font_logisoso16_tf);
+    u8g2.drawStr(24, 42, isOnline ? "PAUSED" : "OFFLINE");
+  }
+
+  drawCardLabel(92, 30, "mL/h");
+  drawCardLabel(92, 39, "SET");
+  snprintf(b, sizeof(b), "%.0f", s.cfg.targetRateHr);
+  u8g2.setFont(u8g2_font_5x8_tf);
+  u8g2.drawStr(92, 49, s.cfg.targetRateHr > 0 ? b : "--");
+
+  // แถวล่าง: ปริมาตรที่เหลือ | เวลาที่เหลือ (ตามการ์ด LEFT / TIME LEFT ของ Station)
+  if (s.cfg.planVolumeMl > 0) {
+    float left = s.cfg.planVolumeMl - s.totalVolumeMl;
+    if (left < 0) left = 0;
+    drawCardLabel(24, 62, "LEFT");
+    snprintf(b, sizeof(b), "%.0fmL", left);
+    u8g2.setFont(u8g2_font_5x8_tf);
+    u8g2.drawStr(42, 63, b);
+    String tl = timeLeftStr(idx);
+    u8g2.drawStr(128 - (int)tl.length() * 5, 63, tl.c_str());
+  } else {
+    u8g2.setFont(u8g2_font_5x8_tf);
+    snprintf(b, sizeof(b), "%.0fmL  NO PLAN", s.totalVolumeMl);
+    u8g2.drawStr(24, 63, b);
   }
 }
 
@@ -130,10 +282,9 @@ void drawDripChamber(int x, int y, int h, int i) {
 // ----------------------------------------------------------------------------
 // v4.7.4 ตัดสิ่งที่มองไม่เห็นจริงบนจอ 128x64 ออก: ไม่มีกระเปาะหยด ไม่มีปริมาตรสะสม
 // เหลือสามอย่างที่ตัดสินใจได้ทันที — เลขเตียง / อัตราไหล / คำสถานะ
-// แล้วใช้พื้นที่ที่เหลือขยายฟอนต์จาก 4x6 เป็น 6x10 (3-6 เตียง) และ 5x8 (7-8 เตียง)
-// กระเปาะหยดย้ายไปอยู่หน้ารายละเอียดของแต่ละเตียงแทน ซึ่งมีที่ให้วาดใหญ่พอจะเห็นจริง
+// [4.9.0-OLED] แก้: การ์ดใช้ภาษาเดียวกับ Station — ป้ายเลขเตียงแบบทึบ ป้ายสถานะแบบเม็ดยา
 void renderBlockStyleGrid() {
-  int topY = 11;
+  int topY = 12;                        // [4.9.0-OLED] แก้: หัวจอใหม่สูงลงมาถึงแถว 11
   int bottomY = 53;
   int totalH = bottomY - topY;
 
@@ -150,48 +301,48 @@ void renderBlockStyleGrid() {
   }
 
   if (activeStationCount == 1) {
-    u8g2.drawRFrame(0, topY + 1, 128, totalH - 1, 3);
-    bool online = isStationOnline(0);
+    // เตียงเดียว: การ์ดใหญ่ใบเดียว ตัวเลขใหญ่ซ้าย ป้ายเล็กและเม็ดยาขวา
+    u8g2.drawRFrame(0, topY, 128, totalH, 3);
+    bool flowing = isStationOnline(0) && stations[0].isRunning;
+    char b[16];
+    if (flowing) snprintf(b, sizeof(b), "%.0f", stations[0].flowRate_ml_hr);
+    else         snprintf(b, sizeof(b), "--");
+    u8g2.setFont(u8g2_font_logisoso32_tf);
+    u8g2.drawStr(6, topY + 36, b);
 
-    if (!online || !stations[0].isRunning) {
-      u8g2.setFont(u8g2_font_logisoso16_tf);
-      u8g2.drawStr(14, topY + 30, online ? "PAUSED" : "OFFLINE");
-    } else {
-      char rBuf[16];
-      snprintf(rBuf, sizeof(rBuf), "%.0f", stations[0].flowRate_ml_hr);
-      u8g2.setFont(u8g2_font_logisoso32_tf);
-      u8g2.drawStr(8, topY + 36, rBuf);
-      u8g2.setFont(u8g2_font_6x10_tf);
-      u8g2.drawStr(78, topY + 22, "mL/h");
-      u8g2.setFont(u8g2_font_7x13_tf);
-      u8g2.drawStr(78, topY + 36, shortStatusOf(0));
-    }
+    drawCardLabel(80, topY + 8, "BED 1  RATE");
+    drawCardLabel(80, topY + 17, "mL/h");
+    snprintf(b, sizeof(b), "SET %.0f", stations[0].cfg.targetRateHr);
+    drawCardLabel(80, topY + 25, b);
+    drawPill(78, topY + 28, 46, 10, pillWordOf(0), bedNeedsAttention(0));
   }
   else if (activeStationCount == 2) {
     int cardW = 62;
     for (int i = 0; i < 2; i++) {
       int x = (i == 0) ? 0 : 66;
-      u8g2.drawRFrame(x, topY + 1, cardW, totalH - 1, 2);
+      bool attn = bedNeedsAttention(i);
+      u8g2.drawRFrame(x, topY, cardW, totalH, 3);
 
-      char idStr[10];
-      snprintf(idStr, sizeof(idStr), "BED %d", i + 1);
+      // ป้ายเตียงแบบทึบ แบบเดียวกับ B01 บนหัวจอของ Station
+      char idStr[8];
+      snprintf(idStr, sizeof(idStr), "B%02d", i + 1);
       u8g2.setFont(u8g2_font_5x8_tf);
-      u8g2.drawStr(x + 4, topY + 11, idStr);
+      u8g2.drawRBox(x + 3, topY + 3, 21, 9, 2);
+      u8g2.setDrawColor(0);
+      u8g2.drawStr(x + 6, topY + 10, idStr);
+      u8g2.setDrawColor(1);
+      drawCardLabel(x + 28, topY + 10, "RATE");
 
-      if (!isStationOnline(i) || !stations[i].isRunning) {
-        u8g2.setFont(u8g2_font_7x13_tf);
-        u8g2.drawStr(x + 4, topY + 27, isStationOnline(i) ? "PAUSE" : "OFF");
-      } else {
-        char rBuf[16];
+      char rBuf[16];
+      if (isStationOnline(i) && stations[i].isRunning)
         snprintf(rBuf, sizeof(rBuf), "%.0f", stations[i].flowRate_ml_hr);
-        u8g2.setFont(u8g2_font_logisoso16_tf);
-        u8g2.drawStr(x + 4, topY + 29, rBuf);
-        u8g2.setFont(u8g2_font_5x8_tf);
-        u8g2.drawStr(x + 40, topY + 29, "mL/h");
-      }
+      else
+        snprintf(rBuf, sizeof(rBuf), "--");
+      u8g2.setFont(u8g2_font_logisoso16_tf);
+      u8g2.drawStr(x + 4, topY + 28, rBuf);
+      drawCardLabel(x + 40, topY + 28, "mL/h");
 
-      u8g2.setFont(u8g2_font_6x10_tf);
-      u8g2.drawStr(x + 4, topY + 39, shortStatusOf(i));
+      drawPill(x + 3, topY + 30, cardW - 6, 9, pillWordOf(i), attn);
     }
   }
   else {
@@ -205,29 +356,41 @@ void renderBlockStyleGrid() {
       int row = i / 2;
       int x = (col == 0) ? 0 : 65;
       int y = topY + row * rowH;
+      int h = rowH - 1;
       int textY = y + (bigFont ? 10 : 7);
 
       bool attn = bedNeedsAttention(i);
 
       // เตียงที่ต้องไปดู = การ์ดทึบทั้งใบ มองเห็นได้จากท้ายห้อง
-      if (attn) { u8g2.drawRBox(x, y, cardW, rowH - 1, 2); u8g2.setDrawColor(0); }
-      else      { u8g2.drawRFrame(x, y, cardW, rowH - 1, 2); }
+      if (attn) { u8g2.drawRBox(x, y, cardW, h, 2); u8g2.setDrawColor(0); }
+      else      { u8g2.drawRFrame(x, y, cardW, h, 2); }
 
       u8g2.setFont(bigFont ? u8g2_font_6x10_tf : u8g2_font_5x8_tf);
+      int adv  = bigFont ? 6 : 5;
+      int chipW = bigFont ? 11 : 9;
 
+      // [4.9.0-OLED] แก้: เลขเตียงอยู่ในป้ายทึบ แบบเดียวกับป้าย B01 ของ Station
+      // การ์ดทึบ (ต้องไปดู) กลับเป็นป้ายโปร่งแทน เพื่อให้ยังแยกเลขเตียงออกได้
       char idStr[6];
       snprintf(idStr, sizeof(idStr), "%d", i + 1);
-      u8g2.drawStr(x + 3, textY, idStr);
+      if (!attn) {
+        u8g2.drawRBox(x + 1, y + 1, chipW, h - 2, 1);
+        u8g2.setDrawColor(0);
+        u8g2.drawStr(x + 1 + (chipW - adv) / 2 + 1, textY, idStr);
+        u8g2.setDrawColor(1);
+      } else {
+        u8g2.drawRFrame(x + 1, y + 1, chipW, h - 2, 1);
+        u8g2.drawStr(x + 1 + (chipW - adv) / 2 + 1, textY, idStr);
+      }
 
       if (isStationOnline(i) && stations[i].isRunning) {
         char rBuf[8];
         snprintf(rBuf, sizeof(rBuf), "%3.0f", stations[i].flowRate_ml_hr);
-        u8g2.drawStr(x + (bigFont ? 11 : 10), textY, rBuf);
+        u8g2.drawStr(x + chipW + 3, textY, rBuf);
       }
 
       // คำสถานะชิดขวาของการ์ดเสมอ ตาจึงกวาดหาคำผิดปกติได้เป็นแนวตั้ง
       const char *st = gridStatusOf(i);
-      int adv = bigFont ? 6 : 5;
       int stX = x + cardW - 3 - (int)strlen(st) * adv;
       u8g2.drawStr(stX, textY, st);
 
@@ -307,83 +470,28 @@ void updateHostOLED() {
     u8g2.drawStr((128 - (int)addr.length() * 4) / 2, 62, addr.c_str());
   }
   else if (currentOledPage == 0) {
-    // หัวจอ: ชื่อหน้า + นาฬิกา (เลขจำนวนเตียงย้ายไปอยู่แถบล่างแล้ว ไม่ต้องบอกสองที่)
-    u8g2.setFont(u8g2_font_5x8_tf);
-    u8g2.drawStr(0, 7, "IV MONITOR");
-    String clk = getOledClockStr();
-    u8g2.drawStr(128 - (int)clk.length() * 5, 7, clk.c_str());
-    u8g2.drawHLine(0, 9, 128);
-
+    drawTopBar("ALL");                // [4.9.0-OLED] แก้: หัวจอแบบเดียวกับ Station
     renderBlockStyleGrid();
   }
   else if (currentOledPage >= 1 && currentOledPage <= activeStationCount) {
-    int idx = currentOledPage - 1;
-    const StationData &s = stations[idx];
-    bool isOnline = isStationOnline(idx);
-    bool isPaused = isOnline && !s.isRunning;
-
-    // ---- หัวจอ: เลขเตียงตัวใหญ่ อ่านออกทันทีว่ากำลังดูเตียงไหน ----
-    char headBuf[16];
-    snprintf(headBuf, sizeof(headBuf), "BED %d", currentOledPage);
-    u8g2.setFont(u8g2_font_7x13_tf);
-    u8g2.drawStr(0, 10, headBuf);
-    u8g2.setFont(u8g2_font_5x8_tf);
-    u8g2.drawStr(50, 9, shortStatusOf(idx));
-    u8g2.drawHLine(0, 12, 128);
-
-    // ---- กระเปาะหยด: ย้ายมาอยู่หน้านี้เท่านั้น มีที่พอให้วาดใหญ่จนเห็นจริง ----
-    drawDripChamber(110, 15, 46, idx);
-
-    // ---- อัตราไหล: ตัวเลขใหญ่ที่สุดบนหน้าจอ ----
-    if (!isOnline || isPaused) {
-      u8g2.setFont(u8g2_font_logisoso16_tf);
-      u8g2.drawStr(2, 34, isOnline ? "PAUSED" : "OFFLINE");
-    } else {
-      char rBuf[12];
-      snprintf(rBuf, sizeof(rBuf), "%.0f", s.flowRate_ml_hr);
-      u8g2.setFont(u8g2_font_logisoso32_tf);
-      u8g2.drawStr(2, 44, rBuf);
-      u8g2.setFont(u8g2_font_6x10_tf);
-      u8g2.drawStr(62, 26, "mL/h");
-      char setBuf[16];
-      snprintf(setBuf, sizeof(setBuf), "set %.0f", s.cfg.targetRateHr);
-      u8g2.setFont(u8g2_font_5x8_tf);
-      u8g2.drawStr(62, 40, setBuf);
-    }
-
-    // ---- แถบความคืบหน้าของถุง แทนตัวเลขปริมาตรสองชุดที่อ่านยาก ----
-    int pct = (s.cfg.planVolumeMl > 0)
-              ? (int)(s.totalVolumeMl * 100.0f / s.cfg.planVolumeMl) : 0;
-    if (pct > 100) pct = 100;
-    u8g2.drawFrame(0, 47, 104, 7);
-    if (pct > 0) u8g2.drawBox(1, 48, (102 * pct) / 100, 5);
-
-    char volBuf[24];
-    if (s.cfg.planVolumeMl > 0)
-      snprintf(volBuf, sizeof(volBuf), "%.0f/%.0f mL  %d%%", s.totalVolumeMl, s.cfg.planVolumeMl, pct);
-    else
-      snprintf(volBuf, sizeof(volBuf), "%.0f mL (no plan)", s.totalVolumeMl);
-    u8g2.setFont(u8g2_font_5x8_tf);
-    u8g2.drawStr(0, 62, volBuf);
+    // [4.9.0-OLED] แก้: ผังเดียวกับหน้า IV BAG ของ Station
+    char chip[6];
+    snprintf(chip, sizeof(chip), "B%02d", (int)currentOledPage);
+    drawTopBar(chip);
+    renderBedDetail(currentOledPage - 1);
   }
   // ---- หน้าตรวจการเชื่อมต่อ (สำหรับช่างเท่านั้น อยู่ท้ายสุดของวง) ----
   else if (currentOledPage == activeStationCount + 1) {
-    u8g2.setFont(u8g2_font_5x8_tf);
-    u8g2.drawStr(0, 7, "LINK DIAGNOSTIC");
-    {
-      String m = netModeLabel();
-      u8g2.drawStr(128 - (int)m.length() * 5, 7, m.c_str());
-    }
-    u8g2.drawHLine(0, 9, 128);
+    drawTopBar("NET");                // [4.9.0-OLED] แก้: หัวจอแบบเดียวกับ Station
 
     // ตารางเลขเตียง 1-8: ได้ยินไหม / MAC ท้าย 2 ไบต์ / คุณภาพลิงก์
     u8g2.setFont(u8g2_font_4x6_tf);
-    u8g2.drawStr(0, 16, "BED MAC   LNK  BED MAC   LNK");
+    u8g2.drawStr(0, 18, "BED MAC   LNK  BED MAC   LNK");
     for (int i = 0; i < MAX_SUPPORTED_STATIONS; i++) {
       int col = i / 4;
       int row = i % 4;
       int x = col * 65;
-      int y = 24 + row * 7;
+      int y = 26 + row * 7;
       const StationData &s = stations[i];
       char line[24];
       if (!heardStationId(i)) {

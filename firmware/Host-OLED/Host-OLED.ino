@@ -1,7 +1,7 @@
 /**
  * @file      Host-OLED.ino
  * @brief     เฟิร์มแวร์เครื่องส่วนกลาง รุ่นจอ OLED รับข้อมูลทุกเตียงและแจ้งเตือนพยาบาล
- * @version   4.8.0-OLED
+ * @version   4.9.0-OLED
  * @date      2026-09-23
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
@@ -22,6 +22,8 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 4.9.0-OLED | 2026-09-28 | หน้าจอใช้ภาษาการออกแบบเดียวกับ Station: หัวจอป้าย/นาฬิกา/สัญญาณ หน้ารายเตียงแบบถุงน้ำเกลือ ป้ายสถานะเม็ดยา |
+ * | 4.8.1-OLED | 2026-09-28 | Sync บอกเตียงด้วยว่า Host ได้ยินมันอยู่หรือไม่ (บิตว่างใน flags ขนาดโครงสร้างไม่เปลี่ยน) |
  * | 4.8.0-OLED | 2026-09-23 | เตียงที่หายไประหว่างให้น้ำเกลือมีเสียงเตือนแล้ว เพิ่มสุนัขเฝ้าบ้าน รายงานสาเหตุการรีบูต และปฏิเสธแพ็กเก็ตที่ค่าเป็นไปไม่ได้ |
  * | 4.7.7-OLED | 2026-09-23 | ย้ายโค้ดวาดจอออกไปไว้ที่ `HostScreen.h` ตรรกะไม่เปลี่ยนแม้แต่บรรทัดเดียว |
  * | 4.7.6-OLED | 2026-09-23 | นำการเชื่อมต่อเราเตอร์กลับมาเพื่อลดภาระซีพียู และปรับจังหวะ poll ตามจำนวนผู้ใช้ |
@@ -169,7 +171,7 @@
 esp_reset_reason_t bootResetReason = ESP_RST_UNKNOWN;
 
 
-#define APP_VERSION         "4.8.0-OLED"
+#define APP_VERSION         "4.9.0-OLED"
 #define DEV_NAME            "กิตติพันธ์ รัตนคร"
 #define DEV_ROLE            "นักวิชาการคอมพิวเตอร์"
 #define DEV_INSTITUTION     "มหาวิทยาลัยมหาจุฬาลงกรณราชวิทยาลัย วิทยาเขตแพร่"
@@ -322,6 +324,8 @@ typedef struct __attribute__((packed)) struct_host_sync {
   uint8_t  hostChannel;
   uint8_t  nearEndPct;       // % ของปริมาตรตามแผนที่เริ่มเตือนใกล้หมด
   uint8_t  flags;            // bit0 = รับทราบเตือนใกล้หมดแล้ว
+                             // bit1 = Host ได้ยินเตียงนี้อยู่ ([4.8.1-OLED])
+                             // bit2 = Host รุ่นนี้รายงาน bit1 ([4.8.1-OLED]) รุ่นเก่าเป็น 0 เสมอ
 } struct_host_sync;          // 20 bytes
 
 static_assert(sizeof(struct_message) == 23, "struct_message must be 23 bytes (match Station)");
@@ -860,7 +864,10 @@ void sendSyncForStation(int i) {
   syncMsg.resetSeq     = stations[i].cfg.resetSeq;
   syncMsg.hostChannel  = currentWifiChannel();
   syncMsg.nearEndPct   = safeNearPct(stations[i].nearEndPct);
-  syncMsg.flags        = stations[i].nearEndAck ? 0x01 : 0x00;
+  // [4.8.1-OLED] แก้: บอกเตียงด้วยว่า Host ได้ยินมันอยู่หรือไม่ เดิมเตียงขึ้น ONLINE
+  // ได้ทั้งที่ Host ไม่เคยได้ยินมันเลย เพราะเตียงรู้แค่ว่าตัวเองได้ยิน Host
+  syncMsg.flags        = (stations[i].nearEndAck ? 0x01 : 0x00) | 0x04 |
+                         (isStationOnline(i) ? 0x02 : 0x00);
 
   // ไม่ส่งซ้ำและไม่ delay() เมื่อคิวส่งเต็ม เพราะรอบถัดไปมาถึงในอีกไม่กี่สิบมิลลิวินาทีอยู่แล้ว
   if (esp_now_send(broadcastAddress, (uint8_t *)&syncMsg, sizeof(syncMsg)) != ESP_OK) syncSendFail++;
@@ -1411,28 +1418,12 @@ bool anyBedDripping() {
 
 
 
-// คำสถานะสั้น ๆ ที่พยาบาลอ่านจบในแวบเดียว (อังกฤษ เพราะฟอนต์ในจอไม่มีตัวไทย)
-const char* shortStatusOf(int i) {
-  const StationData &s = stations[i];
-  if (!isStationOnline(i))      return "OFFLINE";
-  if (s.idConflict)             return "ID DUP";
-  if (!s.isRunning)             return "PAUSE";
-  switch (s.alertCode) {
-    case ALERT_TOO_FAST:  return "FAST";
-    case ALERT_TOO_SLOW:  return "SLOW";
-    case ALERT_OCCLUSION: return "STOP";
-    case ALERT_NO_SIGNAL: return "NO DRIP";
-    case ALERT_COMPLETE:  return "DONE";
-    case ALERT_NEAR_END:  return s.nearEndAck ? "NEAR" : "NEW BAG";
-    default:              return "OK";
-  }
-}
-
 // เวอร์ชันสั้นไม่เกิน 4 ตัวอักษร สำหรับการ์ดในหน้ารวมที่มีที่จำกัด
 // ต้องไม่เกิน 4 ตัว ไม่เช่นนั้นจะไปทับตัวเลขอัตราไหล
 const char* gridStatusOf(int i) {
   const StationData &s = stations[i];
-  if (!isStationOnline(i))      return "OFF";
+  // [4.9.0-OLED] แก้: เตียงที่หายไประหว่างให้น้ำเกลือ แยกจากเตียงที่แค่ปิดเครื่องไว้
+  if (!isStationOnline(i))      return (s.alertCode == ALERT_LOST_LINK) ? "LOST" : "OFF";
   if (s.idConflict)             return "DUP!";
   if (!s.isRunning)             return "PAUS";
   switch (s.alertCode) {

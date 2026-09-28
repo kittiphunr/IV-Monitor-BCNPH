@@ -1,7 +1,7 @@
 /**
  * @file      StationScreen.h
  * @brief     ทุกอย่างที่วาดลงจอ TFT ของเครื่องประจำเตียง สายเสถียร
- * @version   7.5.5
+ * @version   7.5.7
  * @date      2026-09-23
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
@@ -17,6 +17,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 7.5.7 | 2026-09-28 | การ์ดและแท่งสัญญาณแสดงสถานะ ONE-WAY |
  * | 7.5.5 | 2026-09-23 | แยกออกมาจากไฟล์หลัก ย้ายที่อยู่ล้วน ๆ ไม่ได้แก้เนื้อในแม้แต่บรรทัดเดียว |
  *
  * @warning  ถูก `#include` ท้ายไฟล์หลักก่อน `setup()` ห้ามย้ายขึ้นไปบนสุด
@@ -65,6 +66,7 @@ void drawLinkBars(int x, int y, int rssi, bool online) {
     else if (rssi >= -75) { bars = 3; col = THEME_CYAN; }
     else if (rssi >= -85) { bars = 2; col = COLOR_ORANGE; }
     else                  { bars = 1; col = COLOR_RED; }
+    if (linkState() != LINK_OK) col = COLOR_RED;   // [7.5.7] เพิ่ม: ได้ยิน Host แต่ Host ไม่ได้ยินเรา
   }
   int h[4] = {4, 7, 10, 13};
   for (int i = 0; i < 4; i++) {
@@ -108,7 +110,7 @@ void drawTopBar(bool force) {
     textCenterIn(clockStr, 46, 80, 7, 1, COLOR_WHITE, UI_BAR);
   }
 
-  int barKey = (bars == -999) ? -999 : (bars / 5);
+  int barKey = ((bars == -999) ? -999 : (bars / 5)) * 4 + (int)linkState();   // [7.5.7] แก้
   if (barKey != cacheBars) {
     cacheBars = barKey;
     tft.fillRect(148, 4, 18, 14, UI_BAR);
@@ -347,15 +349,22 @@ void drawPage3Framework() {
 void updatePage3Dynamic() {
   drawTopBar(false);
 
-  String linkKey = String(isHostOnline ? 1 : 0) + ":" + String(lastHostRssi / 5) + ":" + String(espnowChannel);
+  // [7.5.7] แก้: แยก "ได้ยินกันทางเดียว" ออกจาก ONLINE
+  uint8_t ls = linkState();
+  String linkKey = String(ls) + ":" + String(lastHostRssi / 5) + ":" + String(espnowChannel);
   if (linkKey != cacheP3a) {
     cacheP3a = linkKey;
-    textAt(padTo(isHostOnline ? "ONLINE" : "NO LINK", 8), 14, 50, 2, isHostOnline ? UI_GREEN : COLOR_RED, UI_CARD);
+    const char *word = (ls == LINK_OK) ? "ONLINE" : (ls == LINK_NONE) ? "NO LINK" : "ONE-WAY";
+    uint16_t wc = (ls == LINK_OK) ? UI_GREEN : (ls == LINK_NONE) ? COLOR_RED : COLOR_ORANGE;
+    textAt(padTo(word, 8), 14, 50, 2, wc, UI_CARD);
     tft.fillRect(134, 48, 20, 16, UI_CARD);
     drawLinkBars(136, 48, lastHostRssi, isHostOnline);
-    String sub = isHostOnline ? ("CH " + String(espnowChannel) + "   " + String(lastHostRssi) + " dBm")
-                              : ("SEARCHING CH " + String(espnowChannel));
-    textAt(padTo(sub, 22), 14, 72, 1, UI_DIM, UI_CARD);
+    String sub;
+    if (ls == LINK_NONE)            sub = "SEARCHING CH " + String(espnowChannel);
+    else if (ls == LINK_NOT_HEARD)  sub = "HOST CAN'T HEAR BED";
+    else if (ls == LINK_NOT_LISTED) sub = "BED NOT ON HOST LIST";
+    else                            sub = "CH " + String(espnowChannel) + "   " + String(lastHostRssi) + " dBm";
+    textAt(padTo(sub, 22), 14, 72, 1, (ls == LINK_OK || ls == LINK_NONE) ? UI_DIM : COLOR_ORANGE, UI_CARD);
   }
 
   // แสดง "ระยะเบนจากเส้นฐาน" สด ๆ : ใกล้ 0 = ช่วงว่าง, พุ่งขึ้น = หยดกำลังผ่านลำแสง
