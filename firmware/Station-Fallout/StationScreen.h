@@ -1,7 +1,7 @@
 /**
  * @file      StationScreen.h
  * @brief     ทุกอย่างที่วาดลงจอ TFT ของเครื่องประจำเตียง รุ่นพิเศษ Fallout
- * @version   1.1.0-FO
+ * @version   1.2.0-FO
  * @date      2026-09-28
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
@@ -19,13 +19,14 @@
  * จัดแบบหน้า STAT ของจอ Pip-Boy: แถบแท็บ ตัวละครในกรอบขีดหกขีด กล่องไอคอน และแถบล่าง
  * แบบ HP / LEVEL / AP ภาพถุงน้ำเกลือถูกแทนด้วย Vault Boy (ภาพจาก Adafruit PipBoy_2040
  * อยู่ใน `pipboy_sprite.h`) ที่ **ก้าวหนึ่งก้าวต่อหนึ่งหยดที่ตรวจจับได้จริง**
- * หยุดให้ยายืนขาชิดพร้อม || สีเหลือง ไม่ไหลยืนขาชิดในกรอบสีแดงพร้อม ! สีแดง
+ * หยุดให้ยายืนขาตรงพร้อม || สีเหลือง ไม่ไหลยืนขาตรงในกรอบสีแดงพร้อม ! สีแดง
  * ตัวเลขและการแจ้งเตือนทุกอย่างเหมือนสายหลัก
  * หน้า 2 ถึง 4 หน้าเตือน และหน้าอื่นทั้งหมดไม่ได้แตะ นอกจากสีที่ไฟล์หลักกำหนด
  *
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 1.2.0-FO | 2026-09-28 | Vault Boy คมขึ้นพร้อมเส้นสแกนแบบจอ CRT ท่าเดินห้าเฟรม (ก้าวยาว ขาสวนกัน ท่ายืน) |
  * | 1.1.0-FO | 2026-09-28 | หน้า 1 จัดแบบหน้า STAT ของ Pip-Boy และใช้ภาพ Vault Boy สามเฟรมแทนนักเดินทางที่วาดจากเส้น |
  * | 1.0.0-FO | 2026-09-28 | หน้า 1 แทนถุงน้ำเกลือด้วยนักเดินทางที่ก้าวตามหยด และมาตรวัดระดับน้ำ 10 ช่อง |
  * | 7.10.0 | 2026-09-28 | (สืบทอดจากสายหลัก) การ์ดและแท่งสัญญาณแสดงสถานะ ONE-WAY |
@@ -60,7 +61,7 @@
 
 #pragma once
 
-#include "pipboy_sprite.h"   // [1.1.0-FO] เพิ่ม: ภาพ Vault Boy สามเฟรม (สร้างด้วย tools/fallout-sprite)
+#include "pipboy_sprite.h"   // [1.1.0-FO] เพิ่ม: ภาพ Vault Boy ท่าเดิน (สร้างด้วย tools/fallout-sprite)
 
 // ---- ตัวช่วยวางข้อความ (ฟอนต์มาตรฐาน: 1 ตัวอักษร = 6xsize กว้าง, 8xsize สูง) ----
 void textAt(const String &s, int x, int y, uint8_t size, uint16_t col, uint16_t bg) {
@@ -155,15 +156,16 @@ void drawProgressBar(int x, int y, int w, int h, int pct, uint16_t fill) {
 
 // ============================================================================
 // หน้า 1 รุ่น Fallout: หน้า STAT ของ Pip-Boy — Vault Boy ก้าวหนึ่งก้าวต่อหนึ่งหยด
-// ([1.0.0-FO] เพิ่มทั้งหมด, [1.1.0-FO] แก้: จัดใหม่ตามหน้า STAT และใช้ภาพ Vault Boy)
+// ([1.0.0-FO] เพิ่มทั้งหมด, [1.1.0-FO] แก้: จัดใหม่ตามหน้า STAT และใช้ภาพ Vault Boy,
+//  [1.2.0-FO] แก้: ภาพคมขึ้นพร้อมเส้นสแกน ท่าเดินห้าเฟรม เท้าหลังยกและลำตัวขึ้นลงตอนขาสวนกัน)
 //
 // หลักการคือภาพต้อง "บอกความจริง" เหมือนกระเปาะหยดของสายหลัก ไม่ใช่อนิเมชันลอย ๆ
 //   - ทุกครั้งที่ตัวตรวจจับนับได้หนึ่งหยด (onDropDetected ตั้ง isDropFalling)
-//     Vault Boy ก้าวหนึ่งก้าว (เฟรม 0 1 2 1 0) แล้วยืนนิ่งจนกว่าหยดถัดไปจะมา
+//     Vault Boy ก้าวหนึ่งก้าว (เฟรม 0 1 2 3 2 1 0) แล้วยืนนิ่งจนกว่าหยดถัดไปจะมา
 //     หยดถี่ = เดินเร็ว หยดห่าง = เดินช้า หยุดไหล = หยุดเดิน พยาบาลเทียบกับหยดจริงได้ด้วยตา
 //     ตัวนับ DROPS ใต้ภาพเพิ่มทีละหนึ่งพร้อมกับก้าว
-//   - หยุดชั่วคราว = ยืนขาชิดพร้อมสัญลักษณ์ || สีเหลือง
-//   - ไม่มีการไหล = ยืนขาชิด ขอบกรอบเป็นสีแดง พร้อม ! สีแดง
+//   - หยุดชั่วคราว = ยืนขาตรงพร้อมสัญลักษณ์ || สีเหลือง
+//   - ไม่มีการไหล = ยืนขาตรง ขอบกรอบเป็นสีแดง พร้อม ! สีแดง
 //
 // จัดวางตามหน้า STAT ของจอ Pip-Boy (ภาพ statpip0.bmp ของ Adafruit PipBoy_2040)
 //   แถบแท็บ STAT PLAN LINK TREND · ตัวละครในกรอบขีดหกขีด · กล่องไอคอนพร้อมตัวเลขใต้ภาพ
@@ -181,7 +183,7 @@ void drawProgressBar(int x, int y, int w, int h, int pct, uint16_t fill) {
 #define FO_HUD_Y       294
 
 const unsigned long FO_STEP_MS = 340;   // ความยาวของหนึ่งก้าว
-static const uint8_t FO_STEP_SEQ[] = {0, 1, 2, 1, 0};
+static const uint8_t FO_STEP_SEQ[] = {0, 1, 2, 3, 2, 1, 0};   // [1.2.0-FO] แก้: ก้าวยาว -> ขาสวนกัน -> ก้าวยาว
 
 bool          foStepping  = false;
 unsigned long foStepStart = 0;
@@ -300,8 +302,8 @@ void updateDripAnimation() {
     foFrameDrawn = -1;
   }
 
-  // หยุดชั่วคราวและไม่ไหล ยืนขาชิด (เฟรม 2) ส่วนเดินปกติยืนรอในท่าก้าวยาว (เฟรม 0)
-  uint8_t f = (mode != 0) ? 2 : 0;
+  // หยุดชั่วคราวและไม่ไหล ยืนขาตรง ส่วนเดินปกติยืนรอในท่าก้าวยาว (เฟรม 0)
+  uint8_t f = (mode != 0) ? FO_SPR_STAND : 0;   // [1.2.0-FO] แก้: มีท่ายืนของตัวเอง
   if (foStepping && mode == 0) {
     unsigned long dt = now - foStepStart;
     if (dt >= FO_STEP_MS) foStepping = false;
@@ -339,7 +341,7 @@ void drawPage1Framework() {
   animModeDrawn = foModeNow();
   foDrawFrameMarks(animModeDrawn == 3 ? COLOR_RED : COLOR_GREEN);
   foDrawBadge(animModeDrawn);
-  foFrameDrawn = (animModeDrawn != 0) ? 2 : 0;
+  foFrameDrawn = (animModeDrawn != 0) ? FO_SPR_STAND : 0;
   foStepping = false;
   foDrawSprite(foFrameDrawn);
   foDrawGround();
