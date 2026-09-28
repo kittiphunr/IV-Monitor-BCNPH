@@ -16,4 +16,5 @@ g++ -std=gnu++17 -I../screen-preview -DESP_ARDUINO_VERSION_MAJOR=3 -Wall -Wno-un
 ./touchpreview ops.txt
 python3 ../screen-preview/render.py ops.txt "$OUT" 240 320 3
 rm -f host.cpp web_dashboard.h HostScreen.h touchpreview ops.txt
+python3 make_overview.py "$OUT"     # แผ่นรวมที่ README อ้างถึง สร้างใหม่ทุกครั้ง
 echo "เสร็จแล้ว: ภาพอยู่ใน $OUT"

@@ -16,4 +16,7 @@ g++ -std=gnu++17 -I. -DESP_ARDUINO_VERSION_MAJOR=3 -Wall -Wno-unused-variable -o
 ./preview ops.txt
 python3 render.py ops.txt "$OUT"
 rm -f sketch.cpp preview ops.txt
+# แผ่นภาพรวมสามหน้าหลัก สร้างใหม่ทุกครั้งจากภาพที่เพิ่งเรนเดอร์
+python3 make_sheet.py "$OUT/overview.png" 3 \
+  "$OUT/page1_wave.png" "" "$OUT/page2_trend.png" "" "$OUT/page3_sensor.png" ""
 echo "เสร็จแล้ว: ภาพอยู่ใน $OUT"

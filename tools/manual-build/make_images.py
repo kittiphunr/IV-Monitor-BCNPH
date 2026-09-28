@@ -30,6 +30,7 @@ save('docs/screens-station/cal_1_noise.png',    'cal_1.png',   w=240)
 save('docs/screens-station/cal_2_learn.png',    'cal_2.png',   w=240)
 save('docs/screens-station/cal_3_result.png',   'cal_3.png',   w=240)
 save('docs/screens-station/cal_4_verify.png',   'cal_4.png',   w=240)
-save('docs/screens-dashboard/live_monitor.png', 'web_top.png',  crop=(20, 0, 1380, 700), w=540)
-save('docs/screens-dashboard/live_monitor.png', 'web_card.png', crop=(30, 300, 720, 1000), w=420)
+# ภาพหน้าเว็บ (web_*.png) เป็นหน้าที่ของ crop_web_images.py ที่เดียว
+# เดิมไฟล์นี้ก็สร้าง web_top.png และ web_card.png ด้วยกรอบตัดคนละแบบ ใครรันทีหลังก็ทับกัน
+# คู่มือที่เก็บไว้ใช้รุ่นของ crop_web_images.py จึงตัดสองบรรทัดนั้นออกจากที่นี่
 print('หมายเหตุ: diagram_system.png และ diagram_sensor_pos.png เก็บไว้ในที่เก็บโดยตรง ไม่ได้สร้างใหม่จากสคริปต์นี้')
