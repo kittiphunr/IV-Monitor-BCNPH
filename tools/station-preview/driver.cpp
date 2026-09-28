@@ -62,6 +62,9 @@ void feedHostSync(uint8_t flags) {
   struct_host_sync s; memset(&s, 0, sizeof(s));
   s.stationId = currentStationId; s.flags = flags;
   s.dropFactor = 20; s.nearEndPct = 80; s.hostChannel = 1;
+  // Host ตัวจริงส่งแผนการให้ของเตียงมาทุกแพ็กเก็ต ส่งค่าที่เครื่องถืออยู่กลับไป
+  // ไม่อย่างนั้นแพ็กเก็ตจำลองจะล้างเป้าหมายและปริมาตรตามแผนเป็นศูนย์
+  s.targetRateHr = targetRateHr; s.totalPlanMl = totalPlanMl;
   esp_now_recv_info_t info; memset(&info, 0, sizeof(info));
   OnTimeSyncRecv(&info, (const uint8_t*)&s, (int)sizeof(s));
 }
@@ -158,6 +161,35 @@ int main(int argc,char** argv){
   stateNeedsRedraw = true; currentNursePage = 3;
   drawPage3Framework(); updatePage3Dynamic(); emitMark("p3_link_oneway");
 
+
+#ifdef FALLOUT_PREVIEW
+  // ---- รุ่น Fallout: เก็บภาพหน้า 1 ทีละเฟรมขณะหยดตกจริง เพื่อประกอบเป็นภาพเคลื่อนไหว ----
+  // หยดทุกหยดผ่าน onDropDetected() ตัวจริง แล้วให้ updateDripAnimation() ตัวจริงวาด
+  // ช่วงแรกหยดตามอัตรา 98 mL/h (ราว 1.8 วินาทีต่อหยด) แล้วถี่ขึ้น ให้เห็นว่าหยดถี่ = เดินเร็ว
+  {
+    static const unsigned gap[] = {1840, 1840, 1840, 900, 900, 900, 900, 600, 600, 600, 600, 600, 600};
+    feedHostSync(0x06);
+    lastHostRssi = -62;
+    // หน้าตรวจเซนเซอร์ด้านบนล้างแผนการให้ไปแล้ว ตั้งกลับให้เหมือนภาพ p1_bag
+    targetRateHr = 100; totalPlanMl = 1000; dropFactor = 20;
+    totalDrops = 620 * 20; totalVolumeMl = 620; currentFlowRate_ml_hr = 98;
+    isRunning = true; uiAlertCode = ALERT_NONE;
+    currentState = STATE_NORMAL_VIEW; currentNursePage = 1; stateNeedsRedraw = true;
+    drawPage1Framework(); updatePage1Dynamic();
+    unsigned long t0 = g_millis, nextDrop = t0 + 300;
+    size_t gi = 0;
+    char name[32];
+    for (int f = 0; f * 40UL < 13000UL; f++) {
+      g_millis = t0 + f * 40UL;
+      if (f % 25 == 0) feedHostSync(0x06);                 // Host ส่ง Sync ทุกวินาทีตามปกติ
+      if (gi < sizeof(gap) / sizeof(gap[0]) && g_millis >= nextDrop) { onDropDetected(); nextDrop += gap[gi++]; }
+      updatePage1Dynamic();
+      updateDripAnimation();
+      snprintf(name, sizeof(name), "fo_anim_%03d", f);
+      emitMark(name);
+    }
+  }
+#endif
   fclose(g_ops);
   return 0;
 }
