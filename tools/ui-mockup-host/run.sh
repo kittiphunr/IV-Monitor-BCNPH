@@ -27,4 +27,11 @@ for name, lines in groups:
     subprocess.run(["rm", "-f", f"_{name}.txt"], check=True)
 PY
 rm -f mockup ops.txt
+# แผ่นเปรียบเทียบสามแนวทาง สร้างใหม่ทุกครั้งจากภาพที่เพิ่งเรนเดอร์
+for s in 1:normal 2:alert; do
+  n="${s%%:*}"; k="${s##*:}"
+  python3 ../screen-preview/make_sheet.py "$OUT/compare_$k.png" 3 \
+    "$OUT/A${n}_$k.png" "A BED GRID (320x240)" "$OUT/B${n}_$k.png" "B FOCUS (320x240)" \
+    "$OUT/C${n}_$k.png" "C BIG LIST (240x320)"
+done
 echo "เสร็จแล้ว: ภาพอยู่ใน $OUT"
