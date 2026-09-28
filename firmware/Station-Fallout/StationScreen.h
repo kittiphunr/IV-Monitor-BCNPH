@@ -1,7 +1,7 @@
 /**
  * @file      StationScreen.h
  * @brief     ทุกอย่างที่วาดลงจอ TFT ของเครื่องประจำเตียง รุ่นพิเศษ Fallout
- * @version   1.0.0-FO
+ * @version   1.1.0-FO
  * @date      2026-09-28
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
@@ -16,15 +16,17 @@
  *
  * @par Fallout Edition
  * คัดลอกมาจาก `firmware/Station/StationScreen.h` แล้วเปลี่ยนเฉพาะหน้า 1
- * ภาพถุงน้ำเกลือกับกระเปาะหยดถูกแทนด้วยนักเดินทางในจอแบบหลอดภาพสีเขียว
- * ที่ **ก้าวหนึ่งจังหวะต่อหนึ่งหยดที่ตรวจจับได้จริง** พื้นหลังซากเมืองเลื่อนตามก้าว
- * ไม่มีหยดก็ยืนนิ่ง หยุดให้ยาขึ้น || สีเหลือง ไม่ไหลนั่งคุกเข่าขึ้น ! สีแดง
- * ระดับน้ำในถุงย้ายไปเป็นมาตรวัด 10 ช่องใต้ฉาก ตัวเลขและการแจ้งเตือนทุกอย่างเหมือนสายหลัก
+ * จัดแบบหน้า STAT ของจอ Pip-Boy: แถบแท็บ ตัวละครในกรอบขีดหกขีด กล่องไอคอน และแถบล่าง
+ * แบบ HP / LEVEL / AP ภาพถุงน้ำเกลือถูกแทนด้วย Vault Boy (ภาพจาก Adafruit PipBoy_2040
+ * อยู่ใน `pipboy_sprite.h`) ที่ **ก้าวหนึ่งก้าวต่อหนึ่งหยดที่ตรวจจับได้จริง**
+ * หยุดให้ยายืนขาชิดพร้อม || สีเหลือง ไม่ไหลยืนขาชิดในกรอบสีแดงพร้อม ! สีแดง
+ * ตัวเลขและการแจ้งเตือนทุกอย่างเหมือนสายหลัก
  * หน้า 2 ถึง 4 หน้าเตือน และหน้าอื่นทั้งหมดไม่ได้แตะ นอกจากสีที่ไฟล์หลักกำหนด
  *
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 1.1.0-FO | 2026-09-28 | หน้า 1 จัดแบบหน้า STAT ของ Pip-Boy และใช้ภาพ Vault Boy สามเฟรมแทนนักเดินทางที่วาดจากเส้น |
  * | 1.0.0-FO | 2026-09-28 | หน้า 1 แทนถุงน้ำเกลือด้วยนักเดินทางที่ก้าวตามหยด และมาตรวัดระดับน้ำ 10 ช่อง |
  * | 7.10.0 | 2026-09-28 | (สืบทอดจากสายหลัก) การ์ดและแท่งสัญญาณแสดงสถานะ ONE-WAY |
  * | 7.8.0 | 2026-09-23 | (สืบทอดจากสายหลัก) แยกออกมาจากไฟล์หลัก ย้ายที่อยู่ล้วน ๆ ไม่ได้แก้เนื้อในแม้แต่บรรทัดเดียว |
@@ -57,6 +59,8 @@
  */
 
 #pragma once
+
+#include "pipboy_sprite.h"   // [1.1.0-FO] เพิ่ม: ภาพ Vault Boy สามเฟรม (สร้างด้วย tools/fallout-sprite)
 
 // ---- ตัวช่วยวางข้อความ (ฟอนต์มาตรฐาน: 1 ตัวอักษร = 6xsize กว้าง, 8xsize สูง) ----
 void textAt(const String &s, int x, int y, uint8_t size, uint16_t col, uint16_t bg) {
@@ -150,165 +154,107 @@ void drawProgressBar(int x, int y, int w, int h, int pct, uint16_t fill) {
 }
 
 // ============================================================================
-// หน้า 1 รุ่น Fallout: นักเดินทางก้าวหนึ่งก้าวต่อหนึ่งหยด แทนถุงน้ำเกลือ ([1.0.0-FO] เพิ่มทั้งหมด)
+// หน้า 1 รุ่น Fallout: หน้า STAT ของ Pip-Boy — Vault Boy ก้าวหนึ่งก้าวต่อหนึ่งหยด
+// ([1.0.0-FO] เพิ่มทั้งหมด, [1.1.0-FO] แก้: จัดใหม่ตามหน้า STAT และใช้ภาพ Vault Boy)
 //
 // หลักการคือภาพต้อง "บอกความจริง" เหมือนกระเปาะหยดของสายหลัก ไม่ใช่อนิเมชันลอย ๆ
 //   - ทุกครั้งที่ตัวตรวจจับนับได้หนึ่งหยด (onDropDetected ตั้ง isDropFalling)
-//     ตัวละครก้าวหนึ่งก้าว แล้วยืนนิ่งจนกว่าหยดถัดไปจะมา
+//     Vault Boy ก้าวหนึ่งก้าว (เฟรม 0 1 2 1 0) แล้วยืนนิ่งจนกว่าหยดถัดไปจะมา
 //     หยดถี่ = เดินเร็ว หยดห่าง = เดินช้า หยุดไหล = หยุดเดิน พยาบาลเทียบกับหยดจริงได้ด้วยตา
-//   - หยุดชั่วคราว = ยืนนิ่งพร้อมสัญลักษณ์ || สีเหลือง
-//   - ไม่มีการไหล (สายพับ) = คุกเข่าลงพร้อม ! สีแดง
-//   - ปริมาตรที่เหลือย้ายจากระดับน้ำในถุงไปเป็นแถบแบ่งช่องสิบช่องใต้ฉาก
+//     ตัวนับ DROPS ใต้ภาพเพิ่มทีละหนึ่งพร้อมกับก้าว
+//   - หยุดชั่วคราว = ยืนขาชิดพร้อมสัญลักษณ์ || สีเหลือง
+//   - ไม่มีการไหล = ยืนขาชิด ขอบกรอบเป็นสีแดง พร้อม ! สีแดง
 //
-// ตัวละครวาดจากท่อนแขนขาที่คำนวณมุมตามเฟสการเดิน แล้ววางลงตารางพิกเซลใหญ่ (หนึ่งช่อง
-// = 3x3 พิกเซล) จึงได้ลายเส้นแบบพิกเซลอาร์ตและก้าวได้ลื่น ไม่ต้องเก็บภาพทีละเฟรม
-// ตัวละครออกแบบใหม่ทั้งหมด (นักเดินทางในหมวกกันน็อกและเป้สะพาย) ไม่ได้ลอกลายเส้นของใคร
+// จัดวางตามหน้า STAT ของจอ Pip-Boy (ภาพ statpip0.bmp ของ Adafruit PipBoy_2040)
+//   แถบแท็บ STAT PLAN LINK TREND · ตัวละครในกรอบขีดหกขีด · กล่องไอคอนพร้อมตัวเลขใต้ภาพ
+//   ปุ่มแบบ STIMPAK/RADAWAY · แถบล่างแบบ HP / LEVEL / AP (ใช้แสดงปริมาตรที่ให้ไปแล้ว)
 // ============================================================================
-#define FO_SC_X        6            // กรอบฉาก
-#define FO_SC_Y        34
-#define FO_SC_W        72
-#define FO_SC_H        150
-#define FO_GROUND_Y    (FO_SC_Y + FO_SC_H - 16)
-#define FO_FIG_X       (FO_SC_X + 36)
-#define FO_U           3            // พิกเซลต่อหนึ่งช่องของตัวละคร
-#define FO_RUIN        0x09E4       // เงาซากตึกไกล ๆ (เขียวมืด #0B3F22)
-#define FO_GAUGE_Y     202
+#define FO_FR_X        2            // กรอบตัวละคร
+#define FO_FR_Y        46
+#define FO_FR_W        80
+#define FO_FR_H        180
+#define FO_SPR_X       (FO_FR_X + (FO_FR_W - FO_SPR_W) / 2)
+#define FO_SPR_Y       (FO_FR_Y + (FO_FR_H - FO_SPR_H) / 2)
+#define FO_GROUND_Y    (FO_SPR_Y + FO_SPR_H + 2)
+#define FO_ICON_Y      232
+#define FO_BTN_Y       272
+#define FO_HUD_Y       294
 
 const unsigned long FO_STEP_MS = 340;   // ความยาวของหนึ่งก้าว
-const int           FO_STRIDE  = 18;    // พื้นเลื่อนไปกี่พิกเซลต่อหนึ่งก้าว
+static const uint8_t FO_STEP_SEQ[] = {0, 1, 2, 1, 0};
 
-float         foPhase      = 0.0f;  // เฟสการเดิน 0..1 — 0 และ 0.5 คือยืนเท้าชิด
-float         foFrom       = 0.0f;
-float         foScroll     = 0.0f;  // ระยะที่พื้นเลื่อนไปแล้ว
-float         foScrollFrom = 0.0f;
-bool          foStepping   = false;
-unsigned long foStepStart  = 0;
-int           foOX = 0, foOY = 0;   // จุดสะโพกของตัวละคร (พิกเซลจริง)
+bool          foStepping  = false;
+unsigned long foStepStart = 0;
+int8_t        foFrameDrawn = -1;
+uint8_t       foGroundPhase = 0;     // เส้นพื้นเลื่อนไปหนึ่งช่องต่อหนึ่งก้าว
+uint16_t      foFrameColor = 0;      // สีขีดกรอบที่วาดอยู่ (เปลี่ยนเป็นแดงเมื่อไม่ไหล)
+String        cacheFoDrops = "", cacheFoGtt = "";
 
-// วาดสี่เหลี่ยมโดยตัดขอบให้อยู่ในฉาก ไม่ให้ซากตึกหรือเศษหินล้นออกไปทับกรอบ
-void foFillClip(int x, int y, int w, int h, uint16_t c) {
-  int x0 = FO_SC_X + 2, y0 = FO_SC_Y + 14, x1 = FO_SC_X + FO_SC_W - 2, y1 = FO_SC_Y + FO_SC_H - 2;
-  if (x < x0) { w -= x0 - x; x = x0; }
-  if (y < y0) { h -= y0 - y; y = y0; }
-  if (x + w > x1) w = x1 - x;
-  if (y + h > y1) h = y1 - y;
-  if (w > 0 && h > 0) tft.fillRect(x, y, w, h, c);
-}
-
-// หนึ่งช่องของตัวละคร (gx, gy นับเป็นช่อง เทียบกับสะโพก แกน y ชี้ลง)
-void foCell(int gx, int gy, uint16_t c) {
-  foFillClip(foOX + gx * FO_U, foOY + gy * FO_U, FO_U, FO_U, c);
-}
-
-// เส้นหนาสองช่องตามแนวนอน ใช้วาดแขนขา
-void foLimb(float x0, float y0, float x1, float y1, uint16_t c) {
-  int ax = (int)lroundf(x0), ay = (int)lroundf(y0), bx = (int)lroundf(x1), by = (int)lroundf(y1);
-  int dx = abs(bx - ax), dy = -abs(by - ay), sx = ax < bx ? 1 : -1, sy = ay < by ? 1 : -1, err = dx + dy;
-  for (;;) {
-    foCell(ax, ay, c);
-    foCell(ax + 1, ay, c);
-    if (ax == bx && ay == by) break;
-    int e2 = 2 * err;
-    if (e2 >= dy) { err += dy; ax += sx; }
-    if (e2 <= dx) { err += dx; ay += sy; }
+// วาดหนึ่งเฟรม: ไล่ทีละแถว รวมพิกเซลสีเดียวกันที่ติดกันเป็นเส้นเดียว (ส่งข้อมูลไปจอน้อยลงมาก)
+// พื้นของภาพเป็นสีเดียวกับ THEME_BG จึงวาดทับเฟรมเดิมได้ทันที ไม่ต้องล้างก่อน จอไม่กะพริบ
+void foDrawSprite(uint8_t f) {
+  const uint8_t *p = FO_SPR_DATA[f];
+  for (int r = 0; r < FO_SPR_H; r++) {
+    const uint8_t *row = p + r * FO_SPR_ROW;
+    int runX = 0;
+    uint8_t runC = row[0] >> 4;
+    for (int c = 1; c <= FO_SPR_W; c++) {
+      uint8_t v = 0xFF;
+      if (c < FO_SPR_W) v = (c & 1) ? (row[c >> 1] & 0x0F) : (row[c >> 1] >> 4);
+      if (v != runC) {
+        tft.drawFastHLine(FO_SPR_X + runX, FO_SPR_Y + r, c - runX, FO_SPR_PAL[runC]);
+        runC = v;
+        runX = c;
+      }
+    }
   }
 }
 
-// ขาหนึ่งข้าง: ต้นขายาว 4 ช่อง หน้าแข้งยาว 4 ช่อง แล้วรองเท้ายื่นไปข้างหน้า
-void foLeg(float thigh, float shin, uint16_t c) {
-  float kx = 4.0f * sinf(thigh), ky = 4.0f * cosf(thigh);
-  float fx = kx + 4.0f * sinf(shin), fy = ky + 4.0f * cosf(shin);
-  foLimb(0, 0, kx, ky, c);
-  foLimb(kx, ky, fx, fy, c);
-  foCell((int)lroundf(fx) + 2, (int)lroundf(fy), c);       // ปลายรองเท้า
-}
-
-void foArm(float a, uint16_t c) {
-  foLimb(0, -6, 3.5f * sinf(a), -6 + 3.5f * cosf(a), c);
-  foLimb(3.5f * sinf(a), -6 + 3.5f * cosf(a), 5.0f * sinf(a + 0.35f), -6 + 5.0f * cosf(a + 0.35f), c);
-}
-
-// ลำตัว หัว (หมวกกันน็อกพร้อมกระจกหน้า) และเป้สะพาย
-void foBody(uint16_t c, uint16_t dim) {
-  for (int y = -2; y <= 5; y++) for (int x = -4; x <= -3; x++) foCell(x, y - 8, dim);   // เป้
-  for (int y = -7; y <= -1; y++) for (int x = -2; x <= 1; x++) foCell(x, y, c);        // ลำตัว
-  for (int x = -2; x <= 1; x++) foCell(x, -1, dim);                                    // เข็มขัด
-  for (int x = -1; x <= 1; x++) foCell(x, -12, c);                                     // หมวก
-  for (int y = -11; y <= -9; y++) for (int x = -2; x <= 2; x++) foCell(x, y, c);
-  foCell(1, -10, THEME_BG); foCell(2, -10, THEME_BG);                                  // กระจกหน้า
-  for (int x = -1; x <= 1; x++) foCell(x, -8, c);                                      // คาง
-}
-
-// ท่าของตัวละครตามโหมด  0 = เดิน/ยืน, 2 = หยุดชั่วคราว (ยืน), 3 = ไม่มีการไหล (คุกเข่า)
-void drawWanderer(int8_t mode) {
-  uint16_t c = COLOR_GREEN, dim = UI_DIM;
-  if (mode == 3) {
-    foOX = FO_FIG_X; foOY = FO_GROUND_Y - 1 - 5 * FO_U;         // สะโพกต่ำลง = คุกเข่า
-    foLeg(-0.35f, -1.75f, dim);                                  // ขาหลังพับราบกับพื้น
-    foArm(0.15f, dim);
-    foBody(c, dim);
-    foLeg(1.45f, 0.0f, c);                                       // ขาหน้าตั้งเข่า
-    foArm(0.55f, c);
-    return;
+// ขีดหกขีดรอบตัวละครแบบหน้า STAT (บน ล่าง และซ้ายขวาข้างละสอง)
+void foDrawFrameMarks(uint16_t c) {
+  int cx = FO_FR_X + FO_FR_W / 2;
+  tft.fillRect(cx - 7, FO_FR_Y, 14, 3, c);
+  tft.fillRect(cx - 7, FO_FR_Y + FO_FR_H - 3, 14, 3, c);
+  for (int k = 0; k < 2; k++) {
+    int y = FO_FR_Y + 52 + k * 76;
+    tft.fillRect(FO_FR_X, y, 11, 3, c);
+    tft.fillRect(FO_FR_X + FO_FR_W - 11, y, 11, 3, c);
   }
-  float ph = (mode == 2) ? 0.0f : foPhase;
-  float swing = sinf(ph * 6.2831853f);
-  int bob = (fabsf(swing) > 0.6f) ? 1 : 0;                      // ช่วงก้าวยาวตัวต่ำลงนิดหนึ่ง
-  foOX = FO_FIG_X; foOY = FO_GROUND_Y - 1 - 8 * FO_U + bob * FO_U;
-  float a = 0.45f * swing;
-  foArm(0.4f * swing, dim);                                      // แขนข้างไกล
-  foLeg(-a, -a - (swing > 0 ? 0.5f * swing : 0.0f), dim);        // ขาข้างไกล
-  foBody(c, dim);
-  foLeg(a, a - (swing < 0 ? -0.5f * swing : 0.0f), c);           // ขาข้างใกล้
-  foArm(-0.4f * swing, c);                                       // แขนข้างใกล้
+  foFrameColor = c;
 }
 
-// ฉากทั้งหมด: ซากตึกเลื่อนช้า (ไกล) พื้นและเศษหินเลื่อนตามก้าว (ใกล้) แล้วตัวละคร
-void drawWandererScene(int8_t mode) {
-  tft.fillRect(FO_SC_X + 2, FO_SC_Y + 14, FO_SC_W - 4, FO_SC_H - 16, THEME_BG);
+// เส้นพื้นประใต้เท้า เลื่อนไปทางซ้ายหนึ่งช่องทุกก้าว ให้เห็นว่าเดินไปข้างหน้าจริง
+void foDrawGround() {
+  int x0 = FO_SPR_X - 4, w = FO_SPR_W + 8;
+  tft.fillRect(x0, FO_GROUND_Y, w, 1, THEME_BG);
+  for (int x = x0 + (3 - (foGroundPhase % 4)) * 3; x < x0 + w; x += 12)
+    tft.fillRect(x, FO_GROUND_Y, min(6, x0 + w - x), 1, UI_LINE);
+}
 
-  static const uint8_t ruinH[] = {34, 22, 46, 28};
-  int far = ((int)(foScroll / 3)) % 96;
-  for (int k = 0; k < 6; k++) {
-    int rx = FO_SC_X + 2 + k * 24 - far;
-    int h = ruinH[k % 4];
-    foFillClip(rx, FO_GROUND_Y - h, 14, h, FO_RUIN);
-    foFillClip(rx + 3, FO_GROUND_Y - h + 5, 3, 3, THEME_BG);      // หน้าต่างที่แตก
-  }
-
-  tft.drawFastHLine(FO_SC_X + 2, FO_GROUND_Y, FO_SC_W - 4, UI_LINE);
-  int near = ((int)foScroll) % 12;
-  for (int x = FO_SC_X + 4 - near; x < FO_SC_X + FO_SC_W; x += 12) {
-    foFillClip(x, FO_GROUND_Y + 4, 3, 1, UI_LINE);
-    foFillClip(x + 6, FO_GROUND_Y + 9, 2, 1, UI_LINE);
-  }
-
-  drawWanderer(mode);
-
-  if (mode == 2) {                                                   // หยุดชั่วคราว
-    foFillClip(FO_SC_X + FO_SC_W - 16, FO_SC_Y + 18, 3, 12, COLOR_YELLOW);
-    foFillClip(FO_SC_X + FO_SC_W - 10, FO_SC_Y + 18, 3, 12, COLOR_YELLOW);
-  } else if (mode == 3) {                                            // ไม่มีการไหล
-    textAt("!", FO_SC_X + FO_SC_W - 16, FO_SC_Y + 18, 2, COLOR_RED, THEME_BG);
+// สัญลักษณ์มุมขวาบนของกรอบ: || เหลือง = หยุดชั่วคราว, ! แดง = ไม่ไหล
+void foDrawBadge(int8_t mode) {
+  int bx = FO_FR_X + FO_FR_W - 16, by = FO_FR_Y + 10;
+  tft.fillRect(bx, by, 14, 16, THEME_BG);
+  if (mode == 2) {
+    tft.fillRect(bx + 2, by + 2, 3, 12, COLOR_YELLOW);
+    tft.fillRect(bx + 8, by + 2, 3, 12, COLOR_YELLOW);
+  } else if (mode == 3) {
+    textAt("!", bx + 2, by, 2, COLOR_RED, THEME_BG);
   }
 }
 
-// ปริมาตรที่เหลือ: แถบแบ่งสิบช่อง (แทนระดับน้ำในถุง) แล้วตัวเลข % อยู่ใต้แถบ
-void drawBagLevel(bool force) {
-  int pct = infusedPct();
-  int left = (pct < 0) ? 100 : (100 - pct);
-  uint16_t fill = (uiAlertCode == ALERT_NEAR_END) ? COLOR_ORANGE : COLOR_GREEN;
-  if (!force && left == cacheBagPct) return;
-  cacheBagPct = left;
+// ไอคอนหยดน้ำเล็ก ๆ (หัวแหลม ก้นกลม)
+void foDropIcon(int x, int y, uint16_t c) {
+  tft.drawFastVLine(x + 3, y, 2, c);
+  tft.drawFastHLine(x + 2, y + 2, 3, c);
+  tft.drawFastHLine(x + 1, y + 3, 5, c);
+  tft.fillCircle(x + 3, y + 6, 3, c);
+}
 
-  int on = (pct < 0) ? 0 : (left + 5) / 10;
-  for (int i = 0; i < 10; i++) {
-    int x = FO_SC_X + 1 + i * 7;
-    tft.fillRect(x, FO_GAUGE_Y, 6, 12, (i < on) ? fill : UI_CARD);
-  }
-  String s = (pct < 0) ? String("-- LEFT") : (String(left) + "% LEFT");
-  tft.fillRect(FO_SC_X, FO_GAUGE_Y + 18, FO_SC_W, 8, THEME_BG);
-  textCenterIn(s, FO_SC_X, FO_SC_W, FO_GAUGE_Y + 18, 1, fill, THEME_BG);
+// ไอคอนถุงน้ำเกลือเล็ก ๆ (ถุงกับคอถุง)
+void foBagIcon(int x, int y, uint16_t c) {
+  tft.fillRoundRect(x, y, 8, 9, 2, c);
+  tft.fillRect(x + 3, y + 9, 2, 3, c);
 }
 
 // โหมดของภาพ 0 = เดิน/ยืน, 2 = หยุดชั่วคราว, 3 = ไม่มีการไหล
@@ -318,67 +264,102 @@ int8_t foModeNow() {
   return (isLocallyOccluded() || uiStatusOf(uiAlertCode) == UI_NOFLOW) ? 3 : 0;
 }
 
+// ปริมาตรที่เหลือในกล่องไอคอนถุง (แทนระดับน้ำในภาพถุงของสายหลัก)
+void drawBagLevel(bool force) {
+  int pct = infusedPct();
+  int left = (pct < 0) ? -1 : (100 - pct);
+  uint16_t fill = (uiAlertCode == ALERT_NEAR_END) ? COLOR_ORANGE : COLOR_WHITE;
+  int key = left * 2 + ((uiAlertCode == ALERT_NEAR_END) ? 1 : 0);
+  if (!force && key == cacheBagPct) return;
+  cacheBagPct = key;
+  int bx = FO_FR_X + 41;
+  tft.fillRect(bx, FO_ICON_Y, 39, 22, UI_CARD);
+  foBagIcon(bx + 4, FO_ICON_Y + 5, fill);
+  textRight(left < 0 ? String("--") : (String(left) + "%"), bx + 37, FO_ICON_Y + 8, 1, fill, UI_CARD);
+}
+
 void updateDripAnimation() {
   if (currentState != STATE_NORMAL_VIEW || currentNursePage != 1 || stateNeedsRedraw) return;
 
   unsigned long now = millis();
   int8_t mode = foModeNow();
 
-  // หยดใหม่มาถึง = เริ่มก้าวใหม่หนึ่งก้าว (ถ้าก้าวเดิมยังไม่จบ ให้จบทันทีก่อน ไม่ให้ก้าวหาย)
+  // หยดใหม่มาถึง = เริ่มก้าวใหม่หนึ่งก้าว (ถ้าก้าวเดิมยังไม่จบก็เริ่มใหม่เลย ไม่ให้หยดหาย)
   if (isDropFalling) {
     isDropFalling = false;          // ตัวแปรนี้มีไว้ให้ภาพเคลื่อนไหวของหน้า 1 เท่านั้น
-    if (foStepping) { foPhase = foFrom + 0.5f; foScroll = foScrollFrom + FO_STRIDE; }
-    if (foPhase >= 1.0f) foPhase -= 1.0f;
-    foFrom = foPhase;
-    foScrollFrom = foScroll;
-    if (foScroll > 100000.0f) { foScroll = 0; foScrollFrom = 0; }
     foStepping = true;
     foStepStart = now;
+    foGroundPhase++;
+    foDrawGround();
   }
 
-  bool redraw = (mode != animModeDrawn);
-  if (foStepping) {
-    if (!redraw && now - lastAnimFrame < 30) return;              // ราว 30 เฟรมต่อวินาที
-    float t = (float)(now - foStepStart) / (float)FO_STEP_MS;
-    if (t >= 1.0f) { t = 1.0f; foStepping = false; }
-    foPhase = foFrom + 0.5f * t;
-    foScroll = foScrollFrom + FO_STRIDE * t;
-    redraw = true;
+  if (mode != animModeDrawn) {
+    animModeDrawn = mode;
+    foDrawFrameMarks(mode == 3 ? COLOR_RED : COLOR_GREEN);
+    foDrawBadge(mode);
+    foFrameDrawn = -1;
   }
-  if (!redraw) return;
 
+  // หยุดชั่วคราวและไม่ไหล ยืนขาชิด (เฟรม 2) ส่วนเดินปกติยืนรอในท่าก้าวยาว (เฟรม 0)
+  uint8_t f = (mode != 0) ? 2 : 0;
+  if (foStepping && mode == 0) {
+    unsigned long dt = now - foStepStart;
+    if (dt >= FO_STEP_MS) foStepping = false;
+    else f = FO_STEP_SEQ[dt * sizeof(FO_STEP_SEQ) / FO_STEP_MS];
+  } else {
+    foStepping = false;
+  }
+  if ((int8_t)f == foFrameDrawn) return;
+  foFrameDrawn = f;
   lastAnimFrame = now;
-  animModeDrawn = mode;
-  drawWandererScene(mode);
+  foDrawSprite(f);
 }
 
 void drawPage1Framework() {
   tft.fillScreen(THEME_BG);
   drawTopBar(true);
 
-  // กรอบฉากแบบจอ Pip-Boy: ขอบมน มุมหนา และป้ายบอกว่าหนึ่งก้าวคือหนึ่งหยด
-  tft.drawRoundRect(FO_SC_X, FO_SC_Y, FO_SC_W, FO_SC_H, 5, UI_LINE);
-  tft.fillRect(FO_SC_X, FO_SC_Y, 8, 3, COLOR_GREEN);
-  tft.fillRect(FO_SC_X + FO_SC_W - 8, FO_SC_Y, 8, 3, COLOR_GREEN);
-  tft.fillRect(FO_SC_X, FO_SC_Y + FO_SC_H - 3, 8, 3, COLOR_GREEN);
-  tft.fillRect(FO_SC_X + FO_SC_W - 8, FO_SC_Y + FO_SC_H - 3, 8, 3, COLOR_GREEN);
-  textCenterIn("STEP=DROP", FO_SC_X, FO_SC_W, FO_SC_Y + 4, 1, UI_DIM, THEME_BG);
-  textAt("VOLUME", FO_SC_X + 2, FO_GAUGE_Y - 11, 1, UI_DIM, THEME_BG);
+  // แถบแท็บแบบ Pip-Boy: เส้นยาวใต้แท็บ แท็บที่เปิดอยู่มีขายกขึ้นสองข้างและไม่มีเส้นใต้
+  static const char *tabs[] = {"STAT", "PLAN", "LINK", "TREND"};
+  int tx = 12;
+  for (int i = 0; i < 4; i++) {
+    int w = strlen(tabs[i]) * 6;
+    if (i == 0) {
+      tft.drawFastHLine(2, 40, tx - 5, COLOR_GREEN);
+      tft.drawFastVLine(tx - 4, 30, 11, COLOR_GREEN);
+      tft.drawFastVLine(tx + w + 2, 30, 11, COLOR_GREEN);
+      tft.drawFastHLine(tx - 4, 30, 3, COLOR_GREEN);
+      tft.drawFastHLine(tx + w, 30, 3, COLOR_GREEN);
+      tft.drawFastHLine(tx + w + 2, 40, 170 - (tx + w + 2), COLOR_GREEN);
+    }
+    textAt(tabs[i], tx, 32, 1, i == 0 ? COLOR_WHITE : UI_DIM, THEME_BG);
+    tx += w + 14;
+  }
 
-  textAt("RATE", RIGHT_X + 4, 36, 1, UI_DIM, THEME_BG);
-  textAt("mL/h", RIGHT_X + 4, 82, 1, UI_DIM, THEME_BG);
-  tft.drawFastHLine(RIGHT_X + 2, 110, 82, UI_LINE);
-  textAt("LEFT", RIGHT_X + 4, 118, 1, UI_DIM, THEME_BG);
-  tft.drawFastHLine(RIGHT_X + 2, 154, 82, UI_LINE);
-  textAt("TIME LEFT", RIGHT_X + 4, 160, 1, UI_DIM, THEME_BG);
+  animModeDrawn = foModeNow();
+  foDrawFrameMarks(animModeDrawn == 3 ? COLOR_RED : COLOR_GREEN);
+  foDrawBadge(animModeDrawn);
+  foFrameDrawn = (animModeDrawn != 0) ? 2 : 0;
+  foStepping = false;
+  foDrawSprite(foFrameDrawn);
+  foDrawGround();
 
-  drawPageDots(0, 308);
+  // กล่องไอคอนสองกล่องใต้ภาพ (แบบแถวไอคอนอาวุธ/ชุดเกราะของหน้า STAT)
+  tft.fillRect(FO_FR_X, FO_ICON_Y, 39, 22, UI_CARD);
+  foDropIcon(FO_FR_X + 4, FO_ICON_Y + 5, COLOR_WHITE);
+  textAt("gtt/m", FO_FR_X + 2, FO_ICON_Y + 26, 1, UI_DIM, THEME_BG);
+  textAt("left", FO_FR_X + 43, FO_ICON_Y + 26, 1, UI_DIM, THEME_BG);
+
+  textAt("RATE", RIGHT_X + 4, 48, 1, UI_DIM, THEME_BG);
+  textAt("mL/h", RIGHT_X + 4, 96, 1, UI_DIM, THEME_BG);
+  tft.drawFastHLine(RIGHT_X + 2, 122, 84, UI_LINE);
+  textAt("LEFT", RIGHT_X + 4, 128, 1, UI_DIM, THEME_BG);
+  tft.drawFastHLine(RIGHT_X + 2, 162, 84, UI_LINE);
+  textAt("TIME LEFT", RIGHT_X + 4, 168, 1, UI_DIM, THEME_BG);
 
   cacheBagPct = -999; cacheRate = -9999; cacheTarget = -9999; cacheLeftMl = -9999;
   cachePct = -999; cacheTimeLeft = ""; cacheEndClock = ""; cacheStatusWord = "";
-  // วาดฉากทันทีพร้อมกรอบ ไม่ต้องรอให้ loop() เรียก updateDripAnimation() รอบแรก
-  animModeDrawn = foModeNow();
-  drawWandererScene(animModeDrawn);
+  cacheFoDrops = ""; cacheFoGtt = "";
   poolFlashUntil = 0;
   stateNeedsRedraw = false;
 }
@@ -393,49 +374,77 @@ void updatePage1Dynamic() {
 
   if (rate != cacheRate || target != cacheTarget) {
     cacheRate = rate; cacheTarget = target;
-    tft.fillRect(RIGHT_X + 4, 48, 84, 32, THEME_BG);
-    if (!isRunning) textAt("--", RIGHT_X + 4, 48, 4, THEME_SKYBLUE, THEME_BG);
-    else textAt(String(rate), RIGHT_X + 4, 48, 4, (st == UI_NOFLOW) ? COLOR_RED : COLOR_WHITE, THEME_BG);
+    tft.fillRect(RIGHT_X + 4, 60, 84, 32, THEME_BG);
+    if (!isRunning) textAt("--", RIGHT_X + 4, 60, 4, THEME_SKYBLUE, THEME_BG);
+    else textAt(String(rate), RIGHT_X + 4, 60, 4, (st == UI_NOFLOW) ? COLOR_RED : COLOR_WHITE, THEME_BG);
     textAt(padTo(targetRateHr > 0 ? ("SET " + String(target)) : String("SET --"), 9),
-           RIGHT_X + 4, 94, 1, THEME_SKYBLUE, THEME_BG);
+           RIGHT_X + 4, 108, 1, THEME_SKYBLUE, THEME_BG);
   }
 
   int left = (totalPlanMl > 0) ? remainingMlInt() : -1;
   if (left != cacheLeftMl) {
     cacheLeftMl = left;
-    textAt(padTo(left >= 0 ? (String(left) + " mL") : String("-- mL"), 7), RIGHT_X + 4, 130, 2, COLOR_WHITE, THEME_BG);
+    textAt(padTo(left >= 0 ? (String(left) + " mL") : String("-- mL"), 7), RIGHT_X + 4, 140, 2, COLOR_WHITE, THEME_BG);
   }
 
   String tl = timeLeftText(true);
   if (tl != cacheTimeLeft) {
     cacheTimeLeft = tl;
-    textAt(padTo(tl, 7), RIGHT_X + 4, 172, 2, COLOR_WHITE, THEME_BG);
+    textAt(padTo(tl, 7), RIGHT_X + 4, 180, 2, COLOR_WHITE, THEME_BG);
   }
 
   String ec = endClockText();
   if (ec != cacheEndClock) {
     cacheEndClock = ec;
-    textAt(padTo("END " + ec, 11), RIGHT_X + 4, 196, 1, UI_DIM, THEME_BG);
+    textAt(padTo("END " + ec, 11), RIGHT_X + 4, 202, 1, UI_DIM, THEME_BG);
   }
 
+  // การ์ดสถานะเป็นแถบทึบแบบรายการที่ถูกเลือกของ Pip-Boy (มุมเหลี่ยม ตัวอักษรสีพื้น)
   String word = String(uiStatusWord(st));
   if (word != cacheStatusWord) {
     cacheStatusWord = word;
     uint16_t sc = uiStatusColor(st);
-    tft.fillRoundRect(RIGHT_X, 214, 84, 40, 6, sc);
-    textCenterIn(word, RIGHT_X, 84, 229, 1, THEME_BG, sc);
+    tft.fillRect(RIGHT_X + 2, 220, 84, 34, sc);
+    textCenterIn(word, RIGHT_X + 2, 84, 233, 1, THEME_BG, sc);
   }
 
+  // อัตราหยดในกล่องไอคอนหยด
+  String gtt = isRunning ? String((int)(currentGttMin + 0.5f)) : String("--");
+  if (gtt != cacheFoGtt) {
+    cacheFoGtt = gtt;
+    tft.fillRect(FO_FR_X + 12, FO_ICON_Y + 8, 26, 8, UI_CARD);
+    textRight(gtt, FO_FR_X + 37, FO_ICON_Y + 8, 1, COLOR_WHITE, UI_CARD);
+  }
+
+  // ปุ่มแบบ STIMPAK/RADAWAY: ป้ายบอกกติกา กับตัวนับหยดที่เพิ่มพร้อมกับก้าว
+  String drops = "DROPS " + String(totalDrops);
+  if (drops != cacheFoDrops) {
+    if (cacheFoDrops.length() == 0) {
+      tft.fillRect(FO_FR_X, FO_BTN_Y, 80, 14, UI_CARD);
+      textCenterIn("1 STEP=1 DROP", FO_FR_X, 80, FO_BTN_Y + 3, 1, UI_DIM, UI_CARD);
+    }
+    cacheFoDrops = drops;
+    tft.fillRect(RIGHT_X + 2, FO_BTN_Y, 84, 14, UI_CARD);
+    textCenterIn(drops, RIGHT_X + 2, 84, FO_BTN_Y + 3, 1, COLOR_WHITE, UI_CARD);
+  }
+
+  // แถบล่างแบบ HP / LEVEL / AP: ปริมาตรที่ให้ไปแล้ว | แถบความคืบหน้า | เปอร์เซ็นต์
   int pct = infusedPct();
   if (pct != cachePct) {
     cachePct = pct;
-    String line = (totalPlanMl > 0)
-      ? ("INFUSED " + String((int)totalVolumeMl) + "/" + String((int)totalPlanMl) + " mL")
-      : ("INFUSED " + String((int)totalVolumeMl) + " mL");
-    textAt(padTo(line, 22), 12, 272, 1, UI_DIM, THEME_BG);
-    textRight(padTo(pct >= 0 ? (String(pct) + "%") : String("--"), 4), 164, 272, 1, COLOR_WHITE, THEME_BG);
-    drawProgressBar(12, 286, 148, 12, (pct < 0) ? 0 : pct,
-                    (uiAlertCode == ALERT_NEAR_END) ? COLOR_ORANGE : THEME_CYAN);
+    uint16_t barC = (uiAlertCode == ALERT_NEAR_END) ? COLOR_ORANGE : COLOR_GREEN;
+    tft.fillRect(2, FO_HUD_Y, 80, 16, UI_CARD);
+    String inf = (totalPlanMl > 0)
+      ? (String((int)totalVolumeMl) + "/" + String((int)totalPlanMl))
+      : (String((int)totalVolumeMl) + " mL");
+    textAt("IN", 5, FO_HUD_Y + 4, 1, UI_DIM, UI_CARD);
+    textRight(inf, 80, FO_HUD_Y + 4, 1, COLOR_WHITE, UI_CARD);
+    tft.fillRect(84, FO_HUD_Y, 54, 16, UI_CARD);
+    tft.drawRect(88, FO_HUD_Y + 5, 46, 6, barC);
+    int fw = (pct < 0) ? 0 : 44 * min(pct, 100) / 100;
+    if (fw > 0) tft.fillRect(89, FO_HUD_Y + 6, fw, 4, barC);
+    tft.fillRect(140, FO_HUD_Y, 30, 16, UI_CARD);
+    textRight(pct >= 0 ? (String(pct) + "%") : String("--"), 168, FO_HUD_Y + 4, 1, COLOR_WHITE, UI_CARD);
   }
 }
 

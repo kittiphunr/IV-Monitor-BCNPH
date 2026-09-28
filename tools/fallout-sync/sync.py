@@ -26,26 +26,29 @@ DST = os.path.join(ROOT, "firmware", "Station-Fallout", "Station-Fallout.ino")
 DET_SRC = os.path.join(ROOT, "firmware", "Station", "drop_detector.h")
 DET_DST = os.path.join(ROOT, "firmware", "Station-Fallout", "drop_detector.h")
 
-# ชุดสีจอเขียวแบบ Pip-Boy — สีเตือนวิกฤต (แดง ส้ม เหลือง) คงไว้ตามสายหลัก
-# เพราะพยาบาลแยกความเร่งด่วนด้วยสี ธีมต้องไม่ลบความหมายนั้นทิ้ง
+# ชุดสีจอเขียวแบบ Pip-Boy — ค่าสีมาจากจานสี 16 ระดับของภาพ statpip0.bmp
+# ในโครงการ PipBoy_2040 ของ Adafruit (ดู tools/fallout-sprite/SOURCE.md) แปลงเป็น RGB565
+# พื้นจอจึงเป็นสีเดียวกับพื้นของภาพตัวละครพอดี วาดภาพทับได้โดยไม่เห็นขอบ
+# สีเตือนวิกฤต (แดง ส้ม เหลือง) คงไว้ตามสายหลัก เพราะพยาบาลแยกความเร่งด่วนด้วยสี
+# ธีมต้องไม่ลบความหมายนั้นทิ้ง
 THEME = {
-    "THEME_BG":      "0x0000",
-    "THEME_SKYBLUE": "0x1FF0",   # เขียวสว่าง #1AFF80 แทนฟ้า (ค่าเป้าหมาย SET ฯลฯ)
-    "THEME_CYAN":    "0x1FF0",   # แถบความคืบหน้า
-    "THEME_PINK":    "0x1FF0",   # หัวหน้าคาลิเบรต
-    "THEME_NAVY":    "0x0123",   # พื้นการ์ดเขียวเข้ม #06261A
-    "THEME_DARKBOX": "0x0123",
+    "THEME_BG":      "0x08C0",   # พื้นจอ #091B05
+    "THEME_SKYBLUE": "0x778A",   # เขียวสว่าง #77F350 แทนฟ้า (ค่าเป้าหมาย SET ฯลฯ)
+    "THEME_CYAN":    "0x778A",   # แถบความคืบหน้า
+    "THEME_PINK":    "0x778A",   # หัวหน้าคาลิเบรต
+    "THEME_NAVY":    "0x11A1",   # พื้นการ์ด #16370E
+    "THEME_DARKBOX": "0x11A1",
     "THEME_MAROON":  "0x6000",
-    "COLOR_WHITE":   "0xB7F9",   # ตัวอักษรหลักเป็นเขียวอ่อน #B4FFC8 แทนขาว
-    "COLOR_GREEN":   "0x1FF0",
+    "COLOR_WHITE":   "0x778A",   # ตัวอักษรหลักเป็นเขียวสว่างแทนขาว
+    "COLOR_GREEN":   "0x778A",
     "COLOR_RED":     "0xF800",   # คงเดิม — เหตุวิกฤต
     "COLOR_ORANGE":  "0xFD20",   # คงเดิม — ใกล้หมด
     "COLOR_YELLOW":  "0xFFE0",   # คงเดิม — หยุดชั่วคราว
-    "UI_CARD":       "0x0123",
-    "UI_BAR":        "0x0183",   # แถบบนสุด #04301A
-    "UI_LINE":       "0x0AC5",   # เส้นคั่น #0E5A2E
-    "UI_DIM":        "0x1C69",   # ตัวอักษรรอง #1E8C4A
-    "UI_GREEN":      "0x1FF0",
+    "UI_CARD":       "0x11A1",
+    "UI_BAR":        "0x1161",   # แถบบนสุด #112D0A
+    "UI_LINE":       "0x3364",   # เส้นคั่น #316F20
+    "UI_DIM":        "0x5E07",   # ตัวอักษรรอง #5BC23D
+    "UI_GREEN":      "0x778A",
 }
 
 DEFINE = re.compile(r"^(#define\s+)(THEME_\w+|COLOR_\w+|UI_\w+)(\s+)(0x[0-9A-Fa-f]+)(.*)$")
