@@ -17,4 +17,11 @@ g++ -std=gnu++17 -I../screen-preview -Wall -Wno-unused-variable -Wno-format-trun
 ./hostpreview ops.txt
 python3 ../screen-preview/render.py ops.txt "$OUT" 320 240 3
 rm -f host.cpp web_dashboard.h HostScreen.h hostpreview ops.txt
+# แผ่นรวมที่ README อ้างถึง สร้างใหม่ทุกครั้งจากภาพที่เพิ่งเรนเดอร์
+python3 ../screen-preview/make_sheet.py "$OUT/overview_main.png" 2 \
+  "$OUT/main_normal.png" "MAIN - ALL NORMAL" "$OUT/main_nearend.png" "MAIN - NEXT BAG (B04)" \
+  "$OUT/main_alert.png" "MAIN - NO FLOW (B02)" "$OUT/main_8beds.png" "MAIN - 8 BEDS"
+python3 ../screen-preview/make_sheet.py "$OUT/overview_other.png" 2 \
+  "$OUT/splash.png" "SPLASH" "$OUT/alarm_fullscreen.png" "ALARM FULL SCREEN" \
+  "$OUT/screensaver.png" "SCREENSAVER" "$OUT/poweroff.png" "POWER OFF"
 echo "เสร็จแล้ว: ภาพอยู่ใน $OUT"

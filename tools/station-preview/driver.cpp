@@ -130,11 +130,25 @@ int main(int argc,char** argv){
 #endif
 
 #ifdef SCOPE_TOP
+#ifdef STATION_STABLE_PREVIEW
+  // ---- สายเสถียร: หน้าคาลิเบรต 3 ขั้น + ตรวจสอบ (อัลกอริทึมเดิมของ v7.5.x) ----
+  // เรียกทีละขั้นเพื่อเก็บภาพแต่ละหน้า (ไม่กดปุ่ม ปล่อยให้แต่ละขั้นจบเองตามเวลา)
+  // ภาพชุดนี้ใช้ในบทคาลิเบรตของคู่มือพยาบาล (tools/manual-build/make_images.py)
+  g_simSensor = true;
+  g_simDrops  = false;                 // ขั้นที่ 1 บอกผู้ใช้ว่าอย่าให้มีหยด
+  calStepNoise();  emitMark("cal_1_noise");
+  g_simDrops  = true;
+  calStepLearn();  emitMark("cal_2_learn");
+  calFinish();     emitMark("cal_3_result");
+  calVerify();     emitMark("cal_4_verify");
+  g_simSensor = false;
+#else
   // ---- หน้าตรวจเซนเซอร์ (v7.7.x): จำลองสัญญาณจริงให้กราฟมีของให้ดู ----
   g_simSensor = true;
   g_btnScript = 6000;                  // ค้างหน้าจอไว้พอให้เรียนรู้และวาดหลายรอบ
   executeButtonCalibrationWizard(); emitMark("sensor_check");
   g_simSensor = false;
+#endif
 #endif
   // ---- ได้ยิน Host ทางเดียว: Host บอกว่าไม่ได้ยินเตียงนี้ (อาการในภาพถ่ายเครื่องจริง) ----
   // ไว้ท้ายสุด เพราะต้องเดินนาฬิกาจำลองไปข้างหน้า ภาพหน้าอื่นจึงไม่เปลี่ยน

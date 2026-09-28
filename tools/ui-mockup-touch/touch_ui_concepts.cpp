@@ -279,7 +279,9 @@ void drawSystemMenu() {
     textAt(String(subs[i]), 14, y + 24, 1, C_DIM, C_CARD);
     textRight(">", 224, y + 16, 2, C_DIM, C_CARD);
   }
-  textCenterIn("แก้ค่าเหล่านี้จากหน้าเว็บได้เช่นกัน", 0, SCR_W, 302, 1, C_DIM, C_BG);
+  // ฟอนต์ในตัวของ Adafruit_GFX ไม่มีอักษรไทย ข้อความไทยจะขึ้นเป็นสัญลักษณ์มั่วบนจอจริง
+  // (ความหมายเดิม: แก้ค่าเหล่านี้จากหน้าเว็บได้เช่นกัน)
+  textCenterIn("also editable on web page", 0, SCR_W, 302, 1, C_DIM, C_BG);
 }
 
 // ================================================================

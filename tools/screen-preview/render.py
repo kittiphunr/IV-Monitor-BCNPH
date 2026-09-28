@@ -24,6 +24,7 @@ def main(ops_path, outdir):
     img = Image.new("RGB", (W * S, H * S), (0, 0, 0))
     d = ImageDraw.Draw(img)
     saved = []
+    warnings = []
     for line in open(ops_path, encoding="utf-8"):
         p = line.rstrip("\n").split(" ")
         op = p[0]
@@ -61,7 +62,12 @@ def main(ops_path, outdir):
             def fillrect(rx, ry, rw, rh, c):
                 d.rectangle([rx * S, ry * S, (rx + rw) * S - 1, (ry + rh) * S - 1], fill=rgb(c))
 
-            for i, chpr in enumerate(text.encode("latin-1", "replace")):
+            # Adafruit_GFX::print() ส่งทีละไบต์ ข้อความ UTF-8 (เช่นอักษรไทย) จึงกลายเป็น
+            # สัญลักษณ์มั่วตัวละไบต์บนจอจริง วาดตามนั้นเป๊ะ แล้วเตือนไว้ให้แก้ต้นทาง
+            raw = text.encode("utf-8")
+            if any(b >= 0x80 for b in raw):
+                warnings.append(f"ข้อความไม่ใช่ ASCII จะขึ้นเป็นสัญลักษณ์มั่วบนจอจริง ที่ ({x},{y}): {text!r}")
+            for i, chpr in enumerate(raw):
                 font.draw_char(fillrect, x + i * 6 * size, y, chpr, col, bg, size)
         elif op == "MARK":
             name = p[1]
@@ -69,6 +75,10 @@ def main(ops_path, outdir):
             img.save(out)
             saved.append(out)
     print("\n".join(saved))
+    if warnings:
+        print("\nคำเตือน:")
+        for w in sorted(set(warnings)):
+            print("  " + w)
 
 if __name__ == "__main__":
     if len(sys.argv) >= 5:
