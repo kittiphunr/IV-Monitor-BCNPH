@@ -1,7 +1,7 @@
 /**
  * @file      HostScreen.h
  * @brief     ทุกอย่างที่วาดลงจอ OLED 128x64 ของเครื่องส่วนกลาง
- * @version   4.9.0-OLED
+ * @version   4.9.1-OLED
  * @date      2026-09-23
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
@@ -17,6 +17,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 4.9.1-OLED | 2026-09-28 | จัดกึ่งกลางหน้าพักจอด้วย getStrWidth() |
  * | 4.9.0-OLED | 2026-09-28 | ออกแบบหน้าจอใหม่ตาม Station ทั้งหัวจอ การ์ด ป้ายเตียงแบบทึบ แถบบอกหน้า และหน้ารายเตียงแบบ IV BAG |
  * | 4.7.7 | 2026-09-23 | แยกออกมาจากไฟล์หลัก ย้ายที่อยู่ล้วน ๆ ไม่ได้แก้เนื้อในแม้แต่บรรทัดเดียว |
  *
@@ -456,13 +457,17 @@ void updateHostOLED() {
   }
 
   if (oledScreensaverActive) {
+    // [4.9.1-OLED] แก้: จัดกึ่งกลางด้วยความกว้างจริงจาก getStrWidth()
+    // เดิมวางนาฬิกาที่ x=4 ตายตัว แต่ "00:30" ในฟอนต์ logisoso32 กว้างจริงแค่ราว 90 พิกเซล
+    // บนจอจริงนาฬิกาจึงชิดซ้าย เหลือที่ว่างทางขวาราว 35 พิกเซล หัวเรื่องก็เยื้องขวาอยู่ 5 พิกเซล
+    // (เห็นหลังเปลี่ยนภาพจำลองมาใช้ฟอนต์ตัวจริงของ U8g2)
     u8g2.setFont(u8g2_font_7x13_tf);
-    u8g2.drawStr(20, 10, "SMART IV CLOCK");
+    u8g2.drawStr((128 - (int)u8g2.getStrWidth("SMART IV CLOCK")) / 2, 10, "SMART IV CLOCK");
     u8g2.drawHLine(10, 13, 108);
 
     u8g2.setFont(u8g2_font_logisoso32_tf);
     String clockStr = getOledClockStr();
-    u8g2.drawStr(4, 50, clockStr.c_str());
+    u8g2.drawStr((128 - (int)u8g2.getStrWidth(clockStr.c_str())) / 2, 50, clockStr.c_str());
 
     // ที่อยู่ที่พยาบาลต้องพิมพ์ลงเบราว์เซอร์ เปลี่ยนตามโหมดเครือข่าย
     u8g2.setFont(u8g2_font_4x6_tf);

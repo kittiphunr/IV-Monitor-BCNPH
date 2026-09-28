@@ -3,18 +3,16 @@
 
 ใช้: render.py ops.txt outdir [กว้าง สูง [อัตราขยาย]]
 ค่าเริ่มต้นคือจอของเครื่องประจำเตียง 172x320 ขยาย 3 เท่า
+
+ตัวอักษรวาดด้วยฟอนต์ 5x7 "classic" ตัวจริงของ Adafruit_GFX (fonts/glcdfont.c)
+ตามขั้นตอนของ Adafruit_GFX::drawChar() ทีละพิกเซล จึงเป็นรูปเดียวกับจอจริง
+เดิมใช้ฟอนต์ DejaVu (TrueType) วาดแทน ขนาดใกล้เคียงแต่รูปตัวอักษรไม่ใช่ของจริง
 """
 import sys, os
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
+from bitmapfont import glcd_font
 
 W, H, S = 172, 320, 3
-FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
-_fonts = {}
-
-def font_for(size):
-    if size not in _fonts:
-        _fonts[size] = ImageFont.truetype(FONT_PATH, int(round(7 * size * S * 1.18)))
-    return _fonts[size]
 
 def rgb(c):
     c = int(c)
@@ -54,15 +52,17 @@ def main(ops_path, outdir):
             x, y, r = int(p[1]), int(p[2]), int(p[3])
             d.ellipse([(x - r) * S, (y - r) * S, (x + r) * S, (y + r) * S], outline=rgb(p[4]), width=S)
         elif op == "TEXT":
-            x, y, size, col, bg = int(p[1]), int(p[2]), int(p[3]), p[4], p[5]
+            # Adafruit_GFX::write(): วาดทีละตัวที่เคอร์เซอร์ แล้วเลื่อนไป 6 x ขนาด
+            # (เฟิร์มแวร์ทุกสายสั่ง setTextWrap(false) จึงไม่ต้องจำลองการตัดบรรทัด)
+            x, y, size, col, bg = int(p[1]), int(p[2]), int(p[3]), int(p[4]), int(p[5])
             text = " ".join(p[6:]) if len(p) > 6 else ""
-            cw, ch = 6 * size * S, 8 * size * S
-            f = font_for(size)
-            for i, chpr in enumerate(text):
-                cx = x * S + i * cw
-                d.rectangle([cx, y * S, cx + cw - 1, y * S + ch - 1], fill=rgb(bg))
-                if chpr != " ":
-                    d.text((cx + cw // 2, y * S + ch // 2), chpr, font=f, fill=rgb(col), anchor="mm")
+            font = glcd_font()
+
+            def fillrect(rx, ry, rw, rh, c):
+                d.rectangle([rx * S, ry * S, (rx + rw) * S - 1, (ry + rh) * S - 1], fill=rgb(c))
+
+            for i, chpr in enumerate(text.encode("latin-1", "replace")):
+                font.draw_char(fillrect, x + i * 6 * size, y, chpr, col, bg, size)
         elif op == "MARK":
             name = p[1]
             out = os.path.join(outdir, f"{name}.png")
@@ -75,5 +75,4 @@ if __name__ == "__main__":
         W, H = int(sys.argv[3]), int(sys.argv[4])
     if len(sys.argv) >= 6:
         S = int(sys.argv[5])
-        _fonts.clear()
     main(sys.argv[1], sys.argv[2])

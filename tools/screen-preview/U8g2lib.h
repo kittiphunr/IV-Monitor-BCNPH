@@ -2,6 +2,7 @@
 // บันทึกทุกคำสั่งวาดลงไฟล์ ops แล้วให้ tools/oled-preview/render_oled.py เรนเดอร์เป็นภาพ
 // U8g2 ใช้พิกัด y เป็น "เส้นฐานตัวอักษร" จึงบันทึกชื่อฟอนต์ไปด้วยเพื่อให้เรนเดอร์ได้ถูกตำแหน่ง
 #pragma once
+#include "u8g2_widths.h"
 #include <stdint.h>
 #include <cstdio>
 #include <cstring>
@@ -48,6 +49,21 @@ class U8G2_SH1106_128X64_NONAME_F_HW_I2C {
 
   void drawStr(int x, int y, const char* s) {
     if (g_ops) fprintf(g_ops, "TEXT %d %d %s %d %s\n", x, y, font_, color_, s);
+  }
+  // ความกว้างแบบเดียวกับ u8g2_string_width(): รวมระยะเลื่อนทุกตัว แล้วแทนตัวสุดท้าย
+  // ด้วยความกว้างภาพจริง + ระยะเยื้อง ตารางสร้างจากฟอนต์ตัวจริง (gen_u8g2_widths.py)
+  int getStrWidth(const char* s) {
+    const U8g2GlyphMetric* m = u8g2_metrics_for(font_);
+    int w = 0, dx = 0, gw = 0, gx = 0;
+    for (; *s; s++) {
+      unsigned char c = (unsigned char)*s;
+      if (c < 32 || c > 126) continue;
+      const U8g2GlyphMetric &g = m[c - 32];
+      dx = g.dx; gw = g.w; gx = g.x;
+      w += dx;
+    }
+    if (gw != 0) w = w - dx + gw + gx;
+    return w;
   }
   void drawBox(int x, int y, int w, int h)              { emit("BOX",    x, y, w, h, 0); }
   void drawFrame(int x, int y, int w, int h)            { emit("FRAME",  x, y, w, h, 0); }

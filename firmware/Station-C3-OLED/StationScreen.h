@@ -1,7 +1,7 @@
 /**
  * @file      StationScreen.h
  * @brief     ทุกอย่างที่วาดลงจอ OLED 0.42 นิ้ว (72x40) ของเครื่องประจำเตียงรุ่นบอร์ดเล็ก
- * @version   1.3.0-C3
+ * @version   1.3.1-C3
  * @date      2026-09-23
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
@@ -18,6 +18,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 1.3.1-C3 | 2026-09-28 | เพิ่ม drawCenteredStrW() จัดกึ่งกลางด้วยความกว้างจริงจากไลบรารี ตัด ADV_LOGI ที่ผิดทิ้ง |
  * | 1.3.0-C3 | 2026-09-28 | หัวจอขึ้น 1-WAY และหน้าสถานะบอกสาเหตุ |
  * | 1.2.0-C3 | 2026-09-24 | เพิ่มหน้าจอของตัวช่วยคาลิเบรตสี่ขั้นตอน |
  * | 1.0.0-C3 | 2026-09-23 | ออกแบบหน้าจอ 72x40 ใหม่ทั้งหมดสำหรับบอร์ด ESP32-C3 |
@@ -79,7 +80,6 @@
 #define ADV_4X6   4
 #define ADV_5X8   5
 #define ADV_7X13  7
-#define ADV_LOGI  11
 
 // ---------------------------------------------------------------------------
 // ตัวช่วยวาด
@@ -87,6 +87,16 @@
 void drawCenteredStr(int y, int adv, const char *s) {
   int w = (int)strlen(s) * adv;
   int x = (SCR_W - w) / 2;
+  if (x < 0) x = 0;
+  u8g2.drawStr(x, y, s);
+}
+
+// [1.3.1-C3] เพิ่ม: จัดกึ่งกลางด้วยความกว้างจริงที่ไลบรารีคำนวณ ใช้กับฟอนต์ความกว้างไม่คงที่
+// เดิมคูณจำนวนตัวอักษรด้วย 11 (ADV_LOGI) ทั้งที่ตัวเลขของ logisoso16 กว้าง 10 พิกเซล
+// และเครื่องหมาย ':' กว้างแค่ 6 นาฬิกาหน้าพักจอจึงเยื้องไปทางซ้ายราว 5 พิกเซลบนจอจริง
+// (เห็นหลังเปลี่ยนภาพจำลองมาใช้ฟอนต์ตัวจริงของ U8g2)
+void drawCenteredStrW(int y, const char *s) {
+  int x = (SCR_W - (int)u8g2.getStrWidth(s)) / 2;
   if (x < 0) x = 0;
   u8g2.drawStr(x, y, s);
 }
@@ -365,7 +375,7 @@ void drawSetIdScreen() {
   char b[4];
   snprintf(b, sizeof(b), "%d", stationId);
   u8g2.setFont(u8g2_font_logisoso16_tf);
-  drawCenteredStr(30, ADV_LOGI, b);
+  drawCenteredStrW(30, b);                        // [1.3.1-C3] แก้
 
   u8g2.setFont(u8g2_font_4x6_tf);
   drawCenteredStr(39, ADV_4X6, "tap +1  hold save");
@@ -376,7 +386,7 @@ void drawSetIdScreen() {
 // ---------------------------------------------------------------------------
 void drawSaverScreen() {
   u8g2.setFont(u8g2_font_logisoso16_tf);
-  drawCenteredStr(24, ADV_LOGI, clockStr().c_str());
+  drawCenteredStrW(24, clockStr().c_str());       // [1.3.1-C3] แก้
 
   char b[20];
   u8g2.setFont(u8g2_font_4x6_tf);

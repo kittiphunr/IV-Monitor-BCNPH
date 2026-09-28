@@ -50,6 +50,11 @@ firmware/
 
 ### การพิสูจน์ว่าแก้แล้วพฤติกรรมไม่เปลี่ยน
 
+ภาพจำลองวาดด้วย **ฟอนต์บิตแมปตัวจริงของ U8g2 และ Adafruit_GFX** (ดู
+`tools/screen-preview/fonts/README.md`) จึงเป็นพิกเซลเดียวกับจอจริง
+ข้อความที่จัดกึ่งกลางด้วยฟอนต์ความกว้างไม่คงที่ (logisoso, helvB) ต้องใช้
+`u8g2.getStrWidth()` ห้ามคูณจำนวนตัวอักษรด้วยค่าคงที่
+
 ตัวจำลองหน้าจอบน PC ตรึงนาฬิกาไว้แล้ว (ดู `previewNow()` ใน
 `tools/screen-preview/Arduino.h` เปลี่ยนได้ด้วย `PREVIEW_EPOCH`)
 ภาพที่เรนเดอร์ออกมาจึงเหมือนเดิมทุกครั้ง ใช้เทียบ "ก่อนแก้" กับ "หลังแก้"
@@ -137,6 +142,7 @@ bash tools/rate-test/run.sh             # สูตรคำนวณอัต�
 bash tools/oled-check/run.sh            # คอมไพล์ Host รุ่นจอ OLED
 bash tools/touch-preview/run.sh         # คอมไพล์และเรนเดอร์ Host รุ่นจอสัมผัส
 bash tools/c3-preview/run.sh            # คอมไพล์และเรนเดอร์ Station รุ่นบอร์ดเล็ก
+bash tools/font-check/run.sh            # ฟอนต์ตัวจริงของภาพจำลอง และค่าความกว้างตัวอักษรในเฟิร์มแวร์
 bash hardware/verify.sh                 # ผังวงจรตรงกับหมายเลขขาในเฟิร์มแวร์
 bash hardware/verify_pcb.sh             # DRC ของแผ่นวงจรพิมพ์
 ```
