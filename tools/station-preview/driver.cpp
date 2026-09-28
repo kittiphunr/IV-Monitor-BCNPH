@@ -163,11 +163,12 @@ int main(int argc,char** argv){
 
 
 #ifdef FALLOUT_PREVIEW
-  // ---- รุ่น Fallout: เก็บภาพหน้า 1 ทีละเฟรมขณะหยดตกจริง เพื่อประกอบเป็นภาพเคลื่อนไหว ----
+  // ---- รุ่น Fallout: เก็บภาพหน้า 1 ทีละเฟรม เพื่อประกอบเป็นภาพเคลื่อนไหว ----
   // หยดทุกหยดผ่าน onDropDetected() ตัวจริง แล้วให้ updateDripAnimation() ตัวจริงวาด
-  // ช่วงแรกหยดตามอัตรา 98 mL/h (ราว 1.8 วินาทีต่อหยด) แล้วถี่ขึ้น ให้เห็นว่าหยดถี่ = เดินเร็ว
+  // หยดตามอัตรา 98 mL/h (ราว 1.8 วินาทีต่อหยด) หกหยด แล้วหยดหยุด
+  // ภาพต้องเดินวนต่อเนื่องระหว่างหยด (ไม่ได้ก้าวตามหยด) และหยุดเองหลังหยดสุดท้ายราว 4.6 วินาที
   {
-    static const unsigned gap[] = {1840, 1840, 1840, 900, 900, 900, 900, 600, 600, 600, 600, 600, 600};
+    static const unsigned gap[] = {1840, 1840, 1840, 1840, 1840, 1840};
     feedHostSync(0x06);
     lastHostRssi = -62;
     // หน้าตรวจเซนเซอร์ด้านบนล้างแผนการให้ไปแล้ว ตั้งกลับให้เหมือนภาพ p1_bag
@@ -179,7 +180,7 @@ int main(int argc,char** argv){
     unsigned long t0 = g_millis, nextDrop = t0 + 300;
     size_t gi = 0;
     char name[32];
-    for (int f = 0; f * 40UL < 13000UL; f++) {
+    for (int f = 0; f * 40UL < 16000UL; f++) {
       g_millis = t0 + f * 40UL;
       if (f % 25 == 0) feedHostSync(0x06);                 // Host ส่ง Sync ทุกวินาทีตามปกติ
       if (gi < sizeof(gap) / sizeof(gap[0]) && g_millis >= nextDrop) { onDropDetected(); nextDrop += gap[gi++]; }
