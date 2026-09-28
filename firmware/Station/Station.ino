@@ -1,7 +1,7 @@
 /**
  * @file      Station.ino
  * @brief     เฟิร์มแวร์เครื่องประจำเตียง สายหลัก นับหยดสารน้ำและส่งให้เครื่องส่วนกลาง
- * @version   7.9.0
+ * @version   7.10.0
  * @date      2026-09-23
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
@@ -23,6 +23,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 7.10.0 | 2026-09-28 | ไฟสถานะการเชื่อมต่อดูสองทาง ขึ้น ONE-WAY เมื่อได้ยิน Host แต่ Host ไม่ได้ยินเตียง |
  * | 7.9.0 | 2026-09-23 | จำนวนหยดสะสมรอดการรีบูตและไฟดับแล้ว เพิ่มสุนัขเฝ้าบ้าน และแก้การนับเวลาที่พังเมื่อ millis() วนรอบ |
  * | 7.8.0 | 2026-09-23 | ย้ายโค้ดวาดจอออกไปไว้ที่ `StationScreen.h` ตรรกะไม่เปลี่ยนแม้แต่บรรทัดเดียว |
  * | 7.7.3 | 2026-09-12 | แก้สูตรอัตราการไหลเป็นหน้าต่างสะสม 8 หยด ตัดความลำเอียงของการเฉลี่ยส่วนกลับ |
@@ -215,7 +216,7 @@ esp_reset_reason_t bootResetReason = ESP_RST_UNKNOWN;
 
 #include "drop_detector.h"   // อัลกอริทึมตรวจจับหยด (ทดสอบบน PC ได้: tools/detector-test)
 
-#define APP_VERSION         "7.9.0"
+#define APP_VERSION         "7.10.0"
 
 #define TFT_CS              9
 #define TFT_DC              10
@@ -321,6 +322,22 @@ unsigned long lastUserActivityTime  = 0;
 bool isRunning              = true;
 bool isClockSynced          = false;
 volatile bool isHostOnline  = false;
+
+// ---- สถานะการเชื่อมต่อแบบสองทาง ([7.10.0] เพิ่ม) ----
+// isHostOnline บอกได้แค่ว่า "เราได้ยิน Host" เพราะ Host กระจาย Sync ให้ทุกเลขเตียง
+// ที่เปิดไว้ ไม่ว่าจะได้ยินเตียงนั้นหรือไม่ เดิมจอจึงขึ้น ONLINE ได้ทั้งที่ Host ขึ้น OFF
+// ให้เตียงนี้อยู่ พยาบาลเข้าใจว่าระบบเฝ้าอยู่ทั้งที่ไม่ได้เฝ้า — ความล้มเหลวแบบเงียบ
+#define SYNC_FLAG_HEARD       0x02     // Host ได้ยินเตียงนี้อยู่
+#define SYNC_FLAG_REPORTS     0x04     // Host รุ่นนี้รายงาน SYNC_FLAG_HEARD (รุ่นเก่าไม่ส่ง)
+#define LINK_NONE             0        // ไม่ได้ยิน Host เลย
+#define LINK_OK               1        // สองทางปกติ (หรือ Host รุ่นเก่าที่บอกไม่ได้)
+#define LINK_NOT_HEARD        2        // ได้ยิน Host แต่ Host บอกว่าไม่ได้ยินเรา
+#define LINK_NOT_LISTED       3        // ได้ยิน Host แต่ไม่มี Sync ของเตียงเราเลย
+                                       // = เลขเตียงเกินจำนวนเตียงที่ Host เปิดไว้
+volatile unsigned long hostOnlineSince     = 0;
+volatile unsigned long lastOwnSyncTime     = 0;
+volatile unsigned long lastHeardReportTime = 0;
+volatile bool          hostReportsUplink   = false;
 volatile int lastHostRssi   = -100;
 volatile unsigned long lastHostRecvTime = 0;
 bool stateNeedsRedraw       = true;
@@ -350,7 +367,9 @@ typedef struct __attribute__((packed)) struct_host_sync {
   uint8_t  resetSeq;
   uint8_t  hostChannel;
   uint8_t  nearEndPct;       // % ของปริมาตรตามแผนที่เริ่มเตือนใกล้หมด
-  uint8_t  flags;            // bit0 = Host บันทึกว่ารับทราบเตือนใกล้หมดแล้ว
+  uint8_t  flags;            // bit0 = รับทราบเตือนใกล้หมดแล้ว
+                             // bit1 = Host ได้ยินเตียงนี้อยู่ ([7.10.0])
+                             // bit2 = Host รุ่นนี้รายงาน bit1 ([7.10.0]) รุ่นเก่าเป็น 0 เสมอ
 } struct_host_sync;          // 20 bytes
 
 static_assert(sizeof(struct_message) == 23, "struct_message must be 23 bytes (match Host)");
@@ -607,6 +626,22 @@ bool isNearEndAcknowledged() {
   return hostNearEndAck || nearEndAckRequest;
 }
 
+// [7.10.0] เพิ่ม: สถานะการเชื่อมต่อที่รวมขาขึ้นด้วย ต้องผิดปกติต่อเนื่องเกิน HOST_TIMEOUT_MS
+// จึงจะขึ้นเตือน กันจอกะพริบตอนเพิ่งบูตที่ Host ยังไม่ทันได้ยินเรา
+uint8_t linkState() {
+  if (!isHostOnline) return LINK_NONE;
+  unsigned long now = millis();
+  unsigned long ref = hostOnlineSince;
+  if (lastOwnSyncTime > ref) ref = lastOwnSyncTime;
+  if (now - ref > HOST_TIMEOUT_MS) return LINK_NOT_LISTED;
+  if (hostReportsUplink) {
+    unsigned long heard = hostOnlineSince;
+    if (lastHeardReportTime > heard) heard = lastHeardReportTime;
+    if (now - heard > HOST_TIMEOUT_MS) return LINK_NOT_HEARD;
+  }
+  return LINK_OK;
+}
+
 // รหัสเตือนที่ใช้จริงในเครื่องนี้
 uint8_t effectiveAlertCode() {
   if (!isRunning) return ALERT_NONE;
@@ -725,7 +760,7 @@ void updateStatusLed(uint8_t code) {
   else if (isCriticalAlert(code) && millis() >= snoozeUntilTime) led = 0;
   else if (isNearEndPending(code)) led = 5;
   else if (!isRunning) led = 1;
-  else if (!isHostOnline) led = 2;
+  else if (linkState() != LINK_OK) led = 2;   // [7.10.0] แก้: ขาขึ้นขาดก็ต้องเตือน
   else led = 3;
 
   if (led == lastLed) return;
@@ -1071,6 +1106,7 @@ void OnTimeSyncRecv(const uint8_t *mac, const uint8_t *incomingDataBytes, int le
   memcpy(&syncData, incomingDataBytes, sizeof(syncData));
   lastHostRssi = rssi;
   lastHostRecvTime = millis();
+  if (!isHostOnline) hostOnlineSince = millis();   // [7.10.0] เพิ่ม
   isHostOnline = true;
   hostReportedChannel = syncData.hostChannel;
 
@@ -1087,6 +1123,10 @@ void OnTimeSyncRecv(const uint8_t *mac, const uint8_t *incomingDataBytes, int le
     dropFactor    = safeDropFactor(syncData.dropFactor);
     nearEndPct    = safeNearPct(syncData.nearEndPct);
     hostNearEndAck = (syncData.flags & 0x01) != 0;
+    // [7.10.0] เพิ่ม: Host บอกว่าได้ยินเราอยู่หรือไม่
+    lastOwnSyncTime   = millis();
+    hostReportsUplink = (syncData.flags & SYNC_FLAG_REPORTS) != 0;
+    if (syncData.flags & SYNC_FLAG_HEARD) lastHeardReportTime = millis();
     if (hostNearEndAck) nearEndAckRequest = false;   // Host ยืนยันแล้ว
 
     if (knownResetSeq < 0) {

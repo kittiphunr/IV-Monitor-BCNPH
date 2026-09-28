@@ -1,7 +1,7 @@
 /**
  * @file      StationScreen.h
  * @brief     ทุกอย่างที่วาดลงจอ OLED 0.42 นิ้ว (72x40) ของเครื่องประจำเตียงรุ่นบอร์ดเล็ก
- * @version   1.2.0-C3
+ * @version   1.3.0-C3
  * @date      2026-09-23
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
@@ -18,6 +18,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 1.3.0-C3 | 2026-09-28 | หัวจอขึ้น 1-WAY และหน้าสถานะบอกสาเหตุ |
  * | 1.2.0-C3 | 2026-09-24 | เพิ่มหน้าจอของตัวช่วยคาลิเบรตสี่ขั้นตอน |
  * | 1.0.0-C3 | 2026-09-23 | ออกแบบหน้าจอ 72x40 ใหม่ทั้งหมดสำหรับบอร์ด ESP32-C3 |
  *
@@ -129,7 +130,11 @@ void drawHeader() {
   u8g2.drawStr(0, 6, bed);
 
   // สัญญาณ: ต่อติด = แท่งทึบสามขีดไล่ระดับ / หลุด = คำว่า NO LINK กะพริบ
-  if (isHostOnline()) {
+  // [1.3.0-C3] เพิ่ม: ได้ยิน Host ทางเดียว = คำว่า 1-WAY กะพริบ แทนแท่งสัญญาณ
+  uint8_t ls = linkState();
+  if (ls == LINK_NOT_HEARD || ls == LINK_NOT_LISTED) {
+    if ((millis() / 500) % 2 == 0) u8g2.drawStr(12, 6, "1-WAY");
+  } else if (ls == LINK_OK) {
     u8g2.drawBox(12, 4, 2, 2);
     u8g2.drawBox(15, 2, 2, 4);
     u8g2.drawBox(18, 0, 2, 6);
@@ -298,7 +303,11 @@ void drawPageStatus() {
   snprintf(b, sizeof(b), "ch %d", espnowChannel);
   drawRightStr(SCR_W, 15, ADV_4X6, b);
 
-  u8g2.drawStr(0, 22, isHostOnline() ? "host ONLINE" : "host SEARCHING");
+  {   // [1.3.0-C3] แก้: แยกกรณีได้ยินทางเดียว
+    uint8_t ls = linkState();
+    u8g2.drawStr(0, 22, ls == LINK_OK ? "host ONLINE" : ls == LINK_NONE ? "host SEARCHING" :
+                        ls == LINK_NOT_HEARD ? "host CAN'T HEAR" : "bed NOT on host");
+  }
 
   snprintf(b, sizeof(b), "sensor %s", sensorStateWord());
   u8g2.drawStr(0, 29, b);

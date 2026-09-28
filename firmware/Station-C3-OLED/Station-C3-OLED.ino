@@ -1,7 +1,7 @@
 /**
  * @file      Station-C3-OLED.ino
  * @brief     เฟิร์มแวร์เครื่องประจำเตียง รุ่นบอร์ดเล็ก จอ OLED 0.42 นิ้ว
- * @version   1.2.0-C3
+ * @version   1.3.0-C3
  * @date      2026-09-23
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
@@ -25,6 +25,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 1.3.0-C3 | 2026-09-28 | ไฟสถานะการเชื่อมต่อดูสองทาง ขึ้น ONE-WAY เมื่อได้ยิน Host แต่ Host ไม่ได้ยินเตียง |
  * | 1.2.0-C3 | 2026-09-24 | เพิ่มตัวช่วยคาลิเบรตสี่ขั้นตอนที่หน้าเครื่อง วัดทิศสัญญาณเอง และบันทึกสิ่งที่เรียนรู้ลง NVS |
  * | 1.1.0-C3 | 2026-09-23 | จำนวนหยดสะสมรอดการรีบูตและไฟดับแล้ว และเพิ่มสุนัขเฝ้าบ้านกันเครื่องค้างเงียบ |
  * | 1.0.0-C3 | 2026-09-23 | สร้างสายใหม่จากไฟล์ v4.4.2 เดิม ปรับเป็น Protocol v3 ไล่หาช่องสัญญาณเอง ใช้ `drop_detector.h` ตัวเดียวกับสายหลัก และออกแบบหน้าจอ 72x40 ใหม่ทั้งหมด |
@@ -111,7 +112,7 @@ esp_reset_reason_t bootResetReason = ESP_RST_UNKNOWN;
 
 #include "drop_detector.h"   // อัลกอริทึมตรวจจับหยด (ทดสอบบน PC ได้: tools/detector-test)
 
-#define APP_VERSION         "1.2.0-C3"
+#define APP_VERSION         "1.3.0-C3"
 
 // ---------------------------------------------------------------------------
 // ขา
@@ -176,7 +177,9 @@ typedef struct __attribute__((packed)) struct_host_sync {
   uint8_t  resetSeq;
   uint8_t  hostChannel;
   uint8_t  nearEndPct;       // % ของปริมาตรตามแผนที่เริ่มเตือนใกล้หมด
-  uint8_t  flags;            // bit0 = Host บันทึกว่ารับทราบเตือนใกล้หมดแล้ว
+  uint8_t  flags;            // bit0 = รับทราบเตือนใกล้หมดแล้ว
+                             // bit1 = Host ได้ยินเตียงนี้อยู่ ([1.3.0-C3])
+                             // bit2 = Host รุ่นนี้รายงาน bit1 ([1.3.0-C3]) รุ่นเก่าเป็น 0 เสมอ
 } struct_host_sync;          // 20 bytes
 
 static_assert(sizeof(struct_message) == 23, "struct_message must be 23 bytes (match Host)");
@@ -223,6 +226,17 @@ uint8_t  lastResetSeq             = 0;
 bool     hostAckedNearEnd         = false;
 bool     nearEndAckRequest        = false;   // พยาบาลกดรับทราบที่เตียง
 unsigned long lastHostSyncTime    = 0;
+// [1.3.0-C3] เพิ่ม: สถานะสองทาง ดูคำอธิบายเต็มที่ linkState()
+#define SYNC_FLAG_HEARD       0x02
+#define SYNC_FLAG_REPORTS     0x04
+#define LINK_NONE             0
+#define LINK_OK               1
+#define LINK_NOT_HEARD        2
+#define LINK_NOT_LISTED       3
+unsigned long hostOnlineSince     = 0;
+unsigned long lastOwnSyncTime     = 0;
+unsigned long lastHeardReportTime = 0;
+bool          hostReportsUplink   = false;
 bool     isClockSynced            = false;
 
 // ---- วิทยุ ----
@@ -809,6 +823,23 @@ void serviceCalibration(unsigned long now) {
 // ---------------------------------------------------------------------------
 bool isHostOnline() { return lastHostSyncTime > 0 && (millis() - lastHostSyncTime) < HOST_TIMEOUT_MS; }
 
+// [1.3.0-C3] เพิ่ม: isHostOnline() บอกได้แค่ว่า "เราได้ยิน Host" เพราะ Host กระจาย Sync ให้
+// ทุกเลขเตียงที่เปิดไว้ ไม่ว่าจะได้ยินเตียงนั้นหรือไม่ เดิมจอจึงบอกว่าต่อติดได้ทั้งที่
+// Host ขึ้น OFF ให้เตียงนี้ ต้องผิดปกติต่อเนื่องเกิน HOST_TIMEOUT_MS จึงจะขึ้นเตือน
+uint8_t linkState() {
+  if (!isHostOnline()) return LINK_NONE;
+  unsigned long now = millis();
+  unsigned long ref = hostOnlineSince;
+  if (lastOwnSyncTime > ref) ref = lastOwnSyncTime;
+  if (now - ref > HOST_TIMEOUT_MS) return LINK_NOT_LISTED;
+  if (hostReportsUplink) {
+    unsigned long heard = hostOnlineSince;
+    if (lastHeardReportTime > heard) heard = lastHeardReportTime;
+    if (now - heard > HOST_TIMEOUT_MS) return LINK_NOT_HEARD;
+  }
+  return LINK_OK;
+}
+
 unsigned long msSinceLastDrop() {
   if (!hasFirstDropOccurred) return 0;
   return millis() - lastDropTimestamp;
@@ -846,6 +877,7 @@ void OnHostSyncRecv(const esp_now_recv_info_t *info, const uint8_t *data, int le
   struct_host_sync s;
   memcpy(&s, data, sizeof(s));
 
+  if (!isHostOnline()) hostOnlineSince = millis();  // [1.3.0-C3] เพิ่ม
   lastHostSyncTime = millis();                      // ได้ยิน Host = ช่องนี้ถูกแล้ว
 
   if (s.epochTime > 1600000000UL) {
@@ -862,6 +894,9 @@ void OnHostSyncRecv(const esp_now_recv_info_t *info, const uint8_t *data, int le
   nearEndPct   = (s.nearEndPct >= 10 && s.nearEndPct <= 99) ? s.nearEndPct : DEFAULT_NEAR_END_PCT;
   hostAlertCode = s.alertCode;
   hostAckedNearEnd = (s.flags & 0x01) != 0;
+  lastOwnSyncTime   = millis();                     // [1.3.0-C3] เพิ่ม
+  hostReportsUplink = (s.flags & SYNC_FLAG_REPORTS) != 0;
+  if (s.flags & SYNC_FLAG_HEARD) lastHeardReportTime = millis();
   if (hostAckedNearEnd) nearEndAckRequest = false;  // Host รับทราบแล้ว เลิกขอ
 
   // Host สั่งเริ่มถุงใหม่
