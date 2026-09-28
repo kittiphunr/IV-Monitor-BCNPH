@@ -21,7 +21,9 @@ FALLOUT=""
 g++ -std=gnu++17 -I../screen-preview -DESP_ARDUINO_VERSION_MAJOR=3 $EXTRA $FALLOUT -Wall -Wno-unused-variable -o stpreview driver.cpp
 ./stpreview ops.txt
 python3 ../screen-preview/render.py ops.txt "$OUT"
-rm -f station.cpp drop_detector.h StationScreen.h stpreview ops.txt
+# ลบไฟล์ .h ทุกตัวที่คัดลอกมาจากสเก็ตช์ (สาย Fallout มี pipboy_sprite.h เพิ่มมาอีกตัว)
+for h in "$(dirname "$SKETCH")"/*.h; do rm -f "$(basename "$h")"; done
+rm -f station.cpp stpreview ops.txt
 if [ -n "$FALLOUT" ]; then
   python3 make_gif.py "$OUT/p1_walk.gif" 40 "$OUT"/fo_anim_*.png
   rm -f "$OUT"/fo_anim_*.png

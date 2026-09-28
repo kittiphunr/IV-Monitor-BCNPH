@@ -62,6 +62,9 @@ void feedHostSync(uint8_t flags) {
   struct_host_sync s; memset(&s, 0, sizeof(s));
   s.stationId = currentStationId; s.flags = flags;
   s.dropFactor = 20; s.nearEndPct = 80; s.hostChannel = 1;
+  // Host ตัวจริงส่งแผนการให้ของเตียงมาทุกแพ็กเก็ต ส่งค่าที่เครื่องถืออยู่กลับไป
+  // ไม่อย่างนั้นแพ็กเก็ตจำลองจะล้างเป้าหมายและปริมาตรตามแผนเป็นศูนย์
+  s.targetRateHr = targetRateHr; s.totalPlanMl = totalPlanMl;
   esp_now_recv_info_t info; memset(&info, 0, sizeof(info));
   OnTimeSyncRecv(&info, (const uint8_t*)&s, (int)sizeof(s));
 }

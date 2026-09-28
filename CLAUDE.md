@@ -34,7 +34,8 @@ firmware/
 
 `Station-Fallout.ino` เป็นสำเนาของ `Station.ino` ที่ต่างได้แค่หัวไฟล์ `APP_VERSION` และค่าสี
 **แก้ `Station.ino` เมื่อไร ต้องรัน `python3 tools/fallout-sync/sync.py --write` ทุกครั้ง**
-ไฟล์ที่เป็นของสาย Fallout เองมีแค่ `StationScreen.h`
+ไฟล์ที่เป็นของสาย Fallout เองมีแค่ `StationScreen.h` และ `pipboy_sprite.h`
+ซึ่งสร้างจากภาพต้นทางด้วย `python3 tools/fallout-sprite/make_sprite.py` ห้ามแก้ด้วยมือ
 
 **กฎที่ห้ามผิด** ไฟล์วาดจอต้อง `#include` **ท้ายไฟล์หลัก ก่อน `setup()`** เท่านั้น
 ห้ามย้ายขึ้นไปบนสุด เพราะโค้ดในนั้นใช้ตัวแปรและฟังก์ชันช่วยที่ประกาศไว้ด้านบน
@@ -148,7 +149,7 @@ bash tools/rate-test/run.sh             # สูตรคำนวณอัต�
 bash tools/oled-check/run.sh            # คอมไพล์ Host รุ่นจอ OLED
 bash tools/touch-preview/run.sh         # คอมไพล์และเรนเดอร์ Host รุ่นจอสัมผัส
 bash tools/c3-preview/run.sh            # คอมไพล์และเรนเดอร์ Station รุ่นบอร์ดเล็ก
-bash tools/fallout-sync/run.sh          # สาย Fallout ใช้ตรรกะเดียวกับสายหลักทุกบรรทัด
+bash tools/fallout-sync/run.sh          # สาย Fallout ใช้ตรรกะเดียวกับสายหลักทุกบรรทัด และภาพตัวละครตรงต้นทาง
 bash tools/font-check/run.sh            # ฟอนต์ตัวจริงของภาพจำลอง และค่าความกว้างตัวอักษรในเฟิร์มแวร์
 bash hardware/verify.sh                 # ผังวงจรตรงกับหมายเลขขาในเฟิร์มแวร์
 bash hardware/verify_pcb.sh             # DRC ของแผ่นวงจรพิมพ์

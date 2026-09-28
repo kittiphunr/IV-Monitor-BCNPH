@@ -1,7 +1,7 @@
 /**
  * @file      Station-Fallout.ino
- * @brief     เฟิร์มแวร์เครื่องประจำเตียง รุ่นพิเศษ Fallout จอเขียวแบบ Pip-Boy คนเดินก้าวตามหยดสารน้ำ
- * @version   1.0.0-FO
+ * @brief     เฟิร์มแวร์เครื่องประจำเตียง รุ่นพิเศษ Fallout จอแบบ Pip-Boy และ Vault Boy เดินก้าวตามหยดสารน้ำ
+ * @version   1.1.0-FO
  * @date      2026-09-28
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
@@ -22,15 +22,17 @@
  *
  * @par Fallout Edition
  * รุ่นพิเศษที่แยกออกมาจากสายหลัก ต่างกันแค่หน้าตา ตรรกะทุกบรรทัดเหมือนสายหลัก
- * หน้าจอเป็นโทนเขียวแบบจอ Pip-Boy และหน้า 1 ใช้ตัวละครนักเดินทางในชุดหมวกกันน็อก
- * ที่ก้าวหนึ่งก้าวทุกครั้งที่นับหยดได้ แทนภาพถุงน้ำเกลือ (ตัวละครออกแบบใหม่ทั้งหมด
- * ไม่ได้ลอกลายเส้น Vault Boy ซึ่งเป็นลิขสิทธิ์ของ Bethesda)
+ * หน้าจอใช้จานสีของจอ Pip-Boy และหน้า 1 จัดแบบหน้า STAT ของ Pip-Boy
+ * Vault Boy ก้าวหนึ่งก้าวทุกครั้งที่นับหยดได้ แทนภาพถุงน้ำเกลือ
+ * ภาพ Vault Boy มาจากโครงการ PipBoy_2040 ของ Adafruit (สัญญาอนุญาต MIT)
+ * ตัวละครและชื่อ Fallout เป็นเครื่องหมายการค้าของ Bethesda ใช้ในโครงการนี้โดยไม่แสวงหากำไร
  * ไฟล์นี้สร้างจาก Station.ino ด้วย tools/fallout-sync/sync.py ห้ามแก้เนื้อโค้ดด้วยมือ
  * ให้แก้ที่สายหลักแล้วรัน sync.py --write แทน สีเตือนวิกฤต (แดง ส้ม เหลือง) คงไว้ตามสายหลัก
  *
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 1.1.0-FO | 2026-09-28 | จานสีตามจอ Pip-Boy จริง หน้า 1 จัดแบบหน้า STAT และใช้ Vault Boy ของ Adafruit PipBoy_2040 แทนนักเดินทางที่วาดเอง |
  * | 1.0.0-FO | 2026-09-28 | แยกสายพิเศษ Fallout จาก Station 7.10.0 จอเขียวแบบ Pip-Boy และคนเดินก้าวตามหยดแทนถุงน้ำเกลือ |
  * | 7.10.0 | 2026-09-28 | ไฟสถานะการเชื่อมต่อดูสองทาง ขึ้น ONE-WAY เมื่อได้ยิน Host แต่ Host ไม่ได้ยินเตียง |
  * | 7.9.0 | 2026-09-23 | จำนวนหยดสะสมรอดการรีบูตและไฟดับแล้ว เพิ่มสุนัขเฝ้าบ้าน และแก้การนับเวลาที่พังเมื่อ millis() วนรอบ |
@@ -225,7 +227,7 @@ esp_reset_reason_t bootResetReason = ESP_RST_UNKNOWN;
 
 #include "drop_detector.h"   // อัลกอริทึมตรวจจับหยด (ทดสอบบน PC ได้: tools/detector-test)
 
-#define APP_VERSION         "1.0.0-FO"
+#define APP_VERSION         "1.1.0-FO"
 
 #define TFT_CS              9
 #define TFT_DC              10
@@ -275,26 +277,26 @@ esp_reset_reason_t bootResetReason = ESP_RST_UNKNOWN;
 #define ALERT_COMPLETE    4
 #define ALERT_OCCLUSION   5
 
-#define THEME_BG            0x0000
-#define THEME_SKYBLUE       0x1FF0
-#define THEME_CYAN          0x1FF0
-#define THEME_PINK          0x1FF0
-#define THEME_NAVY          0x0123
-#define THEME_DARKBOX       0x0123
+#define THEME_BG            0x08C0
+#define THEME_SKYBLUE       0x778A
+#define THEME_CYAN          0x778A
+#define THEME_PINK          0x778A
+#define THEME_NAVY          0x11A1
+#define THEME_DARKBOX       0x11A1
 #define THEME_MAROON        0x6000
 
-#define COLOR_WHITE         0xB7F9
-#define COLOR_GREEN         0x1FF0
+#define COLOR_WHITE         0x778A
+#define COLOR_GREEN         0x778A
 #define COLOR_RED           0xF800
 #define COLOR_ORANGE        0xFD20
 #define COLOR_YELLOW        0xFFE0
 
 // ชุดสีของหน้าจอรุ่นใหม่ (พื้นดำ การ์ดเทาเข้ม ตัวอักษรรองสีเทา)
-#define UI_CARD             0x0123   // พื้นการ์ด
-#define UI_BAR              0x0183   // แถบบนสุด
-#define UI_LINE             0x0AC5   // เส้นคั่น/แถบว่าง
-#define UI_DIM              0x1C69   // ข้อความรอง
-#define UI_GREEN            0x1FF0   // เขียวอ่านง่ายบนพื้นดำ
+#define UI_CARD             0x11A1   // พื้นการ์ด
+#define UI_BAR              0x1161   // แถบบนสุด
+#define UI_LINE             0x3364   // เส้นคั่น/แถบว่าง
+#define UI_DIM              0x5E07   // ข้อความรอง
+#define UI_GREEN            0x778A   // เขียวอ่านง่ายบนพื้นดำ
 
 #ifndef ST77XX_LIGHTGREY
   #define ST77XX_LIGHTGREY  0xC618
