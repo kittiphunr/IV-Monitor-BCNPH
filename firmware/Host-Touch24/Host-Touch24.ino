@@ -1,7 +1,7 @@
 /**
  * @file      Host-Touch24.ino
  * @brief     เฟิร์มแวร์เครื่องส่วนกลาง รุ่นจอสัมผัส 2.4 นิ้ว ตั้งค่าได้ที่หน้าเครื่อง
- * @version   4.10.0-TOUCH
+ * @version   4.10.1-TOUCH
  * @date      2026-09-23
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
@@ -22,6 +22,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 4.10.1-TOUCH | 2026-09-28 | Sync บอกเตียงด้วยว่า Host ได้ยินมันอยู่หรือไม่ (บิตว่างใน flags ขนาดโครงสร้างไม่เปลี่ยน) |
  * | 4.10.0-TOUCH | 2026-09-23 | เตียงที่หายไประหว่างให้น้ำเกลือมีเสียงเตือนแล้ว เพิ่มสุนัขเฝ้าบ้าน รายงานสาเหตุการรีบูต และปฏิเสธแพ็กเก็ตที่ค่าเป็นไปไม่ได้ |
  * | 4.9.3-TOUCH | 2026-09-23 | ย้ายโค้ดวาดจอออกไปไว้ที่ `HostScreen.h` ตรรกะไม่เปลี่ยนแม้แต่บรรทัดเดียว |
  * | 4.9.2-TOUCH | 2026-09-23 | พอร์ตคุณสมบัติและการแก้บั๊กทั้งหมดจากรุ่นจอ OLED v4.7.3-v4.7.5 มาครบ |
@@ -138,7 +139,7 @@
 esp_reset_reason_t bootResetReason = ESP_RST_UNKNOWN;
 
 
-#define APP_VERSION         "4.10.0-TOUCH"
+#define APP_VERSION         "4.10.1-TOUCH"
 #define DEV_NAME            "กิตติพันธ์ รัตนคร"
 #define DEV_ROLE            "นักวิชาการคอมพิวเตอร์"
 #define DEV_INSTITUTION     "มหาวิทยาลัยมหาจุฬาลงกรณราชวิทยาลัย วิทยาเขตแพร่"
@@ -308,6 +309,8 @@ typedef struct __attribute__((packed)) struct_host_sync {
   uint8_t  hostChannel;
   uint8_t  nearEndPct;       // % ของปริมาตรตามแผนที่เริ่มเตือนใกล้หมด
   uint8_t  flags;            // bit0 = รับทราบเตือนใกล้หมดแล้ว
+                             // bit1 = Host ได้ยินเตียงนี้อยู่ ([4.10.1-TOUCH])
+                             // bit2 = Host รุ่นนี้รายงาน bit1 ([4.10.1-TOUCH]) รุ่นเก่าเป็น 0 เสมอ
 } struct_host_sync;          // 20 bytes
 
 static_assert(sizeof(struct_message) == 23, "struct_message must be 23 bytes (match Station)");
@@ -858,7 +861,10 @@ void sendSyncForStation(int i) {
   syncMsg.resetSeq     = stations[i].cfg.resetSeq;
   syncMsg.hostChannel  = currentWifiChannel();
   syncMsg.nearEndPct   = safeNearPct(stations[i].nearEndPct);
-  syncMsg.flags        = stations[i].nearEndAck ? 0x01 : 0x00;
+  // [4.10.1-TOUCH] แก้: บอกเตียงด้วยว่า Host ได้ยินมันอยู่หรือไม่ เดิมเตียงขึ้น ONLINE
+  // ได้ทั้งที่ Host ไม่เคยได้ยินมันเลย เพราะเตียงรู้แค่ว่าตัวเองได้ยิน Host
+  syncMsg.flags        = (stations[i].nearEndAck ? 0x01 : 0x00) | 0x04 |
+                         (isStationOnline(i) ? 0x02 : 0x00);
 
   // ไม่ส่งซ้ำและไม่ delay() เมื่อคิวส่งเต็ม เพราะรอบถัดไปมาถึงในอีกไม่กี่สิบมิลลิวินาทีอยู่แล้ว
   if (esp_now_send(broadcastAddress, (uint8_t *)&syncMsg, sizeof(syncMsg)) != ESP_OK) syncSendFail++;
