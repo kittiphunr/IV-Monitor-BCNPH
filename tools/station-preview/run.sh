@@ -15,10 +15,20 @@ for h in "$(dirname "$SKETCH")"/*.h; do [ -e "$h" ] && cp "$h" "$(basename "$h")
 # สายเสถียรยังมีหน้าคาลิเบรตสามขั้นแบบเดิม ตัวขับจึงเก็บภาพทีละขั้นให้
 EXTRA=""
 [ "$(basename "$SKETCH")" = "Station-Stable.ino" ] && EXTRA="-DSTATION_STABLE_PREVIEW"
-g++ -std=gnu++17 -I../screen-preview -DESP_ARDUINO_VERSION_MAJOR=3 $EXTRA -Wall -Wno-unused-variable -o stpreview driver.cpp
+# รุ่น Fallout เก็บภาพหน้า 1 ทีละเฟรมเพิ่ม แล้วประกอบเป็นภาพเคลื่อนไหวของตัวละครที่ก้าวตามหยด
+FALLOUT=""
+[ "$(basename "$SKETCH")" = "Station-Fallout.ino" ] && FALLOUT="-DFALLOUT_PREVIEW"
+g++ -std=gnu++17 -I../screen-preview -DESP_ARDUINO_VERSION_MAJOR=3 $EXTRA $FALLOUT -Wall -Wno-unused-variable -o stpreview driver.cpp
 ./stpreview ops.txt
 python3 ../screen-preview/render.py ops.txt "$OUT"
 rm -f station.cpp drop_detector.h StationScreen.h stpreview ops.txt
+if [ -n "$FALLOUT" ]; then
+  python3 make_gif.py "$OUT/p1_walk.gif" 40 "$OUT"/fo_anim_*.png
+  rm -f "$OUT"/fo_anim_*.png
+  python3 ../screen-preview/make_sheet.py "$OUT/overview_walk.png" 4 \
+    "$OUT/p1_bag.png" "WALK" "$OUT/p1_paused.png" "PAUSED" \
+    "$OUT/p1_noflow.png" "NO FLOW" "$OUT/p1_nearend.png" "NEAR END"
+fi
 echo "เสร็จแล้ว: ภาพอยู่ใน $OUT"
 
 # แผ่นรวมมีหน้าตรวจเซนเซอร์ของสายหลัก สายเสถียรเรนเดอร์ไว้เอาเฉพาะหน้าคาลิเบรตจึงข้าม
