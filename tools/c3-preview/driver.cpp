@@ -126,6 +126,18 @@ void calRunUntilPass(CalStep want, unsigned long intervalMs) {
   }
 }
 
+// ได้ยินกันสองทาง — ตั้งแต่ 1.3.0-C3 หัวจอดูทั้งขาไปและขากลับ จึงต้องบอกด้วยว่า
+// Host ได้ยินเตียงนี้อยู่ ไม่ป้อนผ่านคอลแบ็กเพราะ Sync จะเขียนทับเป้าหมายของฉาก
+// (คอลแบ็กตัวจริงถูกทดสอบแยกที่ tools/link-state-test)
+void hostHeard() {
+  unsigned long now = millis();
+  if (lastHostSyncTime == 0 || now - lastHostSyncTime >= HOST_TIMEOUT_MS) hostOnlineSince = now;
+  lastHostSyncTime    = now;
+  lastOwnSyncTime     = now;
+  lastHeardReportTime = now;
+  hostReportsUplink   = true;
+}
+
 // ---------------------------------------------------------------------------
 int main(int argc, char** argv) {
   g_ops = fopen(argc > 1 ? argv[1] : "ops.txt", "w");
@@ -151,7 +163,7 @@ int main(int argc, char** argv) {
   // ---- ป้อนหยดจริงจนตัวตรวจจับเรียนรู้เสร็จ (100 mL/h, drop factor 20 -> 3 วินาที/หยด) ----
   // ช่วงนี้จอจะขึ้นว่า LEARNING ตามพฤติกรรมจริงของอัลกอริทึม
   feedDrops(3, 1800);
-  lastHostSyncTime = millis();
+  hostHeard();
   targetRateHr  = 100.0f;
   totalPlanMl   = 1000.0f;
   totalDrops    = 10400;                 // ให้แถบความคืบหน้ามีค่าจริงให้ดู
@@ -160,13 +172,13 @@ int main(int argc, char** argv) {
   drawScreen(); emitMark("01_rate_learning");
 
   feedDrops(12, 1800);                   // เรียนรู้ครบ -> READY และอัตราไหลนิ่ง
-  lastHostSyncTime = millis();
+  hostHeard();
   drawScreen(); emitMark("02_rate_normal");
 
   // ---- จังหวะหยดกำลังตกกลางกระเปาะ (ภาพเดียวกันแต่คนละเฟส) ----
-  idleFor(600); lastHostSyncTime = millis();
+  idleFor(600); hostHeard();
   drawScreen(); emitMark("03_rate_drip_mid");
-  idleFor(600); lastHostSyncTime = millis();
+  idleFor(600); hostHeard();
   drawScreen(); emitMark("04_rate_drip_low");
 
   // ---- เฟรมภาพเคลื่อนไหวหนึ่งรอบหยดเต็ม ๆ เอาไปต่อเป็น GIF ----
@@ -174,7 +186,7 @@ int main(int argc, char** argv) {
   {
     char nm[32];
     for (int f = 0; f < 12; f++) {
-      lastHostSyncTime = millis();
+      hostHeard();
       drawScreen();
       snprintf(nm, sizeof(nm), "anim_drip_%02d", f);
       emitMark(nm);
@@ -204,7 +216,7 @@ int main(int argc, char** argv) {
   currentPage = PAGE_RATE;
   lastHostSyncTime = 0;
   drawScreen(); emitMark("09_no_link");
-  lastHostSyncTime = millis();
+  hostHeard();
 
   // ---- หยุดชั่วคราว ----
   isRunning = false;
@@ -295,6 +307,15 @@ int main(int argc, char** argv) {
   drawScreen(); emitMark("26_cal_failed");
 
   exitCalibration(false);
+
+  // ---- ได้ยิน Host ทางเดียว: Host บอกว่าไม่ได้ยินเตียงนี้ (อาการในภาพถ่ายเครื่องจริง) ----
+  hostHeard();
+  idleFor(HOST_TIMEOUT_MS + 1000);
+  g_micros = (g_micros / 1000000UL + 1) * 1000000UL;   // ครึ่งรอบที่คำว่า 1-WAY ติดอยู่
+  lastHostSyncTime = millis();              // ยังได้ยิน Host อยู่
+  lastOwnSyncTime  = millis();              // Sync ของเตียงตัวเองก็มา แต่บิตได้ยินว่างมานานแล้ว
+  uiMode = MODE_NORMAL; currentPage = PAGE_STATUS;
+  drawScreen(); emitMark("27_link_oneway");
 
   fclose(g_ops);
   return 0;

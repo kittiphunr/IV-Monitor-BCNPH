@@ -33,7 +33,13 @@ int esp_now_init(){return 0;}
 int esp_now_register_recv_cb(esp_now_recv_cb_t){return 0;}
 int esp_now_add_peer(const esp_now_peer_info_t*){return 0;}
 int esp_now_del_peer(const uint8_t*){return 0;}
-int esp_now_send(const uint8_t*,const uint8_t*,int){ g_sendCount++; return 0; }
+// เก็บไบต์สุดท้ายที่ส่งออกไป ไว้ตรวจเนื้อ Sync (ทดสอบ 8)
+uint8_t g_lastSent[64]; int g_lastSentLen = 0;
+int esp_now_send(const uint8_t*,const uint8_t* d,int n){
+  g_sendCount++;
+  if (n > 0 && n <= (int)sizeof(g_lastSent)) { memcpy(g_lastSent, d, n); g_lastSentLen = n; }
+  return 0;
+}
 int esp_wifi_set_channel(uint8_t,wifi_second_chan_t){return 0;}
 int esp_wifi_get_channel(uint8_t* p,wifi_second_chan_t*){ *p=1; return 0; }
 void emitMark(const char*){}
@@ -185,6 +191,30 @@ int main() {
   activeStationCount = 3;
   for (int k = 0; k < 40; k++) { g_millis += 1000; sendFromStation(1, 10 * k, 98.0f, macs[0]); }
   check(!hasIdConflict(0), "MAC เดิมตลอด = ไม่แจ้งเลขซ้ำ");
+
+  // ---- 8) Sync ต้องบอกเตียงด้วยว่า Host ได้ยินมันอยู่หรือไม่ ----
+  // ที่มา: ภาพถ่ายเครื่องจริง เตียงทั้งสามขึ้น ONLINE แต่ Host ขึ้นแค่ 2/3
+  printf("\nทดสอบ 8: Sync บอกเตียงว่า Host ได้ยินมันหรือไม่\n");
+  g_millis = 2400000;
+  for (int i = 0; i < MAX_SUPPORTED_STATIONS; i++) stations[i] = StationData();
+  activeStationCount = 3;
+  for (int k = 0; k < 5; k++) {           // ได้ยินเตียง 1 กับ 3 เท่านั้น
+    g_millis += 1000;
+    sendFromStation(1, 10 * k, 98.0f, macs[0]);
+    sendFromStation(3, 10 * k, 98.0f, macs[2]);
+  }
+  for (int bed = 1; bed <= 3; bed++) {
+    g_lastSentLen = 0;
+    sendSyncForStation(bed - 1);
+    struct_host_sync s; memset(&s, 0, sizeof(s));
+    if (g_lastSentLen == (int)sizeof(s)) memcpy(&s, g_lastSent, sizeof(s));
+    printf("    เตียง %d flags = 0x%02X\n", bed, s.flags);
+    char what[80];
+    snprintf(what, sizeof(what), "เตียง %d ตั้งบิตรายงาน 0x04", bed);
+    check(g_lastSentLen == (int)sizeof(s) && (s.flags & 0x04), what);
+    snprintf(what, sizeof(what), "เตียง %d บิต 0x02 %s", bed, bed == 2 ? "ว่าง" : "ตั้ง");
+    check(((s.flags & 0x02) != 0) == (bed != 2), what);
+  }
 
   printf("\n%s (%d ข้อที่ไม่ผ่าน)\n", failures ? "มีข้อที่ไม่ผ่าน" : "ผ่านทั้งหมด", failures);
   return failures ? 1 : 0;

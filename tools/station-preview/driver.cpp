@@ -3,6 +3,7 @@
 #include "esp_now.h"
 #include "esp_wifi.h"
 #include <cstdio>
+#include <cstring>
 FILE* g_ops = nullptr;
 SerialClass Serial;
 WiFiClassStub WiFi;
@@ -56,6 +57,15 @@ int digitalRead(int pin) {
 #endif
   return 1;
 }
+// ป้อน Sync ของเตียงตัวเองหนึ่งแพ็กเก็ต (epoch = 0 จึงไม่ไปแตะนาฬิกาที่ตรึงไว้)
+void feedHostSync(uint8_t flags) {
+  struct_host_sync s; memset(&s, 0, sizeof(s));
+  s.stationId = currentStationId; s.flags = flags;
+  s.dropFactor = 20; s.nearEndPct = 80; s.hostChannel = 1;
+  esp_now_recv_info_t info; memset(&info, 0, sizeof(info));
+  OnTimeSyncRecv(&info, (const uint8_t*)&s, (int)sizeof(s));
+}
+
 int main(int argc,char** argv){
   g_ops = fopen(argc>1?argv[1]:"ops.txt","w");
   setup();
@@ -63,7 +73,10 @@ int main(int argc,char** argv){
   struct timeval tv = { (time_t)1789200300, 0 };   // 14:05 ตามเขตเวลาไทย
   settimeofday(&tv, NULL);
   isClockSynced = true;
-  isHostOnline = true; lastHostRecvTime = g_millis; lastHostRssi = -62;
+  // ได้ยิน Host ผ่านคอลแบ็กตัวจริง ไม่ตั้งค่าสถานะลัด เพราะตั้งแต่ 7.10.0 ไฟสถานะ
+  // ดูทั้งสองทาง ต้องมี Sync ของเตียงตัวเองที่บอกว่า Host ได้ยินอยู่ (flags 0x06)
+  feedHostSync(0x06);
+  lastHostRssi = -62;
   targetRateHr = 100; totalPlanMl = 1000; dropFactor = 20; nearEndPct = 80;
   totalDrops = 620 * 20; totalVolumeMl = 620; currentFlowRate_ml_hr = 98; currentGttMin = 32.6f;
   hasFirstDropOccurred = true; lastDropTimestamp = g_millis;
@@ -123,6 +136,14 @@ int main(int argc,char** argv){
   executeButtonCalibrationWizard(); emitMark("sensor_check");
   g_simSensor = false;
 #endif
+  // ---- ได้ยิน Host ทางเดียว: Host บอกว่าไม่ได้ยินเตียงนี้ (อาการในภาพถ่ายเครื่องจริง) ----
+  // ไว้ท้ายสุด เพราะต้องเดินนาฬิกาจำลองไปข้างหน้า ภาพหน้าอื่นจึงไม่เปลี่ยน
+  for (int k = 0; k < 7; k++) { g_millis += 1000; feedHostSync(0x04); }
+  lastHostRssi = -14;
+  currentState = STATE_NORMAL_VIEW;
+  stateNeedsRedraw = true; currentNursePage = 3;
+  drawPage3Framework(); updatePage3Dynamic(); emitMark("p3_link_oneway");
+
   fclose(g_ops);
   return 0;
 }
