@@ -1,7 +1,7 @@
 /**
  * @file      Station-Fallout.ino
  * @brief     เฟิร์มแวร์เครื่องประจำเตียง รุ่นพิเศษ Fallout จอแบบ Pip-Boy และ Vault Boy เดินก้าวตามหยดสารน้ำ
- * @version   1.2.0-FO
+ * @version   1.3.0-FO
  * @date      2026-09-28
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
@@ -23,7 +23,7 @@
  * @par Fallout Edition
  * รุ่นพิเศษที่แยกออกมาจากสายหลัก ต่างกันแค่หน้าตา ตรรกะทุกบรรทัดเหมือนสายหลัก
  * หน้าจอใช้จานสีของจอ Pip-Boy และหน้า 1 จัดแบบหน้า STAT ของ Pip-Boy
- * Vault Boy ก้าวหนึ่งก้าวทุกครั้งที่นับหยดได้ แทนภาพถุงน้ำเกลือ
+ * Vault Boy เดินเมื่อน้ำเกลือกำลังหยด และหยุดเมื่อหยดหยุด แทนภาพถุงน้ำเกลือ
  * ภาพ Vault Boy มาจากภาพอ้างอิงที่ผู้ดูแลโครงการส่งมา จานสีจาก PipBoy_2040 ของ Adafruit (MIT)
  * ตัวละครและชื่อ Fallout เป็นเครื่องหมายการค้าของ Bethesda ใช้ในโครงการนี้โดยไม่แสวงหากำไร
  * ไฟล์นี้สร้างจาก Station.ino ด้วย tools/fallout-sync/sync.py ห้ามแก้เนื้อโค้ดด้วยมือ
@@ -32,6 +32,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 1.3.0-FO | 2026-09-28 | Vault Boy เดินเมื่อกำลังหยดและหยุดเมื่อหยดหยุด ภาพเดินแยกจากจังหวะหยด เล่นวนตามเวลาของตัวเอง |
  * | 1.2.0-FO | 2026-09-28 | Vault Boy ตามภาพอ้างอิงใหม่ คมขึ้นพร้อมเส้นสแกน ท่าเดินห้าเฟรม |
  * | 1.1.0-FO | 2026-09-28 | จานสีตามจอ Pip-Boy จริง หน้า 1 จัดแบบหน้า STAT และใช้ Vault Boy ของ Adafruit PipBoy_2040 แทนนักเดินทางที่วาดเอง |
  * | 1.0.0-FO | 2026-09-28 | แยกสายพิเศษ Fallout จาก Station 7.10.0 จอเขียวแบบ Pip-Boy และคนเดินก้าวตามหยดแทนถุงน้ำเกลือ |
@@ -228,7 +229,7 @@ esp_reset_reason_t bootResetReason = ESP_RST_UNKNOWN;
 
 #include "drop_detector.h"   // อัลกอริทึมตรวจจับหยด (ทดสอบบน PC ได้: tools/detector-test)
 
-#define APP_VERSION         "1.2.0-FO"
+#define APP_VERSION         "1.3.0-FO"
 
 #define TFT_CS              9
 #define TFT_DC              10

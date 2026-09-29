@@ -1,7 +1,7 @@
 /**
  * @file      StationScreen.h
  * @brief     ทุกอย่างที่วาดลงจอ TFT ของเครื่องประจำเตียง รุ่นพิเศษ Fallout
- * @version   1.2.0-FO
+ * @version   1.3.0-FO
  * @date      2026-09-28
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
@@ -17,15 +17,16 @@
  * @par Fallout Edition
  * คัดลอกมาจาก `firmware/Station/StationScreen.h` แล้วเปลี่ยนเฉพาะหน้า 1
  * จัดแบบหน้า STAT ของจอ Pip-Boy: แถบแท็บ ตัวละครในกรอบขีดหกขีด กล่องไอคอน และแถบล่าง
- * แบบ HP / LEVEL / AP ภาพถุงน้ำเกลือถูกแทนด้วย Vault Boy (ภาพจาก Adafruit PipBoy_2040
- * อยู่ใน `pipboy_sprite.h`) ที่ **ก้าวหนึ่งก้าวต่อหนึ่งหยดที่ตรวจจับได้จริง**
- * หยุดให้ยายืนขาตรงพร้อม || สีเหลือง ไม่ไหลยืนขาตรงในกรอบสีแดงพร้อม ! สีแดง
+ * แบบ HP / LEVEL / AP ภาพถุงน้ำเกลือถูกแทนด้วย Vault Boy (ภาพอยู่ใน `pipboy_sprite.h`)
+ * ที่ **เดินเมื่อน้ำเกลือกำลังหยด และหยุดเมื่อหยดหยุด** ภาพเดินเล่นวนตามเวลาของตัวเอง
+ * แยกจากจังหวะของหยดแต่ละหยด หยุดให้ยายืนพร้อม || สีเหลือง ไม่ไหลยืนในกรอบสีแดงพร้อม ! สีแดง
  * ตัวเลขและการแจ้งเตือนทุกอย่างเหมือนสายหลัก
  * หน้า 2 ถึง 4 หน้าเตือน และหน้าอื่นทั้งหมดไม่ได้แตะ นอกจากสีที่ไฟล์หลักกำหนด
  *
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 1.3.0-FO | 2026-09-28 | ภาพเดินแยกจากจังหวะหยด เล่นวนตามเวลาของตัวเองเมื่อกำลังหยด หยดหยุดภาพก็หยุด |
  * | 1.2.0-FO | 2026-09-28 | Vault Boy คมขึ้นพร้อมเส้นสแกนแบบจอ CRT ท่าเดินห้าเฟรม (ก้าวยาว ขาสวนกัน ท่ายืน) |
  * | 1.1.0-FO | 2026-09-28 | หน้า 1 จัดแบบหน้า STAT ของ Pip-Boy และใช้ภาพ Vault Boy สามเฟรมแทนนักเดินทางที่วาดจากเส้น |
  * | 1.0.0-FO | 2026-09-28 | หน้า 1 แทนถุงน้ำเกลือด้วยนักเดินทางที่ก้าวตามหยด และมาตรวัดระดับน้ำ 10 ช่อง |
@@ -155,17 +156,21 @@ void drawProgressBar(int x, int y, int w, int h, int pct, uint16_t fill) {
 }
 
 // ============================================================================
-// หน้า 1 รุ่น Fallout: หน้า STAT ของ Pip-Boy — Vault Boy ก้าวหนึ่งก้าวต่อหนึ่งหยด
+// หน้า 1 รุ่น Fallout: หน้า STAT ของ Pip-Boy — Vault Boy เดินเมื่อน้ำเกลือกำลังหยด
 // ([1.0.0-FO] เพิ่มทั้งหมด, [1.1.0-FO] แก้: จัดใหม่ตามหน้า STAT และใช้ภาพ Vault Boy,
-//  [1.2.0-FO] แก้: ภาพคมขึ้นพร้อมเส้นสแกน ท่าเดินห้าเฟรม เท้าหลังยกและลำตัวขึ้นลงตอนขาสวนกัน)
+//  [1.2.0-FO] แก้: ภาพคมขึ้นพร้อมเส้นสแกน ท่าเดินห้าเฟรม เท้าหลังยกและลำตัวขึ้นลงตอนขาสวนกัน,
+//  [1.3.0-FO] แก้: ภาพเดินแยกจากจังหวะหยด เล่นวนตามเวลาของตัวเอง)
 //
-// หลักการคือภาพต้อง "บอกความจริง" เหมือนกระเปาะหยดของสายหลัก ไม่ใช่อนิเมชันลอย ๆ
-//   - ทุกครั้งที่ตัวตรวจจับนับได้หนึ่งหยด (onDropDetected ตั้ง isDropFalling)
-//     Vault Boy ก้าวหนึ่งก้าว (เฟรม 0 1 2 3 2 1 0) แล้วยืนนิ่งจนกว่าหยดถัดไปจะมา
-//     หยดถี่ = เดินเร็ว หยดห่าง = เดินช้า หยุดไหล = หยุดเดิน พยาบาลเทียบกับหยดจริงได้ด้วยตา
-//     ตัวนับ DROPS ใต้ภาพเพิ่มทีละหนึ่งพร้อมกับก้าว
-//   - หยุดชั่วคราว = ยืนขาตรงพร้อมสัญลักษณ์ || สีเหลือง
-//   - ไม่มีการไหล = ยืนขาตรง ขอบกรอบเป็นสีแดง พร้อม ! สีแดง
+// แยกกันเป็นสองส่วนชัดเจน
+//   ส่วนที่ 1  "กำลังหยดอยู่ไหม" (foDripping) — ตัดสินจากเวลาของหยดล่าสุดเท่านั้น
+//              มีหยดมาไม่ห่างเกิน foIdleMs() = กำลังหยด
+//   ส่วนที่ 2  ภาพเดิน — เล่นวนตามลำดับและเวลาของเฟรมใน pipboy_sprite.h (FO_WALK_SEQ / FO_WALK_MS)
+//              ด้วยนาฬิกาของตัวเอง ไม่สนว่าหยดแต่ละหยดตกเมื่อไร หยดถี่หรือห่างก็เดินเร็วเท่าเดิม
+//   ส่วนที่ 1 บอกแค่ "เดิน" หรือ "หยุด" ให้ส่วนที่ 2
+//   - เริ่มหยด = เริ่มเดินต่อจากท่าที่ค้างไว้
+//   - หยดหยุด  = หยุดค้างท่าปัจจุบันทันที (ภายใน foIdleMs หลังหยดสุดท้าย)
+//   - หยุดชั่วคราว = ยืน (FO_SPR_STAND) พร้อมสัญลักษณ์ || สีเหลือง
+//   - ไม่มีการไหล = ยืน ขอบกรอบเป็นสีแดง พร้อม ! สีแดง
 //
 // จัดวางตามหน้า STAT ของจอ Pip-Boy (ภาพ statpip0.bmp ของ Adafruit PipBoy_2040)
 //   แถบแท็บ STAT PLAN LINK TREND · ตัวละครในกรอบขีดหกขีด · กล่องไอคอนพร้อมตัวเลขใต้ภาพ
@@ -182,15 +187,16 @@ void drawProgressBar(int x, int y, int w, int h, int pct, uint16_t fill) {
 #define FO_BTN_Y       272
 #define FO_HUD_Y       294
 
-const unsigned long FO_STEP_MS = 340;   // ความยาวของหนึ่งก้าว
-static const uint8_t FO_STEP_SEQ[] = {0, 1, 2, 3, 2, 1, 0};   // [1.2.0-FO] แก้: ก้าวยาว -> ขาสวนกัน -> ก้าวยาว
+// [1.3.0-FO] แก้: เลิกก้าวตามหยด สถานะของภาพเดินเหลือแค่ตำแหน่งในลำดับการเล่นวน
+const unsigned long FO_IDLE_MIN_MS = 3000;   // หยดหายไปนานเท่านี้ขึ้นไป ถือว่าหยุดหยดแน่นอน
 
-bool          foStepping  = false;
-unsigned long foStepStart = 0;
+bool          foWalking    = false;  // ภาพเดินอยู่หรือไม่ (ผลของส่วนที่ 1)
+uint8_t       foSeqPos     = 0;      // ช่องปัจจุบันใน FO_WALK_SEQ
+unsigned long foFrameStart = 0;      // เวลาที่เริ่มแสดงช่องปัจจุบัน
 int8_t        foFrameDrawn = -1;
-uint8_t       foGroundPhase = 0;     // เส้นพื้นเลื่อนไปหนึ่งช่องต่อหนึ่งก้าว
+uint8_t       foGroundPhase = 0;     // เส้นพื้นเลื่อนหนึ่งพิกเซลต่อหนึ่งเฟรมของภาพเดิน
 uint16_t      foFrameColor = 0;      // สีขีดกรอบที่วาดอยู่ (เปลี่ยนเป็นแดงเมื่อไม่ไหล)
-String        cacheFoDrops = "", cacheFoGtt = "";
+String        cacheFoDrops = "", cacheFoGtt = "", cacheFoWalk = "";
 
 // วาดหนึ่งเฟรม: ไล่ทีละแถว รวมพิกเซลสีเดียวกันที่ติดกันเป็นเส้นเดียว (ส่งข้อมูลไปจอน้อยลงมาก)
 // พื้นของภาพเป็นสีเดียวกับ THEME_BG จึงวาดทับเฟรมเดิมได้ทันที ไม่ต้องล้างก่อน จอไม่กะพริบ
@@ -225,12 +231,12 @@ void foDrawFrameMarks(uint16_t c) {
   foFrameColor = c;
 }
 
-// เส้นพื้นประใต้เท้า เลื่อนไปทางซ้ายหนึ่งช่องทุกก้าว ให้เห็นว่าเดินไปข้างหน้าจริง
+// เส้นพื้นประใต้เท้า เลื่อนไปทางซ้ายพร้อมภาพเดิน ให้เห็นว่าเดินไปข้างหน้าจริง
 void foDrawGround() {
   int x0 = FO_SPR_X - 4, w = FO_SPR_W + 8;
   tft.fillRect(x0, FO_GROUND_Y, w, 1, THEME_BG);
-  for (int x = x0 + (3 - (foGroundPhase % 4)) * 3; x < x0 + w; x += 12)
-    tft.fillRect(x, FO_GROUND_Y, min(6, x0 + w - x), 1, UI_LINE);
+  for (int x = x0 + 11 - (foGroundPhase % 12); x < x0 + w; x += 12)
+    if (x + 6 > x0) tft.fillRect(max(x, x0), FO_GROUND_Y, min(x + 6, x0 + w) - max(x, x0), 1, UI_LINE);
 }
 
 // สัญลักษณ์มุมขวาบนของกรอบ: || เหลือง = หยุดชั่วคราว, ! แดง = ไม่ไหล
@@ -280,20 +286,34 @@ void drawBagLevel(bool force) {
   textRight(left < 0 ? String("--") : (String(left) + "%"), bx + 37, FO_ICON_Y + 8, 1, fill, UI_CARD);
 }
 
+// ---- ส่วนที่ 1: กำลังหยดอยู่ไหม ----
+// รอหยดถัดไปได้นานสุด 2.5 เท่าของช่วงห่างระหว่างหยดขณะนี้ (อย่างน้อย FO_IDLE_MIN_MS)
+// แต่ไม่เกินเกณฑ์ NO FLOW ภาพจึงหยุดก่อนหรือพร้อมกับที่การ์ดขึ้น NO FLOW เสมอ
+unsigned long foIdleMs() {
+  unsigned long lim = occlusionThresholdMs();
+  if (currentGttMin <= 0.0f) return lim;
+  unsigned long ms = (unsigned long)(2.5f * 60000.0f / currentGttMin);
+  if (ms < FO_IDLE_MIN_MS) ms = FO_IDLE_MIN_MS;
+  return (ms < lim) ? ms : lim;
+}
+
+bool foDripping(unsigned long now) {
+  return isRunning && hasFirstDropOccurred && (now - lastDropTimestamp) <= foIdleMs();
+}
+
+// คำตัดสินสุดท้ายว่าภาพเดินหรือหยุด ใช้ทั้งภาพเดินและปุ่ม WALKING / STOPPED ให้ตรงกันเสมอ
+// หยุดชั่วคราวและ NO FLOW (รวมที่ Host แจ้ง) หยุดเดินแม้จะเพิ่งมีหยด
+bool foShouldWalk(unsigned long now) {
+  return foModeNow() == 0 && foDripping(now);
+}
+
+// ---- ส่วนที่ 2: ภาพเดิน เล่นวนตามเวลาของตัวเอง ----
 void updateDripAnimation() {
   if (currentState != STATE_NORMAL_VIEW || currentNursePage != 1 || stateNeedsRedraw) return;
 
   unsigned long now = millis();
   int8_t mode = foModeNow();
-
-  // หยดใหม่มาถึง = เริ่มก้าวใหม่หนึ่งก้าว (ถ้าก้าวเดิมยังไม่จบก็เริ่มใหม่เลย ไม่ให้หยดหาย)
-  if (isDropFalling) {
-    isDropFalling = false;          // ตัวแปรนี้มีไว้ให้ภาพเคลื่อนไหวของหน้า 1 เท่านั้น
-    foStepping = true;
-    foStepStart = now;
-    foGroundPhase++;
-    foDrawGround();
-  }
+  isDropFalling = false;      // หน้านี้ไม่ใช้จังหวะของหยดแต่ละหยดแล้ว ล้างทิ้งไว้เฉย ๆ
 
   if (mode != animModeDrawn) {
     animModeDrawn = mode;
@@ -302,14 +322,24 @@ void updateDripAnimation() {
     foFrameDrawn = -1;
   }
 
-  // หยุดชั่วคราวและไม่ไหล ยืนขาตรง ส่วนเดินปกติยืนรอในท่าก้าวยาว (เฟรม 0)
-  uint8_t f = (mode != 0) ? FO_SPR_STAND : 0;   // [1.2.0-FO] แก้: มีท่ายืนของตัวเอง
-  if (foStepping && mode == 0) {
-    unsigned long dt = now - foStepStart;
-    if (dt >= FO_STEP_MS) foStepping = false;
-    else f = FO_STEP_SEQ[dt * sizeof(FO_STEP_SEQ) / FO_STEP_MS];
+  bool walk = foShouldWalk(now);
+  uint8_t f;
+  if (walk) {
+    if (!foWalking || now - foFrameStart > 2000UL) foFrameStart = now;   // เริ่มใหม่ หรือกลับมาจากหน้าอื่น
+    foWalking = true;
+    bool moved = false;
+    while (now - foFrameStart >= FO_WALK_MS[foSeqPos]) {
+      foFrameStart += FO_WALK_MS[foSeqPos];
+      foSeqPos = (foSeqPos + 1) % FO_WALK_LEN;
+      foGroundPhase++;
+      moved = true;
+    }
+    if (moved) foDrawGround();
+    f = FO_WALK_SEQ[foSeqPos];
   } else {
-    foStepping = false;
+    foWalking = false;
+    // หยดหยุด = ค้างท่าปัจจุบัน, หยุดชั่วคราว / ไม่ไหล = ท่ายืน
+    f = (mode != 0) ? FO_SPR_STAND : FO_WALK_SEQ[foSeqPos];
   }
   if ((int8_t)f == foFrameDrawn) return;
   foFrameDrawn = f;
@@ -341,8 +371,8 @@ void drawPage1Framework() {
   animModeDrawn = foModeNow();
   foDrawFrameMarks(animModeDrawn == 3 ? COLOR_RED : COLOR_GREEN);
   foDrawBadge(animModeDrawn);
-  foFrameDrawn = (animModeDrawn != 0) ? FO_SPR_STAND : 0;
-  foStepping = false;
+  foFrameDrawn = (animModeDrawn != 0) ? FO_SPR_STAND : FO_WALK_SEQ[foSeqPos];
+  foWalking = false;
   foDrawSprite(foFrameDrawn);
   foDrawGround();
 
@@ -361,7 +391,7 @@ void drawPage1Framework() {
 
   cacheBagPct = -999; cacheRate = -9999; cacheTarget = -9999; cacheLeftMl = -9999;
   cachePct = -999; cacheTimeLeft = ""; cacheEndClock = ""; cacheStatusWord = "";
-  cacheFoDrops = ""; cacheFoGtt = "";
+  cacheFoDrops = ""; cacheFoGtt = ""; cacheFoWalk = "";
   poolFlashUntil = 0;
   stateNeedsRedraw = false;
 }
@@ -418,13 +448,16 @@ void updatePage1Dynamic() {
     textRight(gtt, FO_FR_X + 37, FO_ICON_Y + 8, 1, COLOR_WHITE, UI_CARD);
   }
 
-  // ปุ่มแบบ STIMPAK/RADAWAY: ป้ายบอกกติกา กับตัวนับหยดที่เพิ่มพร้อมกับก้าว
+  // ปุ่มแบบ STIMPAK/RADAWAY: สถานะการหยด (ตัวเดียวกับที่สั่งภาพเดิน) กับตัวนับหยดสะสม
+  // [1.3.0-FO] แก้: ป้ายเดิม "1 STEP=1 DROP" ไม่จริงแล้ว เปลี่ยนเป็นสถานะ WALKING / STOPPED
+  String walkWord = foShouldWalk(millis()) ? "WALKING" : "STOPPED";
+  if (walkWord != cacheFoWalk) {
+    cacheFoWalk = walkWord;
+    tft.fillRect(FO_FR_X, FO_BTN_Y, 80, 14, UI_CARD);
+    textCenterIn(walkWord, FO_FR_X, 80, FO_BTN_Y + 3, 1, walkWord == "WALKING" ? COLOR_WHITE : UI_DIM, UI_CARD);
+  }
   String drops = "DROPS " + String(totalDrops);
   if (drops != cacheFoDrops) {
-    if (cacheFoDrops.length() == 0) {
-      tft.fillRect(FO_FR_X, FO_BTN_Y, 80, 14, UI_CARD);
-      textCenterIn("1 STEP=1 DROP", FO_FR_X, 80, FO_BTN_Y + 3, 1, UI_DIM, UI_CARD);
-    }
     cacheFoDrops = drops;
     tft.fillRect(RIGHT_X + 2, FO_BTN_Y, 84, 14, UI_CARD);
     textCenterIn(drops, RIGHT_X + 2, 84, FO_BTN_Y + 3, 1, COLOR_WHITE, UI_CARD);
