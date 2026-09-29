@@ -2,7 +2,10 @@
 # -*- coding: utf-8 -*-
 """สร้าง firmware/Station-Fallout/pipboy_sprite.h จากภาพ Vault Boy ท่าเดิน
 
-มีต้นทางได้สองแบบ เลือกให้อัตโนมัติ
+มีต้นทางได้สามแบบ เลือกให้อัตโนมัติตามลำดับนี้
+  0) walk/NN.jpg  เฟรมภาพเคลื่อนไหวต้นฉบับทีละไฟล์ (ตอนนี้ใช้แบบนี้ 21 เฟรม) — ใช้ทุกเฟรม
+     เรียงตามเลขในชื่อไฟล์ เฟรมละ WALK_MS ท่ายืนคือไฟล์ที่ WALK_STAND_FILE
+     เฟรมที่ได้ผลลัพธ์เหมือนกันทุกพิกเซลหลังแปลงเก็บครั้งเดียว ลำดับการเล่นยังครบทุกไฟล์
   1) vaultboy_walk.gif  ภาพเคลื่อนไหวต้นฉบับ (เช่น 21 เฟรม) — ถ้ามีไฟล์นี้ ใช้ทุกเฟรมตามลำดับ
      และตามเวลาของแต่ละเฟรมในไฟล์ ไม่สร้างท่าเอง ท่ายืน (หยุดชั่วคราว / ไม่ไหล) คือเฟรม
      GIF_STAND ทุกเฟรมผ่านขั้นลบเส้นสแกนเดิม ย่อ แปลงจานสี และใส่เส้นสแกนใหม่แบบเดียวกัน
@@ -41,6 +44,7 @@
 """
 import io
 import os
+import re
 import sys
 
 from PIL import Image
@@ -50,6 +54,9 @@ ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 SRC = os.path.join(HERE, "vaultboy_walk.webp")
 GIF = os.path.join(HERE, "vaultboy_walk.gif")
 GIF_STAND = 0                 # เฟรมของ GIF ที่ใช้เป็นท่ายืน
+WALK_DIR = os.path.join(HERE, "walk")
+WALK_MS = 90                  # 11 เฟรมต่อหนึ่งรอบก้าว (สองก้าว) = ราว 1 วินาที ใกล้จังหวะเดินจริง
+WALK_STAND_FILE = 1           # ท่ายืน = walk/01.jpg ท่าเดียวกับภาพนิ่งอ้างอิงเดิม
 SYNTH_SEQ = [0, 1, 2, 3, 2, 1]
 SYNTH_MS = 90
 DST = os.path.join(ROOT, "firmware", "Station-Fallout", "pipboy_sprite.h")
@@ -162,16 +169,39 @@ def gif_frames():
     return big, ms
 
 
+def dir_files():
+    if not os.path.isdir(WALK_DIR):
+        return []
+    fs = [f for f in os.listdir(WALK_DIR) if re.fullmatch(r"\d+\.(jpg|jpeg|png|webp)", f, re.I)]
+    return sorted(fs, key=lambda f: int(f.split(".")[0]))
+
+
+def dir_frames(files):
+    big = []
+    for f in files:
+        fr = Image.open(os.path.join(WALK_DIR, f)).convert("RGB")
+        big.append(Image.frombytes("L", fr.size, bytes(descan(fr))))
+    return big
+
+
 def frames():
-    """คืน (เฟรมที่ย่อแล้ว, จานสี, ความกว้าง, ลำดับการเล่น, เวลาต่อช่อง, เฟรมท่ายืน, ที่มา)"""
-    if os.path.exists(GIF):
+    """คืน (เฟรมที่ย่อแล้ว, จานสี, ความกว้าง, ลำดับการเล่น, เวลาต่อช่อง, เฟรมท่ายืน, ที่มา, ชื่อต้นทางของแต่ละเฟรม)"""
+    files = dir_files()
+    if files:
+        big = dir_frames(files)
+        seq, ms, origin = list(range(len(big))), [WALK_MS] * len(big), "dir"
+        stand = [int(f.split(".")[0]) for f in files].index(WALK_STAND_FILE)
+        names = files
+    elif os.path.exists(GIF):
         big, ms = gif_frames()
         seq, stand, origin = list(range(len(big))), GIF_STAND, "gif"
+        names = ["GIF %d" % i for i in range(len(big))]
     else:
         w, h, g = load()
         big = [compose(w, h, g, *p) for p in POSES]
         seq, stand, origin = SYNTH_SEQ, 4, "webp"
         ms = [SYNTH_MS] * len(seq)
+        names = ["pose %d" % i for i in range(len(big))]
     box = None
     for im in big:
         bb = im.point(lambda v: 255 if v > TH else 0).getbbox()
@@ -193,12 +223,25 @@ def frames():
                 row.append(int(round(15 * lv)))
             idx.append(row)
         out.append(idx)
+    # เก็บเฟรมที่เหมือนกันทุกพิกเซลครั้งเดียว ลำดับการเล่นชี้ไปที่เฟรมที่เก็บ
+    uniq, remap, src = [], [], []
+    for n, f in enumerate(out):
+        if f in uniq:
+            k = uniq.index(f)
+            src[k].append(names[n])
+        else:
+            k = len(uniq)
+            uniq.append(f)
+            src.append([names[n]])
+        remap.append(k)
+    seq = [remap[i] for i in seq]
+    stand = remap[stand]
     pal = [tuple(int(round(BG[k] + (BRIGHT[k] - BG[k]) * i / 15.0)) for k in range(3)) for i in range(16)]
-    return out, pal, ow, seq, ms, stand, origin
+    return uniq, pal, ow, seq, ms, stand, origin, src
 
 
 def header_text():
-    fr, pal, W, seq, ms, stand, origin = frames()
+    fr, pal, W, seq, ms, stand, origin, src = frames()
     H = OUT_H
     ROW = (W + 1) // 2
     pal565 = [rgb565(*c) for c in pal]
@@ -209,12 +252,16 @@ def header_text():
     L.append("/**")
     L.append(" * @file      pipboy_sprite.h")
     L.append(" * @brief     ภาพ Vault Boy ท่าเดิน %d เฟรมสำหรับหน้า 1 ของสาย Fallout (ไฟล์สร้างอัตโนมัติ ห้ามแก้ด้วยมือ)" % len(fr))
-    L.append(" * @version   1.3.0-FO")
-    L.append(" * @date      2026-09-28")
+    L.append(" * @version   1.4.0-FO")
+    L.append(" * @date      2026-09-29")
     L.append(" * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>")
     L.append(" *")
     L.append(" * @par Description")
-    if origin == "gif":
+    if origin == "dir":
+        L.append(" * สร้างด้วย `python3 tools/fallout-sprite/make_sprite.py` จากเฟรมต้นฉบับ `walk/NN.jpg` ทั้ง %d ไฟล์" % len(seq))
+        L.append(" * (ที่มาอยู่ที่ tools/fallout-sprite/SOURCE.md) เล่นทุกไฟล์ตามลำดับ เฟรมละ %d ms ย่อเหลือ %dx%d" % (WALK_MS, W, H))
+        L.append(" * ไฟล์ที่ได้ผลเหมือนกันทุกพิกเซลหลังแปลงเก็บครั้งเดียว (%d เฟรมที่เก็บ)" % len(fr))
+    elif origin == "gif":
         L.append(" * สร้างด้วย `python3 tools/fallout-sprite/make_sprite.py` จากทุกเฟรมของ `vaultboy_walk.gif`")
         L.append(" * (ที่มาอยู่ที่ tools/fallout-sprite/SOURCE.md) ตามลำดับและเวลาของเฟรมในไฟล์ ย่อเหลือ %dx%d" % (W, H))
     else:
@@ -231,6 +278,7 @@ def header_text():
     L.append(" * @par Revision History")
     L.append(" * | Version | Date | Change |")
     L.append(" * |---|---|---|")
+    L.append(" * | 1.4.0-FO | 2026-09-29 | ใช้เฟรมภาพเคลื่อนไหวต้นฉบับ 21 ไฟล์ครบทุกเฟรม แทนท่าที่สร้างจากภาพนิ่ง |")
     L.append(" * | 1.3.0-FO | 2026-09-28 | เพิ่มลำดับและเวลาการเล่นวน (FO_WALK_SEQ / FO_WALK_MS) อ่านทุกเฟรมจาก GIF ต้นฉบับได้ |")
     L.append(" * | 1.2.0-FO | 2026-09-28 | ภาพต้นทางคมขึ้นพร้อมเส้นสแกน ขาเฉือนแทนการหุบ เท้าหลังยก ลำตัวขึ้นลง และท่ายืน |")
     L.append(" * | 1.1.0-FO | 2026-09-28 | สร้างครั้งแรก จาก statpip0.bmp ของ Adafruit PipBoy_2040 สามเฟรม |")
@@ -255,7 +303,7 @@ def header_text():
     L.append("")
     L.append("static const uint8_t FO_SPR_DATA[FO_SPR_FRAMES][FO_SPR_H * FO_SPR_ROW] PROGMEM = {")
     for n, f in enumerate(fr):
-        L.append("  {  // เฟรม %d" % n)
+        L.append("  {  // เฟรม %d จาก %s" % (n, ", ".join(src[n])))
         for row in f:
             r = row + [0] * (ROW * 2 - W)
             b = [(r[i] << 4) | r[i + 1] for i in range(0, len(r), 2)]
