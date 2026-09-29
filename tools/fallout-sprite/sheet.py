@@ -59,24 +59,29 @@ def main(out, hpath):
     d, pal, data, seq, ms = parse(hpath)
     W, H, N = d["FO_SPR_W"], d["FO_SPR_H"], d["FO_SPR_FRAMES"]
     frames = [frame_img(d, pal, data, f) for f in range(N)]
-    S, PAD, CAP = 3, 16, 30
+    S, PAD, CAP = (3 if N <= 6 else 2), 16, 30
     big_w, small_w = W * S + PAD, W + 18
-    width = max(PAD + N * big_w, PAD + len(seq) * small_w) + PAD
-    height = PAD + CAP + H * S + PAD + CAP + CAP + H + PAD
+    per_row = min(N, 10)                       # เฟรมเยอะให้ขึ้นแถวใหม่ทุก 10 เฟรม
+    rows = (N + per_row - 1) // per_row
+    seq_rows = (len(seq) + 20) // 21
+    width = max(PAD + per_row * big_w, PAD + min(len(seq), 21) * small_w) + PAD
+    height = PAD + rows * (CAP + H * S + PAD) + CAP + seq_rows * (CAP + H + PAD) + PAD
     sheet = Image.new("RGB", (width, height), BG)
     y = PAD
     for f, im in enumerate(frames):
-        x = PAD + f * big_w
+        x = PAD + (f % per_row) * big_w
+        yy = y + (f // per_row) * (CAP + H * S + PAD)
         tag = "F%d%s" % (f, " STAND" if f == d["FO_SPR_STAND"] else "")
-        draw_caption(sheet, x, y, tag)
-        sheet.paste(im.resize((W * S, H * S), Image.NEAREST), (x, y + CAP))
-    y += CAP + H * S + PAD
+        draw_caption(sheet, x, yy, tag)
+        sheet.paste(im.resize((W * S, H * S), Image.NEAREST), (x, yy + CAP))
+    y += rows * (CAP + H * S + PAD)
     draw_caption(sheet, PAD, y, "LOOP %d SLOTS, %d ms" % (len(seq), sum(ms)))
     y += CAP
     for n, (f, t) in enumerate(zip(seq, ms)):
-        x = PAD + n * small_w
-        draw_caption(sheet, x, y, "F%d" % f)
-        sheet.paste(frames[f], (x, y + CAP))
+        x = PAD + (n % 21) * small_w
+        yy = y + (n // 21) * (CAP + H + PAD)
+        draw_caption(sheet, x, yy, "F%d" % f)
+        sheet.paste(frames[f], (x, yy + CAP))
     sheet.save(out)
     print("%s %s (%d เฟรม, วน %d ช่อง)" % (out, sheet.size, N, len(seq)))
 

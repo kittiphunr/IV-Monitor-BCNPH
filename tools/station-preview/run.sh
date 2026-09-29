@@ -40,7 +40,7 @@ if [ -n "$FALLOUT" ]; then
     rm -f "$OUT"/fo_${s}_*.png
   done
   python3 ../screen-preview/make_sheet.py "$OUT/overview_walk.png" 4 \
-    "$OUT/p1_bag.png" "WALK" "$OUT/p1_paused.png" "PAUSED" \
+    "$OUT/p1_bag.png" "NORMAL" "$OUT/p1_paused.png" "PAUSED" \
     "$OUT/p1_noflow.png" "NO FLOW" "$OUT/p1_nearend.png" "NEAR END"
 fi
 echo "เสร็จแล้ว: ภาพอยู่ใน $OUT"
