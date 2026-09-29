@@ -1,8 +1,8 @@
 /**
  * @file      StationScreen.h
  * @brief     ทุกอย่างที่วาดลงจอ TFT ของเครื่องประจำเตียง รุ่นพิเศษ Fallout
- * @version   1.3.0-FO
- * @date      2026-09-28
+ * @version   1.3.1-FO
+ * @date      2026-09-29
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
  * @par Organization
@@ -26,6 +26,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 1.3.1-FO | 2026-09-29 | สถานะกำลังหยดนับเฉพาะหยดจริง กลับจากหยุดชั่วคราวแล้วไม่เดินเองก่อนหยดแรก |
  * | 1.3.0-FO | 2026-09-28 | ภาพเดินแยกจากจังหวะหยด เล่นวนตามเวลาของตัวเองเมื่อกำลังหยด หยดหยุดภาพก็หยุด |
  * | 1.2.0-FO | 2026-09-28 | Vault Boy คมขึ้นพร้อมเส้นสแกนแบบจอ CRT ท่าเดินห้าเฟรม (ก้าวยาว ขาสวนกัน ท่ายืน) |
  * | 1.1.0-FO | 2026-09-28 | หน้า 1 จัดแบบหน้า STAT ของ Pip-Boy และใช้ภาพ Vault Boy สามเฟรมแทนนักเดินทางที่วาดจากเส้น |
@@ -297,14 +298,47 @@ unsigned long foIdleMs() {
   return (ms < lim) ? ms : lim;
 }
 
+// [1.3.1-FO] แก้: นับเฉพาะหยดจริง ดูจากตัวนับหยดที่เพิ่มขึ้น แล้วใช้เวลาของหยดนั้น
+// เดิมใช้ lastDropTimestamp ตรง ๆ แต่ togglePause() และการคาลิเบรตตั้งค่านี้เป็น "ตอนนี้"
+// ตอนกลับมาทำงาน (กันไม่ให้ช่วงที่หยุดถูกนับเป็น NO FLOW) ภาพจึงเดินต่อได้ถึง 8 วินาที
+// ทั้งที่ยังไม่มีหยดมาเลย
+uint32_t      foSeenDrops  = 0;
+bool          foSeenInit   = false;
+bool          foHaveDrop   = false;   // เคยเห็นหยดจริงตั้งแต่เริ่มนับรอบนี้
+unsigned long foLastDropMs = 0;       // เวลาของหยดจริงล่าสุด
+
 bool foDripping(unsigned long now) {
-  return isRunning && hasFirstDropOccurred && (now - lastDropTimestamp) <= foIdleMs();
+  if (!foSeenInit || totalDrops < foSeenDrops) {       // เริ่มต้น หรือตัวนับถูกล้าง (ถุงใหม่)
+    foSeenInit = true;
+    foSeenDrops = totalDrops;
+    foHaveDrop = false;
+  } else if (totalDrops > foSeenDrops) {               // มีหยดจริงเข้ามา
+    foSeenDrops = totalDrops;
+    foLastDropMs = lastDropTimestamp;                  // onDropDetected() ตั้งเป็นเวลาของหยดนั้น
+    foHaveDrop = true;
+  }
+  // หยุดชั่วคราวลืมหยดเก่าทิ้ง กลับมาทำงานแล้วต้องรอหยดจริงหยดใหม่ก่อนจึงเดิน
+  // (ถ้าไม่ลืม หยดก่อนกดหยุดที่ยังไม่เก่าเกินเกณฑ์จะทำให้เดินทั้งที่ยังไม่มีหยดใหม่)
+  if (!isRunning) foHaveDrop = false;
+  return isRunning && foHaveDrop && (now - foLastDropMs) <= foIdleMs();
 }
 
 // คำตัดสินสุดท้ายว่าภาพเดินหรือหยุด ใช้ทั้งภาพเดินและปุ่ม WALKING / STOPPED ให้ตรงกันเสมอ
 // หยุดชั่วคราวและ NO FLOW (รวมที่ Host แจ้ง) หยุดเดินแม้จะเพิ่งมีหยด
 bool foShouldWalk(unsigned long now) {
-  return foModeNow() == 0 && foDripping(now);
+  bool dripping = foDripping(now);   // เรียกทุกครั้งก่อน ห้ามลัดวงจร ไม่อย่างนั้นตอนหยุดชั่วคราวจะไม่ได้ลืมหยดเก่า
+  return foModeNow() == 0 && dripping;
+}
+
+// ปุ่มซ้ายใต้ภาพ: ผลของ foShouldWalk() ตรง ๆ วาดใหม่เฉพาะตอนเปลี่ยน
+// [1.3.0-FO] แก้: ป้ายเดิม "1 STEP=1 DROP" ไม่จริงแล้ว เปลี่ยนเป็นสถานะ WALKING / STOPPED
+// [1.3.1-FO] แก้: เรียกจาก updateDripAnimation() ด้วย ปุ่มจึงเปลี่ยนพร้อมภาพ ไม่ช้ากว่าถึงหนึ่งวินาที
+void foDrawWalkButton(bool walk) {
+  String walkWord = walk ? "WALKING" : "STOPPED";
+  if (walkWord == cacheFoWalk) return;
+  cacheFoWalk = walkWord;
+  tft.fillRect(FO_FR_X, FO_BTN_Y, 80, 14, UI_CARD);
+  textCenterIn(walkWord, FO_FR_X, 80, FO_BTN_Y + 3, 1, walk ? COLOR_WHITE : UI_DIM, UI_CARD);
 }
 
 // ---- ส่วนที่ 2: ภาพเดิน เล่นวนตามเวลาของตัวเอง ----
@@ -323,6 +357,7 @@ void updateDripAnimation() {
   }
 
   bool walk = foShouldWalk(now);
+  foDrawWalkButton(walk);
   uint8_t f;
   if (walk) {
     if (!foWalking || now - foFrameStart > 2000UL) foFrameStart = now;   // เริ่มใหม่ หรือกลับมาจากหน้าอื่น
@@ -449,13 +484,7 @@ void updatePage1Dynamic() {
   }
 
   // ปุ่มแบบ STIMPAK/RADAWAY: สถานะการหยด (ตัวเดียวกับที่สั่งภาพเดิน) กับตัวนับหยดสะสม
-  // [1.3.0-FO] แก้: ป้ายเดิม "1 STEP=1 DROP" ไม่จริงแล้ว เปลี่ยนเป็นสถานะ WALKING / STOPPED
-  String walkWord = foShouldWalk(millis()) ? "WALKING" : "STOPPED";
-  if (walkWord != cacheFoWalk) {
-    cacheFoWalk = walkWord;
-    tft.fillRect(FO_FR_X, FO_BTN_Y, 80, 14, UI_CARD);
-    textCenterIn(walkWord, FO_FR_X, 80, FO_BTN_Y + 3, 1, walkWord == "WALKING" ? COLOR_WHITE : UI_DIM, UI_CARD);
-  }
+  foDrawWalkButton(foShouldWalk(millis()));
   String drops = "DROPS " + String(totalDrops);
   if (drops != cacheFoDrops) {
     cacheFoDrops = drops;
