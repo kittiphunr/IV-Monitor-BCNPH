@@ -135,6 +135,10 @@ git push -u origin release/15-s7.8.0-h4.7.5
 `struct_message` และ `struct_host_sync` ต้องเหมือนกันทุกไบต์ในทุกเฟิร์มแวร์
 ตรวจด้วย `bash tools/protocol-test/run.sh` ก่อน commit ทุกครั้งที่แตะโครงสร้างเหล่านี้
 
+โครงสร้างตรงกันยังไม่พอ ความหมายของค่าต้องตรงกันด้วย (รหัสเตือน บิตใน flags ช่วงค่าที่ Host รับ
+resetSeq) `bash tools/compat-test/run.sh` เล่นฉากด้วยเฟิร์มแวร์ตัวจริงทั้งสองฝั่ง Station ทุกสาย x Host
+ทุกรุ่น ต้องผ่านทุกครั้งที่แตะการส่งหรือรับ ผลการตรวจและความต่างที่ยังเหลืออยู่ที่ `docs/COMPATIBILITY.md`
+
 ## ชุดตรวจก่อน commit
 
 ```bash
@@ -142,6 +146,7 @@ python3 tools/check-ino-types.py        # ลำดับการประก�
 bash tools/header-check/run.sh           # หัวไฟล์ Doxygen และป้ายเวอร์ชันตามมาตรฐาน
 bash tools/split-check/run.sh            # การแยกโค้ดวาดจอไปไฟล์ .h ไม่ทำให้ลำดับพัง
 bash tools/protocol-test/run.sh         # โครงสร้างแพ็กเก็ตตรงกันทุกรุ่น
+bash tools/compat-test/run.sh           # Station ทุกสาย x Host ทุกรุ่น ด้วยโค้ดตัวจริงทั้งสองฝั่ง (docs/COMPATIBILITY.md)
 bash tools/detector-test/run.sh         # อัลกอริทึมตรวจจับหยด
 bash tools/host-rx-test/run.sh          # เส้นทางรับข้อมูลฝั่ง Host
 bash tools/link-state-test/run.sh       # ไฟสถานะการเชื่อมต่อสองทางของเครื่องประจำเตียง

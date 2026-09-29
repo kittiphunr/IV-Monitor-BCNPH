@@ -1,8 +1,8 @@
 /**
  * @file      Host-TFT28.ino
  * @brief     เฟิร์มแวร์เครื่องส่วนกลาง รุ่นจอสี TFT 2.8 นิ้ว
- * @version   4.9.1-TFT
- * @date      2026-09-23
+ * @version   4.9.2-TFT
+ * @date      2026-09-29
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
  * @par Organization
@@ -21,6 +21,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 4.9.2-TFT | 2026-09-29 | รับอัตราไหลได้ถึง 7000 mL/h เดิมทิ้งแพ็กเก็ตที่เกิน 3000 ทำให้ไหลอิสระด้วยชุด DF10 ขึ้น LOST แทน TOO FAST |
  * | 4.9.1-TFT | 2026-09-28 | Sync บอกเตียงด้วยว่า Host ได้ยินมันอยู่หรือไม่ (บิตว่างใน flags ขนาดโครงสร้างไม่เปลี่ยน) |
  * | 4.9.0-TFT | 2026-09-23 | เตียงที่หายไประหว่างให้น้ำเกลือมีเสียงเตือนแล้ว เพิ่มสุนัขเฝ้าบ้าน รายงานสาเหตุการรีบูต และปฏิเสธแพ็กเก็ตที่ค่าเป็นไปไม่ได้ |
  * | 4.8.1-TFT | 2026-09-23 | ย้ายโค้ดวาดจอออกไปไว้ที่ `HostScreen.h` ตรรกะไม่เปลี่ยนแม้แต่บรรทัดเดียว |
@@ -107,7 +108,7 @@
 esp_reset_reason_t bootResetReason = ESP_RST_UNKNOWN;
 
 
-#define APP_VERSION         "4.9.1-TFT"
+#define APP_VERSION         "4.9.2-TFT"
 #define DEV_NAME            "กิตติพันธ์ รัตนคร"
 #define DEV_ROLE            "นักวิชาการคอมพิวเตอร์"
 #define DEV_INSTITUTION     "มหาวิทยาลัยมหาจุฬาลงกรณราชวิทยาลัย วิทยาเขตแพร่"
@@ -139,7 +140,11 @@ esp_reset_reason_t bootResetReason = ESP_RST_UNKNOWN;
 #define SYNC_INTERVAL_MS        1000     // ส่ง Sync ให้ Station ทุก 1 วินาที
 #define ONLINE_TIMEOUT_MS       5000     // ไม่ได้รับข้อมูลเกิน 5 วินาที = OFFLINE
 #define LOST_LINK_GRACE_MS      30000    // [4.9.0-TFT] เพิ่ม: เงียบต่อจาก OFFLINE อีกเท่านี้จึงถือว่าขาดการติดต่อจริง
-#define MAX_PLAUSIBLE_RATE_HR   3000.0f  // [4.9.0-TFT] เพิ่ม: ชุดให้สารน้ำมาตรฐานไหลได้ไม่ถึงเท่านี้
+// [4.9.2-TFT] แก้: 3000 เป็น 7000 เดิมตั้งจาก "ชุดให้สารน้ำไหลได้ไม่ถึงเท่านี้" แต่ Station คำนวณได้ถึง
+// 3600000 / (55 ms x DF10) = 6545 mL/h (บอร์ดเล็กตัดหยดที่ห่างไม่ถึง 60 ms ได้สูงสุด 6000)
+// ตอนไหลอิสระด้วยชุด DF10 Station จึงรายงานเกิน 3000 แล้ว Host ทิ้งแพ็กเก็ตทุกใบ เตียงหายไป
+// ขึ้น LOST แทน TOO FAST ซึ่งเป็นเหตุที่ต้องเตือนที่สุด ตรวจด้วย tools/compat-test (ฉาก fast)
+#define MAX_PLAUSIBLE_RATE_HR   7000.0f  // สูงกว่าค่าที่ Station ส่งได้จริงทุกสาย ยังกันแพ็กเก็ตขยะได้
 #define MAX_PLAUSIBLE_BATT_V    6.0f     // [4.9.0-TFT] เพิ่ม: แบตลิเธียมเซลล์เดียว ไม่มีทางถึง 6 โวลต์
 #define MIN_OCCLUSION_MS        8000     // เวลาต่ำสุดที่ไม่มีหยดก่อนถือว่าหยุดไหล
 #define MAX_OCCLUSION_MS        300000   // เพดานเวลาตัดสินหยุดไหล (อัตราต่ำมาก)

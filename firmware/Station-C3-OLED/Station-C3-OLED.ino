@@ -1,8 +1,8 @@
 /**
  * @file      Station-C3-OLED.ino
  * @brief     เฟิร์มแวร์เครื่องประจำเตียง รุ่นบอร์ดเล็ก จอ OLED 0.42 นิ้ว
- * @version   1.3.1-C3
- * @date      2026-09-23
+ * @version   1.3.2-C3
+ * @date      2026-09-29
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
  * @par Organization
@@ -25,6 +25,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 1.3.2-C3 | 2026-09-29 | บูตใหม่แล้วยอดหยดที่กู้คืนไม่ถูกล้างอีก (Sync แรกหลังบูตรับ resetSeq โดยไม่รีเซ็ต แบบสายหลัก) และย้ายการรีเซ็ตไปทำใน loop() |
  * | 1.3.1-C3 | 2026-09-28 | จัดกึ่งกลางเลขเตียงและนาฬิกาหน้าพักจอด้วย getStrWidth() เดิมเดาความกว้าง logisoso16 ผิด นาฬิกาเยื้องซ้าย 5 พิกเซล |
  * | 1.3.0-C3 | 2026-09-28 | ไฟสถานะการเชื่อมต่อดูสองทาง ขึ้น ONE-WAY เมื่อได้ยิน Host แต่ Host ไม่ได้ยินเตียง |
  * | 1.2.0-C3 | 2026-09-24 | เพิ่มตัวช่วยคาลิเบรตสี่ขั้นตอนที่หน้าเครื่อง วัดทิศสัญญาณเอง และบันทึกสิ่งที่เรียนรู้ลง NVS |
@@ -113,7 +114,7 @@ esp_reset_reason_t bootResetReason = ESP_RST_UNKNOWN;
 
 #include "drop_detector.h"   // อัลกอริทึมตรวจจับหยด (ทดสอบบน PC ได้: tools/detector-test)
 
-#define APP_VERSION         "1.3.1-C3"
+#define APP_VERSION         "1.3.2-C3"
 
 // ---------------------------------------------------------------------------
 // ขา
@@ -223,7 +224,11 @@ float    targetRateHr             = 0.0f;
 float    totalPlanMl              = 0.0f;
 uint8_t  dropFactor               = DEFAULT_DROP_FACTOR;
 uint8_t  nearEndPct               = DEFAULT_NEAR_END_PCT;
-uint8_t  lastResetSeq             = 0;
+// [1.3.2-C3] แก้: -1 = ยังไม่เคยได้รับ Sync ตั้งแต่บูต เดิมเริ่มที่ 0 แต่ Host เก็บ resetSeq ลง NVS
+// หลังกด "เริ่มถุงใหม่" ครั้งแรกค่าจึงไม่ใช่ 0 อีกเลย บูตใหม่เมื่อไร Sync แรกก็สั่งรีเซ็ต
+// ล้างยอดที่เพิ่งกู้คืนจาก RTC/NVS ทิ้ง ตรวจด้วย tools/compat-test (ฉาก reboot)
+int16_t  lastResetSeq             = -1;
+volatile bool pendingCounterReset = false;   // Sync สั่งเริ่มถุงใหม่ ให้ loop() เป็นผู้รีเซ็ต
 bool     hostAckedNearEnd         = false;
 bool     nearEndAckRequest        = false;   // พยาบาลกดรับทราบที่เตียง
 unsigned long lastHostSyncTime    = 0;
@@ -843,7 +848,10 @@ uint8_t linkState() {
 
 unsigned long msSinceLastDrop() {
   if (!hasFirstDropOccurred) return 0;
-  return millis() - lastDropTimestamp;
+  // [1.3.2-C3] แก้: 0 แปลว่า "ยังไม่มีหยด" ใน Protocol v3 ถ้าส่งในมิลลิวินาทีเดียวกับหยด
+  // Host จะเข้าใจผิด สายหลักกันไว้ด้วยการส่งอย่างน้อย 1 อยู่แล้ว
+  unsigned long ms = millis() - lastDropTimestamp;
+  return ms ? ms : 1;
 }
 
 unsigned long occlusionThresholdMs() {
@@ -901,19 +909,29 @@ void OnHostSyncRecv(const esp_now_recv_info_t *info, const uint8_t *data, int le
   if (hostAckedNearEnd) nearEndAckRequest = false;  // Host รับทราบแล้ว เลิกขอ
 
   // Host สั่งเริ่มถุงใหม่
-  if (s.resetSeq != lastResetSeq) {
+  // [1.3.2-C3] แก้: Sync แรกหลังบูตรับค่าไว้เฉย ๆ และไม่รีเซ็ตในคอลแบ็กของ ESP-NOW
+  // (คอลแบ็กทำงานในงานของ Wi-Fi การเขียน NVS และส่งเสียงควรทำใน loop() แบบสายหลัก)
+  if (lastResetSeq < 0) {
     lastResetSeq = s.resetSeq;
-    totalDrops = 0;
-    tallyClear(stationId);   // [1.1.0-C3] เพิ่ม: เริ่มถุงใหม่ = ล้างยอดที่เก็บไว้ด้วย
-    periodDropsCounter = 0;
-    totalVolumeMl = 0.0f;
-    currentFlowRate_ml_hr = 0.0f;
-    currentGttMin = 0.0f;
-    hasFirstDropOccurred = false;
-    resetRateWindow();
-    nearEndAckRequest = false;
-    beepPattern(2, 40, 50);
+  } else if (s.resetSeq != (uint8_t)lastResetSeq) {
+    lastResetSeq = s.resetSeq;
+    pendingCounterReset = true;
   }
+}
+
+// [1.3.2-C3] ย้าย: เนื้อการรีเซ็ตเดิมจาก OnHostSyncRecv() มาไว้ที่นี่ เรียกจาก loop()
+void applyCounterReset() {
+  pendingCounterReset = false;
+  totalDrops = 0;
+  tallyClear(stationId);   // [1.1.0-C3] เพิ่ม: เริ่มถุงใหม่ = ล้างยอดที่เก็บไว้ด้วย
+  periodDropsCounter = 0;
+  totalVolumeMl = 0.0f;
+  currentFlowRate_ml_hr = 0.0f;
+  currentGttMin = 0.0f;
+  hasFirstDropOccurred = false;
+  resetRateWindow();
+  nearEndAckRequest = false;
+  beepPattern(2, 40, 50);
 }
 
 void setEspNowChannel(uint8_t ch) {
@@ -1040,6 +1058,7 @@ void handleButton(unsigned long now) {
     if (uiMode == MODE_SET_ID) {
       stationId = (stationId % 8) + 1;             // กดสั้นในหน้าตั้งเลข = เพิ่มเลขเตียง
       tallyWriteNvs(totalDrops, stationId);        // [1.1.0-C3] เพิ่ม: ย้ายยอดสะสมไปใต้เลขเตียงใหม่
+      lastResetSeq = -1;   // [1.3.2-C3] เพิ่ม: เตียงใหม่ รับ resetSeq ของเตียงนั้นโดยไม่รีเซ็ต (แบบสายหลัก)
       soundClick();
     } else if (uiMode == MODE_SAVER) {
       uiMode = MODE_NORMAL;                         // ปลุกจากหน้าพักจอ
@@ -1175,6 +1194,7 @@ void setup() {
 void loop() {
   feedWatchdog();   // [1.1.0-C3] เพิ่ม: บอกสุนัขเฝ้าบ้านว่ายังเดินอยู่
   unsigned long now = millis();
+  if (pendingCounterReset) applyCounterReset();   // [1.3.2-C3] เพิ่ม: Host สั่งเริ่มถุงใหม่
 
   // อ่านเซนเซอร์ให้ถี่ที่สุด — ตัวตรวจจับจัดจังหวะตัวอย่างเอง
   // [1.2.0-C3] แก้: ระหว่างคาลิเบรตยังต้องอ่านเซนเซอร์ แต่ห้ามนับเข้ายอดของผู้ป่วย
