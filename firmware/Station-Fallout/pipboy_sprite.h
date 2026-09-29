@@ -1,15 +1,15 @@
 /**
  * @file      pipboy_sprite.h
- * @brief     ภาพ Vault Boy ท่าเดินห้าเฟรมสำหรับหน้า 1 ของสาย Fallout (ไฟล์สร้างอัตโนมัติ ห้ามแก้ด้วยมือ)
- * @version   1.2.0-FO
+ * @brief     ภาพ Vault Boy ท่าเดิน 5 เฟรมสำหรับหน้า 1 ของสาย Fallout (ไฟล์สร้างอัตโนมัติ ห้ามแก้ด้วยมือ)
+ * @version   1.3.0-FO
  * @date      2026-09-28
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
  * @par Description
- * สร้างด้วย `python3 tools/fallout-sprite/make_sprite.py` จากภาพ `vaultboy_walk.webp`
+ * สร้างด้วย `python3 tools/fallout-sprite/make_sprite.py` จากภาพนิ่ง `vaultboy_walk.webp`
  * (ที่มาอยู่ที่ tools/fallout-sprite/SOURCE.md) ขยับขาจากท่าต้นฉบับเป็นท่าเดิน แล้วย่อเหลือ 54x128
  * เฟรม 0 ก้าวยาว · 1 และ 2 ระหว่างทาง · 3 ขาสวนกัน เท้าหลังยก · 4 ยืนขาตรง
- * หนึ่งก้าวเล่นเฟรม 0 1 2 3 2 1 0 เก็บพิกเซลละ 4 บิต (บิตสูงคือพิกเซลซ้าย)
+ * เล่นวนตาม `FO_WALK_SEQ` / `FO_WALK_MS` เก็บพิกเซลละ 4 บิต (บิตสูงคือพิกเซลซ้าย)
  * ชี้เข้าจานสี `FO_SPR_PAL` ดัชนี 0 เท่ากับ THEME_BG จึงวาดทับของเดิมได้โดยไม่ต้องล้างพื้น
  * แถวคี่มืดลงเป็นเส้นสแกนแบบจอ CRT
  *
@@ -19,6 +19,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 1.3.0-FO | 2026-09-28 | เพิ่มลำดับและเวลาการเล่นวน (FO_WALK_SEQ / FO_WALK_MS) อ่านทุกเฟรมจาก GIF ต้นฉบับได้ |
  * | 1.2.0-FO | 2026-09-28 | ภาพต้นทางคมขึ้นพร้อมเส้นสแกน ขาเฉือนแทนการหุบ เท้าหลังยก ลำตัวขึ้นลง และท่ายืน |
  * | 1.1.0-FO | 2026-09-28 | สร้างครั้งแรก จาก statpip0.bmp ของ Adafruit PipBoy_2040 สามเฟรม |
  */
@@ -29,7 +30,11 @@
 #define FO_SPR_H       128
 #define FO_SPR_ROW     27      // ไบต์ต่อแถว
 #define FO_SPR_FRAMES  5
-#define FO_SPR_STAND   4       // ท่ายืนขาตรง
+#define FO_SPR_STAND   4       // ท่ายืน (หยุดชั่วคราว / ไม่ไหล)
+#define FO_WALK_LEN    6      // จำนวนช่องในลำดับการเล่นวน
+
+static const uint8_t FO_WALK_SEQ[FO_WALK_LEN] = {0, 1, 2, 3, 2, 1};
+static const uint16_t FO_WALK_MS[FO_WALK_LEN] = {90, 90, 90, 90, 90, 90};
 
 static const uint16_t FO_SPR_PAL[16] = {
   0x08C0, 0x1141, 0x19C1, 0x1A22, 0x22A3, 0x2B03, 0x3384, 0x3C05,

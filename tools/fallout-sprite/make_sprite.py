@@ -2,7 +2,13 @@
 # -*- coding: utf-8 -*-
 """สร้าง firmware/Station-Fallout/pipboy_sprite.h จากภาพ Vault Boy ท่าเดิน
 
-ต้นทางคือ vaultboy_walk.webp (358x498 เส้นสแกนแบบจอ CRT พื้นดำ) ที่ผู้ดูแลโครงการส่งมาเป็นแบบ
+มีต้นทางได้สองแบบ เลือกให้อัตโนมัติ
+  1) vaultboy_walk.gif  ภาพเคลื่อนไหวต้นฉบับ (เช่น 21 เฟรม) — ถ้ามีไฟล์นี้ ใช้ทุกเฟรมตามลำดับ
+     และตามเวลาของแต่ละเฟรมในไฟล์ ไม่สร้างท่าเอง ท่ายืน (หยุดชั่วคราว / ไม่ไหล) คือเฟรม
+     GIF_STAND ทุกเฟรมผ่านขั้นลบเส้นสแกนเดิม ย่อ แปลงจานสี และใส่เส้นสแกนใหม่แบบเดียวกัน
+  2) vaultboy_walk.webp ภาพนิ่งท่าเดียว — ใช้เมื่อยังไม่มีไฟล์ GIF สร้างท่าเดินเองตามวิธีข้างล่าง
+
+ต้นทางแบบที่ 2 คือ vaultboy_walk.webp (358x498 เส้นสแกนแบบจอ CRT พื้นดำ) ที่ผู้ดูแลโครงการส่งมาเป็นแบบ
 ภาพนั้นมีท่าเดียว คือท่าก้าวยาว สคริปต์นี้ขยับขาเป็นท่าเดินต่อจากท่านั้น แล้วย่อลงขนาดจอ
 
 วิธีขยับขา (ทำที่ความละเอียดต้นทาง แล้วค่อยย่อ ภาพจึงไม่แตก)
@@ -21,7 +27,7 @@
   เฟรม 3  ท่าขาสวนกัน เท้าหลังยก ตัวสูงสุด
   เฟรม 4  ยืนขาตรง เท้าติดพื้น (หยุดชั่วคราว / ไม่ไหล)
 
-หนึ่งหยด = เล่นเฟรม 0 1 2 3 2 1 0 หนึ่งรอบ = หนึ่งก้าว
+ลำดับการเล่นวนซ้ำ 0 1 2 3 2 1 เฟรมละ SYNTH_MS
 
 หลังย่อ แปลงความสว่างเป็นจานสี 16 ระดับ จากสีพื้นจอ (THEME_BG) ถึงเขียวสว่าง
 แล้วใส่เส้นสแกนใหม่แถวเว้นแถว (เส้นสแกนเดิมของต้นทางถูกลบก่อนขยับขา
@@ -42,6 +48,10 @@ from PIL import Image
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 SRC = os.path.join(HERE, "vaultboy_walk.webp")
+GIF = os.path.join(HERE, "vaultboy_walk.gif")
+GIF_STAND = 0                 # เฟรมของ GIF ที่ใช้เป็นท่ายืน
+SYNTH_SEQ = [0, 1, 2, 3, 2, 1]
+SYNTH_MS = 90
 DST = os.path.join(ROOT, "firmware", "Station-Fallout", "pipboy_sprite.h")
 sys.path.insert(0, os.path.join(ROOT, "tools", "fallout-sync"))
 from sync import THEME  # noqa: E402
@@ -76,19 +86,25 @@ def rgb565(r, g, b):
     return ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3)
 
 
-def load():
-    im = Image.open(SRC).convert("RGB")
-    if im.size != (358, 498):
-        sys.exit("vaultboy_walk.webp ต้องมีขนาด 358x498")
+def descan(im):
+    """ช่องเขียวของภาพ หลังลบเส้นสแกนเดิม"""
     w, h = im.size
-    g0 = im.getchannel("G").tobytes()
+    g0 = im.convert("RGB").getchannel("G").tobytes()
     # ลบเส้นสแกนเดิม: ค่าสูงสุดในหน้าต่างแนวตั้ง 4 แถว (แถบมืดของเส้นสแกนหนาไม่เกิน 3 แถว)
     g = bytearray(w * h)
     for y in range(h):
         rows = [min(h - 1, max(0, yy)) * w for yy in range(y - 1, y + 3)]
         for x in range(w):
             g[y * w + x] = max(g0[r + x] for r in rows)
-    return w, h, g
+    return g
+
+
+def load():
+    im = Image.open(SRC).convert("RGB")
+    if im.size != (358, 498):
+        sys.exit("vaultboy_walk.webp ต้องมีขนาด 358x498")
+    w, h = im.size
+    return w, h, descan(im)
 
 
 def compose(w, h, g, shear, lift, bob):
@@ -134,9 +150,28 @@ def is_foot(rear, x, y):
     return (y > 408 and x < 150) if rear else (y > 438)
 
 
+def gif_frames():
+    """ทุกเฟรมของ GIF ต้นฉบับ (Pillow รวมเฟรมตามวิธีทิ้งเฟรมของ GIF ให้แล้ว) กับเวลาของแต่ละเฟรม"""
+    im = Image.open(GIF)
+    big, ms = [], []
+    for i in range(getattr(im, "n_frames", 1)):
+        im.seek(i)
+        fr = im.convert("RGB")
+        big.append(Image.frombytes("L", fr.size, bytes(descan(fr))))
+        ms.append(int(im.info.get("duration", 100)) or 100)
+    return big, ms
+
+
 def frames():
-    w, h, g = load()
-    big = [compose(w, h, g, *p) for p in POSES]
+    """คืน (เฟรมที่ย่อแล้ว, จานสี, ความกว้าง, ลำดับการเล่น, เวลาต่อช่อง, เฟรมท่ายืน, ที่มา)"""
+    if os.path.exists(GIF):
+        big, ms = gif_frames()
+        seq, stand, origin = list(range(len(big))), GIF_STAND, "gif"
+    else:
+        w, h, g = load()
+        big = [compose(w, h, g, *p) for p in POSES]
+        seq, stand, origin = SYNTH_SEQ, 4, "webp"
+        ms = [SYNTH_MS] * len(seq)
     box = None
     for im in big:
         bb = im.point(lambda v: 255 if v > TH else 0).getbbox()
@@ -159,11 +194,11 @@ def frames():
             idx.append(row)
         out.append(idx)
     pal = [tuple(int(round(BG[k] + (BRIGHT[k] - BG[k]) * i / 15.0)) for k in range(3)) for i in range(16)]
-    return out, pal, ow
+    return out, pal, ow, seq, ms, stand, origin
 
 
 def header_text():
-    fr, pal, W = frames()
+    fr, pal, W, seq, ms, stand, origin = frames()
     H = OUT_H
     ROW = (W + 1) // 2
     pal565 = [rgb565(*c) for c in pal]
@@ -173,16 +208,20 @@ def header_text():
     L = []
     L.append("/**")
     L.append(" * @file      pipboy_sprite.h")
-    L.append(" * @brief     ภาพ Vault Boy ท่าเดินห้าเฟรมสำหรับหน้า 1 ของสาย Fallout (ไฟล์สร้างอัตโนมัติ ห้ามแก้ด้วยมือ)")
-    L.append(" * @version   1.2.0-FO")
+    L.append(" * @brief     ภาพ Vault Boy ท่าเดิน %d เฟรมสำหรับหน้า 1 ของสาย Fallout (ไฟล์สร้างอัตโนมัติ ห้ามแก้ด้วยมือ)" % len(fr))
+    L.append(" * @version   1.3.0-FO")
     L.append(" * @date      2026-09-28")
     L.append(" * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>")
     L.append(" *")
     L.append(" * @par Description")
-    L.append(" * สร้างด้วย `python3 tools/fallout-sprite/make_sprite.py` จากภาพ `vaultboy_walk.webp`")
-    L.append(" * (ที่มาอยู่ที่ tools/fallout-sprite/SOURCE.md) ขยับขาจากท่าต้นฉบับเป็นท่าเดิน แล้วย่อเหลือ %dx%d" % (W, H))
-    L.append(" * เฟรม 0 ก้าวยาว · 1 และ 2 ระหว่างทาง · 3 ขาสวนกัน เท้าหลังยก · 4 ยืนขาตรง")
-    L.append(" * หนึ่งก้าวเล่นเฟรม 0 1 2 3 2 1 0 เก็บพิกเซลละ 4 บิต (บิตสูงคือพิกเซลซ้าย)")
+    if origin == "gif":
+        L.append(" * สร้างด้วย `python3 tools/fallout-sprite/make_sprite.py` จากทุกเฟรมของ `vaultboy_walk.gif`")
+        L.append(" * (ที่มาอยู่ที่ tools/fallout-sprite/SOURCE.md) ตามลำดับและเวลาของเฟรมในไฟล์ ย่อเหลือ %dx%d" % (W, H))
+    else:
+        L.append(" * สร้างด้วย `python3 tools/fallout-sprite/make_sprite.py` จากภาพนิ่ง `vaultboy_walk.webp`")
+        L.append(" * (ที่มาอยู่ที่ tools/fallout-sprite/SOURCE.md) ขยับขาจากท่าต้นฉบับเป็นท่าเดิน แล้วย่อเหลือ %dx%d" % (W, H))
+        L.append(" * เฟรม 0 ก้าวยาว · 1 และ 2 ระหว่างทาง · 3 ขาสวนกัน เท้าหลังยก · 4 ยืนขาตรง")
+    L.append(" * เล่นวนตาม `FO_WALK_SEQ` / `FO_WALK_MS` เก็บพิกเซลละ 4 บิต (บิตสูงคือพิกเซลซ้าย)")
     L.append(" * ชี้เข้าจานสี `FO_SPR_PAL` ดัชนี 0 เท่ากับ THEME_BG จึงวาดทับของเดิมได้โดยไม่ต้องล้างพื้น")
     L.append(" * แถวคี่มืดลงเป็นเส้นสแกนแบบจอ CRT")
     L.append(" *")
@@ -192,6 +231,7 @@ def header_text():
     L.append(" * @par Revision History")
     L.append(" * | Version | Date | Change |")
     L.append(" * |---|---|---|")
+    L.append(" * | 1.3.0-FO | 2026-09-28 | เพิ่มลำดับและเวลาการเล่นวน (FO_WALK_SEQ / FO_WALK_MS) อ่านทุกเฟรมจาก GIF ต้นฉบับได้ |")
     L.append(" * | 1.2.0-FO | 2026-09-28 | ภาพต้นทางคมขึ้นพร้อมเส้นสแกน ขาเฉือนแทนการหุบ เท้าหลังยก ลำตัวขึ้นลง และท่ายืน |")
     L.append(" * | 1.1.0-FO | 2026-09-28 | สร้างครั้งแรก จาก statpip0.bmp ของ Adafruit PipBoy_2040 สามเฟรม |")
     L.append(" */")
@@ -202,7 +242,11 @@ def header_text():
     L.append("#define FO_SPR_H       %d" % H)
     L.append("#define FO_SPR_ROW     %d      // ไบต์ต่อแถว" % ROW)
     L.append("#define FO_SPR_FRAMES  %d" % len(fr))
-    L.append("#define FO_SPR_STAND   4       // ท่ายืนขาตรง")
+    L.append("#define FO_SPR_STAND   %d       // ท่ายืน (หยุดชั่วคราว / ไม่ไหล)" % stand)
+    L.append("#define FO_WALK_LEN    %d      // จำนวนช่องในลำดับการเล่นวน" % len(seq))
+    L.append("")
+    L.append("static const uint8_t FO_WALK_SEQ[FO_WALK_LEN] = {" + ", ".join(str(v) for v in seq) + "};")
+    L.append("static const uint16_t FO_WALK_MS[FO_WALK_LEN] = {" + ", ".join(str(v) for v in ms) + "};")
     L.append("")
     L.append("static const uint16_t FO_SPR_PAL[16] = {")
     L.append("  " + ", ".join("0x%04X" % v for v in pal565[:8]) + ",")
@@ -225,7 +269,7 @@ def header_text():
 def main():
     if "--png" in sys.argv:
         out = sys.argv[sys.argv.index("--png") + 1]
-        fr, pal, W = frames()
+        fr, pal, W = frames()[:3]
         sheet = Image.new("RGB", (len(fr) * (W + 8), OUT_H + 8), pal[0])
         for n, f in enumerate(fr):
             for y, row in enumerate(f):
