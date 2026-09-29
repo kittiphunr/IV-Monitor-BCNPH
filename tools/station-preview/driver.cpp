@@ -58,9 +58,9 @@ int digitalRead(int pin) {
   return 1;
 }
 // ป้อน Sync ของเตียงตัวเองหนึ่งแพ็กเก็ต (epoch = 0 จึงไม่ไปแตะนาฬิกาที่ตรึงไว้)
-void feedHostSync(uint8_t flags) {
+void feedHostSync(uint8_t flags, uint8_t alert = ALERT_NONE) {
   struct_host_sync s; memset(&s, 0, sizeof(s));
-  s.stationId = currentStationId; s.flags = flags;
+  s.stationId = currentStationId; s.flags = flags; s.alertCode = alert;
   s.dropFactor = 20; s.nearEndPct = 80; s.hostChannel = 1;
   // Host ตัวจริงส่งแผนการให้ของเตียงมาทุกแพ็กเก็ต ส่งค่าที่เครื่องถืออยู่กลับไป
   // ไม่อย่างนั้นแพ็กเก็ตจำลองจะล้างเป้าหมายและปริมาตรตามแผนเป็นศูนย์
@@ -189,6 +189,70 @@ int main(int argc,char** argv){
       snprintf(name, sizeof(name), "fo_anim_%03d", f);
       emitMark(name);
     }
+  }
+
+  // ---- ภาพจำลองการแสดงผลทั้งหมดของภาพเดิน (docs/screens-fallout/anim/) ----
+  // ทุกฉากเรียก loop() ตัวจริงทุก 30 ms: การตัดสินสัญญาณเตือน หน้าเตือนเต็มจอ ปุ่ม และการวาด
+  // เป็นของเฟิร์มแวร์ทั้งหมด ตัวขับใส่ให้แค่ "หยด" (onDropDetected() ซึ่งเป็นปลายทางของ
+  // ตัวตรวจจับหยด) การกดหยุดชั่วคราว (togglePause() ตัวเดียวกับปุ่มสั้น) และ Sync จาก Host
+  {
+    char name[48];
+    auto due = [](unsigned long t, unsigned long from, unsigned long to, unsigned long gap) {
+      return t >= from && t < to && (t - from) % gap == 0;
+    };
+    auto reset = [&](float target, float infusedMl) {
+      currentState = STATE_NORMAL_VIEW; currentNursePage = 1; stateNeedsRedraw = true;
+      isRunning = true; hostAlertCode = ALERT_NONE; uiAlertCode = ALERT_NONE; snoozeUntilTime = 0;
+      targetRateHr = target; totalPlanMl = 1000; dropFactor = 20; nearEndPct = 80;
+      totalVolumeMl = infusedMl; totalDrops = (uint32_t)(infusedMl * 20);
+      currentFlowRate_ml_hr = 0; currentGttMin = 0; resetRateWindow();
+      hasFirstDropOccurred = false; lastDropTimestamp = g_millis;
+      foSeenInit = false;     // ตัวนับหยดถูกตั้งใหม่ระหว่างฉาก (ของจริงตั้งครั้งเดียวตอนบูต ก่อนวาดจอ)
+    };
+    auto run = [&](const char *tag, unsigned long durMs, uint8_t syncFlags, uint8_t hostAlert, auto events) {
+      unsigned long t0 = g_millis;
+      for (unsigned long t = 0; t <= durMs; t += 30) {
+        g_millis = t0 + t;
+        if (t % 990 == 0) feedHostSync(syncFlags, hostAlert);
+        events(t);
+        lastUserActivityTime = g_millis;       // ไม่ให้เข้าหน้าพักจอระหว่างถ่าย
+        loop();
+        snprintf(name, sizeof(name), "fo_%s_%04lu", tag, t / 30);
+        emitMark(name);
+      }
+    };
+
+    // ฉาก 1 เริ่มหยดแล้วหยดหยุด: STOPPED -> หยดแรก WALKING -> หยดหยุด ภาพค้าง STOPPED
+    //        -> ครบเกณฑ์ NO FLOW (8 วินาทีหลังหยดสุดท้าย) เฟิร์มแวร์เปิดหน้าเตือนเต็มจอเอง
+    reset(100, 620);
+    run("s1", 22000, 0x06, ALERT_NONE, [&](unsigned long t) {
+      if (due(t, 2010, 11100, 1800)) onDropDetected();
+    });
+
+    // ฉาก 2 หยุดชั่วคราวแล้วกลับมา: เดิน -> กดหยุด ยืนพร้อม || -> กดกลับ ภาพยังไม่เดินจนกว่า
+    //        หยดแรกหลังกลับมาจะถึง -> เดินต่อ
+    reset(100, 620);
+    run("s2", 16000, 0x06, ALERT_NONE, [&](unsigned long t) {
+      if (due(t, 600, 5400, 1800)) onDropDetected();
+      if (t == 5700) togglePause();
+      if (t == 10200) togglePause();
+      if (due(t, 12000, 16000, 1800)) onDropDetected();
+    });
+
+    // ฉาก 3 หยดห่างแล้วหยดถี่: ห่าง 3 วินาที แล้วถี่ 0.6 วินาที ภาพเดินเร็วเท่าเดิมตลอด
+    //        (ไม่ตั้งอัตราเป้าหมาย เพื่อไม่ให้ขึ้นเตือนเร็ว/ช้าเกินมาบังภาพ)
+    reset(0, 620);
+    run("s3", 16500, 0x06, ALERT_NONE, [&](unsigned long t) {
+      if (due(t, 600, 9600, 3000)) onDropDetected();
+      if (due(t, 9600, 15000, 600)) onDropDetected();
+    });
+
+    // ฉาก 4 ใกล้หมดถุง: Host เป็นผู้ตัดสินและส่งรหัส NEAR END มาใน Sync พร้อมบิตรับทราบแล้ว
+    //        (ถ้ายังไม่รับทราบ เฟิร์มแวร์เปิดหน้าแจ้งเตือนเต็มจอแทน) เดินในหน้า 1 ที่เป็นสีส้ม
+    reset(100, 840);
+    run("s4", 7200, 0x07, ALERT_NEAR_END, [&](unsigned long t) {
+      if (due(t, 300, 7200, 1800)) onDropDetected();
+    });
   }
 #endif
   fclose(g_ops);

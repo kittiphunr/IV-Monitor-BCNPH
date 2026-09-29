@@ -27,6 +27,18 @@ rm -f station.cpp stpreview ops.txt
 if [ -n "$FALLOUT" ]; then
   python3 make_gif.py "$OUT/p1_walk.gif" 40 "$OUT"/fo_anim_*.png
   rm -f "$OUT"/fo_anim_*.png
+  # ภาพจำลองการแสดงผลทั้งหมดของภาพเดิน: ทุกเฟรมที่เก็บไว้ และสี่ฉากที่ขับด้วย loop() ตัวจริง
+  mkdir -p "$OUT/anim"
+  python3 ../fallout-sprite/sheet.py "$OUT/anim/frames.png" ../../firmware/Station-Fallout/pipboy_sprite.h
+  for s in s1 s2 s3 s4; do
+    case $s in
+      s1) name=s1_start_stop ;;  s2) name=s2_pause_resume ;;
+      s3) name=s3_slow_fast ;;   s4) name=s4_near_end ;;
+    esac
+    python3 make_gif.py "$OUT/anim/$name.gif" 30 "$OUT"/fo_${s}_*.png
+    python3 make_strip.py "$OUT/anim/${name}_strip.png" 30 1000 12 "$OUT"/fo_${s}_*.png
+    rm -f "$OUT"/fo_${s}_*.png
+  done
   python3 ../screen-preview/make_sheet.py "$OUT/overview_walk.png" 4 \
     "$OUT/p1_bag.png" "WALK" "$OUT/p1_paused.png" "PAUSED" \
     "$OUT/p1_noflow.png" "NO FLOW" "$OUT/p1_nearend.png" "NEAR END"
