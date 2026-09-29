@@ -1,8 +1,8 @@
 /**
  * @file      Station-Fallout.ino
  * @brief     เฟิร์มแวร์เครื่องประจำเตียง รุ่นพิเศษ Fallout จอแบบ Pip-Boy และ Vault Boy เดินก้าวตามหยดสารน้ำ
- * @version   1.3.0-FO
- * @date      2026-09-28
+ * @version   1.3.1-FO
+ * @date      2026-09-29
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
  * @par Organization
@@ -32,6 +32,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 1.3.1-FO | 2026-09-29 | กลับจากหยุดชั่วคราวแล้ว Vault Boy ไม่เดินเองก่อนหยดแรก (นับเฉพาะหยดจริง) |
  * | 1.3.0-FO | 2026-09-28 | Vault Boy เดินเมื่อกำลังหยดและหยุดเมื่อหยดหยุด ภาพเดินแยกจากจังหวะหยด เล่นวนตามเวลาของตัวเอง |
  * | 1.2.0-FO | 2026-09-28 | Vault Boy ตามภาพอ้างอิงใหม่ คมขึ้นพร้อมเส้นสแกน ท่าเดินห้าเฟรม |
  * | 1.1.0-FO | 2026-09-28 | จานสีตามจอ Pip-Boy จริง หน้า 1 จัดแบบหน้า STAT และใช้ Vault Boy ของ Adafruit PipBoy_2040 แทนนักเดินทางที่วาดเอง |
@@ -229,7 +230,7 @@ esp_reset_reason_t bootResetReason = ESP_RST_UNKNOWN;
 
 #include "drop_detector.h"   // อัลกอริทึมตรวจจับหยด (ทดสอบบน PC ได้: tools/detector-test)
 
-#define APP_VERSION         "1.3.0-FO"
+#define APP_VERSION         "1.3.1-FO"
 
 #define TFT_CS              9
 #define TFT_DC              10
