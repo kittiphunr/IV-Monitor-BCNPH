@@ -146,7 +146,8 @@ function cell(text, o = {}) {
       .map((t) => new Paragraph({
         alignment: o.align || AlignmentType.LEFT,
         spacing: { after: 0, line: 260, lineRule: d.LineRuleType.AUTO },
-        children: [run(t, { bold: o.bold, size: o.size || 30 })],
+        // ใช้ runsFrom เหมือนย่อหน้าปกติ ข้อความที่คร่อมด้วย ** ในช่องตารางจึงเป็นตัวหนา ไม่ใช่ดอกจัน
+        children: runsFrom(t, { bold: o.bold, size: o.size || 30 }),
       })),
   });
 }

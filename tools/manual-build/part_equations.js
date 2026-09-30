@@ -1,6 +1,7 @@
 // ภาคผนวก ฉ — รวมสมการทั้งหมดที่ระบบใช้
 // แยกเป็นไฟล์ของตัวเอง เพราะเป็นส่วนที่ผู้วิจัยและผู้ตรวจสอบต้องอ้างอิงได้โดยตรง
 const L = require('./manual_lib.js');
+const M = require('./part_models.js');   // เลขตารางต่อจากบทที่ ๘-๑๕
 const { d, run, p, plain, center, h2, h3, item, table, tableCaption, noteBox, eq, eqWhere } = L;
 const { Paragraph, PageBreak, AlignmentType } = d;
 
@@ -25,7 +26,7 @@ const apF = [
   // ---------------------------------------------------------------- ฉ.๑
   h2('ฉ.๑  สัญลักษณ์และหน่วยที่ใช้'),
 
-  tableCaption('ตารางที่ ๒๐  สัญลักษณ์ที่ใช้ในสมการ'),
+  tableCaption('ตารางที่ ' + M.thai(M.TABLE_NEXT + 1) + '  สัญลักษณ์ที่ใช้ในสมการ'),
   table(
     [{ t: 'สัญลักษณ์', w: 0.16, align: AlignmentType.CENTER },
      { t: 'ความหมาย', w: 0.54 },
@@ -193,7 +194,7 @@ const apF = [
 
   // ---------------------------------------------------------------- ฉ.๖
   h2('ฉ.๖  ตารางสรุปสมการทั้งหมด'),
-  tableCaption('ตารางที่ ๒๑  สรุปสมการทั้งหมดที่ระบบใช้'),
+  tableCaption('ตารางที่ ' + M.thai(M.TABLE_NEXT + 2) + '  สรุปสมการทั้งหมดที่ระบบใช้'),
   table(
     [{ t: 'สมการที่', w: 0.11, align: AlignmentType.CENTER },
      { t: 'สมการ', w: 0.48 },

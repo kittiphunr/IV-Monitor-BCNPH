@@ -16,6 +16,7 @@ const c12 = require('./part_ch12.js');
 const c34 = require('./part_ch34.js');
 const c56 = require('./part_ch56.js');
 const cCal = require('./part_calib.js');
+const cM = require('./part_models.js');   // บทที่ ๘-๑๕ แยกตามรุ่น
 const ap = require('./part_appendix.js');
 const apEq = require('./part_equations.js');
 
@@ -116,6 +117,9 @@ const doc = new Document({
         ...c34.ch4,
         ...c56.ch5,
         ...c56.ch6,
+        ...cM.ch8,            // บทที่ ๘ ภาพรวมการใช้งานแยกตามรุ่น
+        ...cM.ch9, ...cM.ch10, ...cM.ch11, ...cM.ch12,   // เครื่องประจำเตียงสี่รุ่น
+        ...cM.ch13, ...cM.ch14, ...cM.ch15,              // เครื่องศูนย์กลางสามรุ่น
         ...ap.divider,
         ...ap.apA, ...ap.apB, ...ap.apC, ...ap.apD, ...ap.apE, ...apEq.apF,
         ...ap.refs,
