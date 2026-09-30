@@ -1,8 +1,8 @@
 /**
  * @file      Station-C3-OLED.ino
  * @brief     เฟิร์มแวร์เครื่องประจำเตียง รุ่นบอร์ดเล็ก จอ OLED 0.42 นิ้ว
- * @version   1.3.2-C3
- * @date      2026-09-29
+ * @version   1.3.3-C3
+ * @date      2026-09-30
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
  * @par Organization
@@ -25,6 +25,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 1.3.3-C3 | 2026-09-30 | แรงดันแบตเตอรี่อ่านด้วย analogReadMilliVolts() เดิมอ่านเกินจริงราว 32% แบตหมดขึ้น 100% · % จากตารางแบตลิเธียม · อัตราไหลขึ้นค่าใหม่ทันทีหลังหมุนปรับหยด ไม่ตกเป็น 0 |
  * | 1.3.2-C3 | 2026-09-29 | บูตใหม่แล้วยอดหยดที่กู้คืนไม่ถูกล้างอีก (Sync แรกหลังบูตรับ resetSeq โดยไม่รีเซ็ต แบบสายหลัก) และย้ายการรีเซ็ตไปทำใน loop() |
  * | 1.3.1-C3 | 2026-09-28 | จัดกึ่งกลางเลขเตียงและนาฬิกาหน้าพักจอด้วย getStrWidth() เดิมเดาความกว้าง logisoso16 ผิด นาฬิกาเยื้องซ้าย 5 พิกเซล |
  * | 1.3.0-C3 | 2026-09-28 | ไฟสถานะการเชื่อมต่อดูสองทาง ขึ้น ONE-WAY เมื่อได้ยิน Host แต่ Host ไม่ได้ยินเตียง |
@@ -114,7 +115,7 @@ esp_reset_reason_t bootResetReason = ESP_RST_UNKNOWN;
 
 #include "drop_detector.h"   // อัลกอริทึมตรวจจับหยด (ทดสอบบน PC ได้: tools/detector-test)
 
-#define APP_VERSION         "1.3.2-C3"
+#define APP_VERSION         "1.3.3-C3"
 
 // ---------------------------------------------------------------------------
 // ขา
@@ -455,18 +456,26 @@ void loadConfig() {
 // ---------------------------------------------------------------------------
 // แบตเตอรี่
 // ---------------------------------------------------------------------------
+// [1.3.3-C3] แก้: อ่านเป็นมิลลิโวลต์ด้วย analogReadMilliVolts() ซึ่งใช้ค่าสอบเทียบประจำชิป
+// เดิมคิด raw / 4095 x 3.3 V แต่ ADC ของ ESP32-C3 ที่ลดทอน 11 dB วัดได้เต็มสเกลราว 2.5 V เท่านั้น
+// แบตเต็ม 4.2 V จึงอ่านได้ราว 5.5 V (เกินจริงราว 32%) แบตที่หมดแล้ว 3.3 V ขึ้นเป็น 100%
 float readBattery() {
-  long sum = 0;
-  for (int i = 0; i < 8; i++) sum += analogRead(BAT_ADC_PIN);
-  return ((sum / 8.0f) / 4095.0f) * 3.3f * 2.0f;
+  uint32_t mv = 0;
+  for (int i = 0; i < 8; i++) mv += analogReadMilliVolts(BAT_ADC_PIN);
+  return (mv / 8.0f) / 1000.0f * 2.0f;
 }
 
+// [1.3.3-C3] แก้: ตารางแรงดันของแบตลิเธียมเซลล์เดียว (ค่าโดยประมาณขณะโหลดน้อย) ชุดเดียวกับ Host
+// เดิมเป็นเส้นตรง 3.3-4.2 V ซึ่งบอกว่ายังเหลือมากในตอนที่แรงดันกำลังจะดิ่ง
 uint8_t batteryPct() {
   if (batteryVolts < 0.5f) return 0;                  // เสียบ USB ไม่มีแบตเตอรี่
-  float p = (batteryVolts - 3.30f) / (4.20f - 3.30f) * 100.0f;
-  if (p < 0)   p = 0;
-  if (p > 100) p = 100;
-  return (uint8_t)p;
+  static const float V[] = {3.30f, 3.50f, 3.60f, 3.65f, 3.70f, 3.75f, 3.80f, 3.85f, 3.92f, 4.00f, 4.10f, 4.20f};
+  static const int   P[] = {   0,     5,    10,    20,    30,    40,    50,    60,    70,    80,    90,   100};
+  if (batteryVolts <= V[0]) return 0;
+  for (int i = 1; i < 12; i++) {
+    if (batteryVolts <= V[i]) return (uint8_t)(P[i - 1] + (int)((batteryVolts - V[i - 1]) / (V[i] - V[i - 1]) * (P[i] - P[i - 1]) + 0.5f));
+  }
+  return 100;
 }
 
 // ---------------------------------------------------------------------------
@@ -593,6 +602,9 @@ void onDropDetected() {
       resetRateWindow();          // ช่วงหยดผิดปกติ ไม่เอามาปนกับของเดิม
     } else if (meanIv > 0 && (dropDeltaMs > meanIv * 3 || dropDeltaMs * 3 < meanIv)) {
       resetRateWindow();          // อัตราเปลี่ยนก้าวกระโดด (หมุนโรลเลอร์แคลมป์)
+      // [1.3.3-C3] แก้: เริ่มหน้าต่างใหม่จากหยดก่อนหน้า ช่วงที่เพิ่งวัดได้คืออัตราใหม่ของจริง
+      // เดิมหน้าต่างเหลือหยดเดียว คำนวณไม่ได้ จอขึ้น 0 ไปหนึ่งช่วงหยดแล้ว Host ก็ได้ 0 ไปด้วย
+      pushRateSample(lastDropTimestamp);
     }
   }
 
@@ -601,7 +613,10 @@ void onDropDetected() {
   hasFirstDropOccurred  = true;
   skipNextInterval      = false;
 
-  currentFlowRate_ml_hr = rateFromWindow(df);
+  // [1.3.3-C3] แก้: คงอัตราล่าสุดที่คำนวณได้ไว้ถ้าหน้าต่างยังมีหยดเดียว (เหมือนสายหลัก)
+  // หยดหยุดจริงเมื่อไร loop() ตั้งเป็น 0 เองเมื่อครบเกณฑ์ NO FLOW อยู่แล้ว
+  float windowRate = rateFromWindow(df);
+  if (windowRate > 0.0f) currentFlowRate_ml_hr = windowRate;
   currentGttMin         = currentFlowRate_ml_hr * df / 60.0f;
   totalVolumeMl         = (float)totalDrops / (float)df;
 

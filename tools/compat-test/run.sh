@@ -115,6 +115,18 @@ for s in $STATIONS; do
   printf "  %-16s ก่อนกด 12400 หยด  หลังกดเหลือ %-6s %s\n" "$s" "$d" "$r"
 done
 
+echo "================ ฉาก slowdown / speedup — หมุนตัวปรับหยด 4 เท่า จอต้องขึ้นอัตราใหม่ทันทีหลังช่วงแรก"
+for sc in slowdown speedup; do
+  case $sc in slowdown) want=25 ;; speedup) want=400 ;; esac
+  for s in $STATIONS; do
+    sr=$("$W/st_$s" gen $sc "$W/pk_r.txt")
+    r=$(val "$sr" st_probe)
+    ok=$(python3 -c "print(1 if abs($r-$want) <= $want*0.1 else 0)")
+    [ "$ok" = 1 ] && res=ผ่าน || { res=ไม่ผ่าน; rc=1; }
+    printf "  %-9s %-16s อัตราจริง %4d  จอขึ้น %7s mL/h  %s\n" "$sc" "$s" "$want" "$r" "$res"
+  done
+done
+
 echo
 [ $rc = 0 ] && echo "เข้ากันได้ทุกคู่ ทุกฉาก" || echo "*** มีคู่ที่ไม่ผ่าน ***"
 exit $rc

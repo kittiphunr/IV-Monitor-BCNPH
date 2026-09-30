@@ -47,6 +47,7 @@ int main(int argc, char **argv) {
   g_cap = fopen(argv[apply ? 4 : 3], "w");
   g_t0 = NOW_MS();
   size_t si = 0; unsigned long nextDrop = sc.firstDrop;
+  float probeRate = -1;
   for (unsigned long t = 0; t <= sc.dur; t += 10) {
     ADVANCE_TO(g_t0 + t);
     if (!apply && t % 1000 == 0) {
@@ -57,12 +58,17 @@ int main(int argc, char **argv) {
       deliver((const uint8_t *)&s, sizeof(s));
     }
     while (apply && si < syncs.size() && syncs[si].t <= t) { deliver(syncs[si].b.data(), (int)syncs[si].b.size()); si++; }
-    if (sc.gap && t >= nextDrop && t < sc.dropsUntil) { DROP(); nextDrop += sc.gap; }
+    if (sc.gap && t >= nextDrop && t < sc.dropsUntil) {
+      DROP();
+      nextDrop += (sc.gap2From && t >= sc.gap2From) ? sc.gap2 : sc.gap;
+    }
     TICK();
+    if (sc.probeAt && t == sc.probeAt) probeRate = currentFlowRate_ml_hr;
   }
   fclose(g_cap);
   printf("st_drops=%lu st_target=%.0f st_plan=%.0f st_df=%d st_hostalert=%d st_link_ok=%d st_rate=%.0f\n",
          (unsigned long)totalDrops, targetRateHr, totalPlanMl, (int)dropFactor, (int)hostAlertCode,
          linkState() == LINK_OK ? 1 : 0, currentFlowRate_ml_hr);
+  printf("st_probe=%.1f\n", probeRate);
   return 0;
 }

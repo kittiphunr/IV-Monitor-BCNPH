@@ -14,7 +14,8 @@ unsigned long micros(){ return g_millis*1000UL; }
 void delay(unsigned long ms){ g_millis += ms; }
 void delayMicroseconds(unsigned long us){ g_millis += us/1000; }
 void pinMode(int,int){} void digitalWrite(int,int){} int digitalRead(int){return 1;}
-int analogRead(int){return 2400;} void analogReadResolution(int){} void analogSetAttenuation(adc_attenuation_t){}
+// ขาแบตเตอรี่ของ Host: 2560 = 1938 mV ที่ขา = แบต 3.88 V (ราว 65%) ตามสูตร analogReadMilliVolts() ใหม่
+int analogRead(int){return 2560;} void analogReadResolution(int){} void analogSetAttenuation(adc_attenuation_t){}
 void tone(int,unsigned int,unsigned long){} void noTone(int){}
 long map(long x,long a,long b,long c,long d){return (x-a)*(d-c)/(b-a)+c;}
 int esp_now_init(){return 0;} int esp_now_deinit(){return 0;}

@@ -1,8 +1,8 @@
 /**
  * @file      HostScreen.h
  * @brief     ทุกอย่างที่วาดลงจอ OLED 128x64 ของเครื่องส่วนกลาง
- * @version   4.9.1-OLED
- * @date      2026-09-23
+ * @version   4.9.3-OLED
+ * @date      2026-09-30
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
  * @par Organization
@@ -17,6 +17,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 4.9.3-OLED | 2026-09-30 | เวลาที่เหลือใช้สูตรเดียวกับ Host รุ่นอื่นและเครื่องประจำเตียง (อัตราเป้าหมายสำรอง ตัดเศษนาที) |
  * | 4.9.1-OLED | 2026-09-28 | จัดกึ่งกลางหน้าพักจอด้วย getStrWidth() |
  * | 4.9.0-OLED | 2026-09-28 | ออกแบบหน้าจอใหม่ตาม Station ทั้งหัวจอ การ์ด ป้ายเตียงแบบทึบ แถบบอกหน้า และหน้ารายเตียงแบบ IV BAG |
  * | 4.7.7 | 2026-09-23 | แยกออกมาจากไฟล์หลัก ย้ายที่อยู่ล้วน ๆ ไม่ได้แก้เนื้อในแม้แต่บรรทัดเดียว |
@@ -212,13 +213,18 @@ void drawIvBag(int x, int y, int w, int h, int i) {
 }
 
 // เวลาที่เหลือของถุงนี้ เช่น 3h52m — ไม่มีแผนหรือไม่ไหล = "--"
+// [4.9.3-OLED] แก้: ใช้สูตรเดียวกับ Host รุ่นอื่นและเครื่องประจำเตียง (bedMinutesLeft)
+// อัตราที่วัดได้ถ้าเกิน 5 mL/h ไม่อย่างนั้นใช้อัตราเป้าหมาย ตัดเศษนาที และไม่คิดตอนสายพับ
+// เดิมปัดเศษและไม่มีอัตราเป้าหมายสำรอง เตียงเดียวกันจึงขึ้นเวลาต่างจากจอเตียงได้หนึ่งนาที
 String timeLeftStr(int i) {
   const StationData &s = stations[i];
-  float rate = s.flowRate_ml_hr;
   float left = s.cfg.planVolumeMl - s.totalVolumeMl;
-  if (s.cfg.planVolumeMl <= 0 || rate <= 0.5f || !isStationOnline(i) || !s.isRunning) return "--";
+  if (s.cfg.planVolumeMl <= 0 || !isStationOnline(i) || !s.isRunning) return "--";
+  if (s.alertCode == ALERT_OCCLUSION) return "--";
+  float rate = (s.flowRate_ml_hr > 5.0f) ? s.flowRate_ml_hr : s.cfg.targetRateHr;
+  if (rate <= 0.0f) return "--";
   if (left <= 0) return "0m";
-  long mins = (long)(left / rate * 60.0f + 0.5f);
+  long mins = (long)(left / rate * 60.0f);
   char b[12];
   if (mins >= 60) snprintf(b, sizeof(b), "%ldh%02ldm", mins / 60, mins % 60);
   else            snprintf(b, sizeof(b), "%ldm", mins);

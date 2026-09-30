@@ -1,8 +1,8 @@
 /**
  * @file      Station-Fallout.ino
  * @brief     เฟิร์มแวร์เครื่องประจำเตียง รุ่นพิเศษ Fallout จอแบบ Pip-Boy และ Vault Boy เดินก้าวตามหยดสารน้ำ
- * @version   1.4.0-FO
- * @date      2026-09-29
+ * @version   1.4.1-FO
+ * @date      2026-09-30
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
  * @par Organization
@@ -32,12 +32,14 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 1.4.1-FO | 2026-09-30 | รับการแก้จากสายหลัก 7.10.1: อัตราไหลขึ้นค่าใหม่ทันทีหลังหมุนปรับหยด และเวลาที่เหลือใช้ปริมาตรไม่ปัดเศษ |
  * | 1.4.0-FO | 2026-09-29 | Vault Boy เดินด้วยเฟรมภาพเคลื่อนไหวต้นฉบับครบ 21 เฟรม |
  * | 1.3.1-FO | 2026-09-29 | กลับจากหยุดชั่วคราวแล้ว Vault Boy ไม่เดินเองก่อนหยดแรก (นับเฉพาะหยดจริง) |
  * | 1.3.0-FO | 2026-09-28 | Vault Boy เดินเมื่อกำลังหยดและหยุดเมื่อหยดหยุด ภาพเดินแยกจากจังหวะหยด เล่นวนตามเวลาของตัวเอง |
  * | 1.2.0-FO | 2026-09-28 | Vault Boy ตามภาพอ้างอิงใหม่ คมขึ้นพร้อมเส้นสแกน ท่าเดินห้าเฟรม |
  * | 1.1.0-FO | 2026-09-28 | จานสีตามจอ Pip-Boy จริง หน้า 1 จัดแบบหน้า STAT และใช้ Vault Boy ของ Adafruit PipBoy_2040 แทนนักเดินทางที่วาดเอง |
  * | 1.0.0-FO | 2026-09-28 | แยกสายพิเศษ Fallout จาก Station 7.10.0 จอเขียวแบบ Pip-Boy และคนเดินก้าวตามหยดแทนถุงน้ำเกลือ |
+ * | 7.10.1 | 2026-09-30 | อัตราไหลขึ้นค่าใหม่ทันทีหลังหมุนปรับหยด (เริ่มหน้าต่างใหม่จากหยดก่อนหน้า) และเวลาที่เหลือใช้ปริมาตรไม่ปัดเศษเหมือน Host |
  * | 7.10.0 | 2026-09-28 | ไฟสถานะการเชื่อมต่อดูสองทาง ขึ้น ONE-WAY เมื่อได้ยิน Host แต่ Host ไม่ได้ยินเตียง |
  * | 7.9.0 | 2026-09-23 | จำนวนหยดสะสมรอดการรีบูตและไฟดับแล้ว เพิ่มสุนัขเฝ้าบ้าน และแก้การนับเวลาที่พังเมื่อ millis() วนรอบ |
  * | 7.8.0 | 2026-09-23 | ย้ายโค้ดวาดจอออกไปไว้ที่ `StationScreen.h` ตรรกะไม่เปลี่ยนแม้แต่บรรทัดเดียว |
@@ -231,7 +233,7 @@ esp_reset_reason_t bootResetReason = ESP_RST_UNKNOWN;
 
 #include "drop_detector.h"   // อัลกอริทึมตรวจจับหยด (ทดสอบบน PC ได้: tools/detector-test)
 
-#define APP_VERSION         "1.4.0-FO"
+#define APP_VERSION         "1.4.1-FO"
 
 #define TFT_CS              9
 #define TFT_DC              10
@@ -684,9 +686,11 @@ void acknowledgeNearEnd() {
 
 float readStationBattery() {
 #if STATION_BAT_ADC_PIN >= 0
-  long sum = 0;
-  for (int i = 0; i < 8; i++) sum += analogRead(STATION_BAT_ADC_PIN);
-  float v = ((sum / 8.0f) / 4095.0f) * 3.3f * BAT_DIVIDER_RATIO;
+  // [7.10.1] แก้: อ่านเป็นมิลลิโวลต์ที่สอบเทียบแล้ว เดิมคิด raw / 4095 x 3.3 V แต่ ADC ที่ลดทอน
+  // 11 dB วัดได้เต็มสเกลราว 3.1 V (ขานี้ยังปิดอยู่ แก้ไว้ให้ถูกก่อนมีคนเปิดใช้)
+  uint32_t mv = 0;
+  for (int i = 0; i < 8; i++) mv += analogReadMilliVolts(STATION_BAT_ADC_PIN);
+  float v = (mv / 8.0f) / 1000.0f * BAT_DIVIDER_RATIO;
   return (v < 2.5f) ? 0.0f : v;
 #else
   return 0.0f;
@@ -916,6 +920,10 @@ void onDropDetected() {
     } else if (meanIv > 0 && (dropDeltaMs > meanIv * 3 || dropDeltaMs * 3 < meanIv)) {
       resetRateWindow();          // อัตราเปลี่ยนก้าวกระโดด (หมุนโรลเลอร์แคลมป์)
                                   // ทิ้งค่าเก่าทันที ไม่ให้ถ่วงจนตรวจจับช้า
+      // [7.10.1] แก้: เริ่มหน้าต่างใหม่จากหยดก่อนหน้า ช่วงที่เพิ่งวัดได้คืออัตราใหม่ของจริงอยู่แล้ว
+      // เดิมหน้าต่างเหลือหยดเดียว คำนวณไม่ได้ จอค้างอัตราเก่าไปอีกหนึ่งช่วงหยด (ถ้าหมุนจาก
+      // 100 ลงเหลือ 25 mL/h ที่ DF20 ค้างเลข 100 ไว้ราว 7 วินาที) บอร์ดเล็กขึ้น 0 แทน
+      pushRateSample(lastDropTimestamp);
     }
   }
 
@@ -1315,7 +1323,11 @@ int minutesLeft() {
   if (!isRunning || isLocallyOccluded()) return -1;
   float calcRate = (currentFlowRate_ml_hr > 5.0f) ? currentFlowRate_ml_hr : (float)targetRateHr;
   if (calcRate <= 0) return -1;
-  return (int)((remainingMlInt() / calcRate) * 60.0f);
+  // [7.10.1] แก้: ใช้ปริมาตรที่เหลือแบบไม่ปัดเศษ เหมือน Host เดิมใช้ค่าที่ปัดเป็น mL เต็ม
+  // เวลาที่เหลือบนจอเตียงกับจอ Host จึงต่างกันได้หนึ่งนาทีในบางจังหวะ
+  float left = totalPlanMl - totalVolumeMl;
+  if (left < 0) left = 0;
+  return (int)((left / calcRate) * 60.0f);
 }
 
 String timeLeftText(bool compact) {

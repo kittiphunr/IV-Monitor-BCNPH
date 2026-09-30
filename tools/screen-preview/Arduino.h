@@ -72,6 +72,13 @@ void pinMode(int,int);
 void digitalWrite(int,int);
 int digitalRead(int);
 int analogRead(int);
+// analogReadMilliVolts() ของจริงใช้ค่าสอบเทียบประจำชิปใน eFuse แปลงเป็นมิลลิโวลต์
+// ตัวจำลองแปลงจาก analogRead() ของตัวขับแต่ละตัว ด้วยช่วงเต็มสเกลของ ESP32-S3 ที่ลดทอน 11 dB
+// (ราว 3100 mV) เปลี่ยนได้ด้วย PREVIEW_ADC_FULL_MV
+#ifndef PREVIEW_ADC_FULL_MV
+#define PREVIEW_ADC_FULL_MV 3100L
+#endif
+inline uint32_t analogReadMilliVolts(int pin) { return (uint32_t)((long)analogRead(pin) * PREVIEW_ADC_FULL_MV / 4095L); }
 void analogReadResolution(int);
 void analogSetAttenuation(adc_attenuation_t);
 void tone(int,unsigned int,unsigned long d=0);

@@ -1,8 +1,8 @@
 /**
  * @file      Host-Touch24.ino
  * @brief     เฟิร์มแวร์เครื่องส่วนกลาง รุ่นจอสัมผัส 2.4 นิ้ว ตั้งค่าได้ที่หน้าเครื่อง
- * @version   4.10.2-TOUCH
- * @date      2026-09-29
+ * @version   4.10.3-TOUCH
+ * @date      2026-09-30
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
  * @par Organization
@@ -22,6 +22,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 4.10.3-TOUCH | 2026-09-30 | แรงดันแบตเตอรี่อ่านด้วย analogReadMilliVolts() (สอบเทียบประจำชิป) และ % จากตารางแรงดันแบตลิเธียม เดิมอ่านเกินจริงราว 6.5% แบตเกือบหมดขึ้น 63% |
  * | 4.10.2-TOUCH | 2026-09-29 | รับอัตราไหลได้ถึง 7000 mL/h เดิมทิ้งแพ็กเก็ตที่เกิน 3000 ทำให้ไหลอิสระด้วยชุด DF10 ขึ้น LOST แทน TOO FAST |
  * | 4.10.1-TOUCH | 2026-09-28 | Sync บอกเตียงด้วยว่า Host ได้ยินมันอยู่หรือไม่ (บิตว่างใน flags ขนาดโครงสร้างไม่เปลี่ยน) |
  * | 4.10.0-TOUCH | 2026-09-23 | เตียงที่หายไประหว่างให้น้ำเกลือมีเสียงเตือนแล้ว เพิ่มสุนัขเฝ้าบ้าน รายงานสาเหตุการรีบูต และปฏิเสธแพ็กเก็ตที่ค่าเป็นไปไม่ได้ |
@@ -140,7 +141,7 @@
 esp_reset_reason_t bootResetReason = ESP_RST_UNKNOWN;
 
 
-#define APP_VERSION         "4.10.2-TOUCH"
+#define APP_VERSION         "4.10.3-TOUCH"
 #define DEV_NAME            "กิตติพันธ์ รัตนคร"
 #define DEV_ROLE            "นักวิชาการคอมพิวเตอร์"
 #define DEV_INSTITUTION     "มหาวิทยาลัยมหาจุฬาลงกรณราชวิทยาลัย วิทยาเขตแพร่"
@@ -347,9 +348,12 @@ struct TrialCaseRecord {
   char startTimeStr[24] = "";
   float targetRate = 0.0;
   float planVolume = 0.0;
-  float actualVolume = 0.0;
-  float errorMl = 0.0;
-  float errorPercent = 0.0;
+  // [4.10.3-TOUCH] แก้: เปลี่ยนชื่อให้ตรงความหมาย เดิมชื่อ actualVolume / errorMl / errorPercent
+  // แต่ค่าที่ได้คือ "ปริมาตรที่นับได้" ลบ "แผน" คือให้เกินหรือขาดจากแผนเท่าไร ไม่ใช่ความแม่นยำของเครื่อง
+  // (วัดความแม่นยำต้องเทียบกับปริมาตรจริงจากการชั่งถุงหรือกระบอกตวง ซึ่งเครื่องวัดเองไม่ได้)
+  float countedVolume = 0.0;    // หยดสะสม / DF
+  float overPlanMl = 0.0;       // ให้เกิน (บวก) หรือขาด (ลบ) จากแผน
+  float overPlanPct = 0.0;      // เทียบกับปริมาตรตามแผน
 };
 
 struct StationData {
@@ -989,20 +993,32 @@ void setScreenBrightness(int pct) {
   preferences.end();
 }
 
+// [4.10.3-TOUCH] แก้: อ่านเป็นมิลลิโวลต์ด้วย analogReadMilliVolts() ซึ่งใช้ค่าสอบเทียบประจำชิป
+// เดิมคิด raw / 4095 x 3.3 V แต่ ADC ของ ESP32-S3 ที่ลดทอน 11 dB วัดได้เต็มสเกลราว 3.1 V
+// ไม่ใช่ 3.3 V และไม่เป็นเส้นตรงทั้งช่วง แบตเต็ม 4.2 V จึงอ่านได้ราว 4.47 V (เกินจริงราว 6.5%)
+// ตัวแบ่งแรงดัน 100k:100k ในผังวงจร Host-OLED จึงคูณ 2 เหมือนเดิม
 float readHostBattery() {
-  int raw = analogRead(HOST_BAT_ADC_PIN);
-  float volts = (raw / 4095.0) * 3.3 * 2.0;
-  if (volts > 4.25) volts = 4.2;
-  if (volts < 2.5) volts = 0.0;
+  uint32_t mv = 0;
+  for (int i = 0; i < 8; i++) mv += analogReadMilliVolts(HOST_BAT_ADC_PIN);
+  float volts = (mv / 8.0f) / 1000.0f * 2.0f;
+  if (volts > 4.25f) volts = 4.2f;
+  if (volts < 2.5f) volts = 0.0f;
   return volts;
 }
 
+// [4.10.3-TOUCH] แก้: แปลงเป็น % ด้วยตารางแรงดันของแบตลิเธียมเซลล์เดียว (ค่าโดยประมาณขณะโหลดน้อย)
+// เดิมเป็นเส้นตรง 3.2-4.2 V แต่แรงดันจริงลดลงช้าช่วงกลางแล้วดิ่งช่วงท้าย เส้นตรงจึงบอกว่ายังเหลือมาก
+// ตอนที่เหลือน้อยแล้ว (3.6 V เส้นตรงบอก 40% ตารางบอก 10%) เมื่อรวมกับการอ่านเกินจริงเดิม
+// แบตที่เกือบหมดขึ้นถึง 63% เครื่องส่วนกลางอาจดับกะทันหันทั้งที่จอบอกว่ายังเหลือ
 int calculateBatteryPct(float volts) {
-  if (volts <= 0.5) return 100;
-  int pct = (int)(((volts - 3.2) / (4.2 - 3.2)) * 100.0);
-  if (pct > 100) pct = 100;
-  if (pct < 0) pct = 0;
-  return pct;
+  if (volts <= 0.5f) return 100;             // ไม่มีแบตเตอรี่ (ใช้ไฟ USB)
+  static const float V[] = {3.30f, 3.50f, 3.60f, 3.65f, 3.70f, 3.75f, 3.80f, 3.85f, 3.92f, 4.00f, 4.10f, 4.20f};
+  static const int   P[] = {   0,     5,    10,    20,    30,    40,    50,    60,    70,    80,    90,   100};
+  if (volts <= V[0]) return 0;
+  for (int i = 1; i < 12; i++) {
+    if (volts <= V[i]) return P[i - 1] + (int)((volts - V[i - 1]) / (V[i] - V[i - 1]) * (P[i] - P[i - 1]) + 0.5f);
+  }
+  return 100;
 }
 
 void playWelcomeMelody() {
@@ -1383,10 +1399,10 @@ void OnDataRecv(const uint8_t *mac, const uint8_t *incomingDataBytes, int len) {
   if ((incoming.flags & 0x01) && s.cfg.planVolumeMl > 0) s.nearEndAck = true;
 
   if (s.trialCase.active) {
-    s.trialCase.actualVolume = s.totalVolumeMl;
-    s.trialCase.errorMl = s.trialCase.actualVolume - s.trialCase.planVolume;
+    s.trialCase.countedVolume = s.totalVolumeMl;
+    s.trialCase.overPlanMl = s.trialCase.countedVolume - s.trialCase.planVolume;
     if (s.trialCase.planVolume > 0) {
-      s.trialCase.errorPercent = (s.trialCase.errorMl / s.trialCase.planVolume) * 100.0;
+      s.trialCase.overPlanPct = (s.trialCase.overPlanMl / s.trialCase.planVolume) * 100.0;
     }
   }
   portEXIT_CRITICAL(&dataMux);
@@ -2228,9 +2244,9 @@ void handleStationReset() {
   s.nearNextChime = 0;
   s.logCount = 0;
   s.trialCase.caseNumber++;
-  s.trialCase.actualVolume = 0;
-  s.trialCase.errorMl = 0;
-  s.trialCase.errorPercent = 0;
+  s.trialCase.countedVolume = 0;
+  s.trialCase.overPlanMl = 0;
+  s.trialCase.overPlanPct = 0;
   portEXIT_CRITICAL(&dataMux);
   snprintf(s.trialCase.startTimeStr, sizeof(s.trialCase.startTimeStr), "%s", nowStr.c_str());
 
