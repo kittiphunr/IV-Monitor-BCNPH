@@ -1,8 +1,8 @@
 /**
  * @file      Host-Touch24.ino
  * @brief     เฟิร์มแวร์เครื่องส่วนกลาง รุ่นจอสัมผัส 2.4 นิ้ว ตั้งค่าได้ที่หน้าเครื่อง
- * @version   4.10.1-TOUCH
- * @date      2026-09-23
+ * @version   4.10.2-TOUCH
+ * @date      2026-10-06
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
  * @par Organization
@@ -22,6 +22,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 4.10.2-TOUCH | 2026-10-06 | เปอร์เซ็นต์แบตเตอรี่ Host เทียบตารางแรงดันวงจรเปิด (OCV) ของลิเธียม แทนเส้นตรง 3.2-4.2 V ที่แสดง 50 % ทั้งที่จริงเหลือราว 13 % |
  * | 4.10.1-TOUCH | 2026-09-28 | Sync บอกเตียงด้วยว่า Host ได้ยินมันอยู่หรือไม่ (บิตว่างใน flags ขนาดโครงสร้างไม่เปลี่ยน) |
  * | 4.10.0-TOUCH | 2026-09-23 | เตียงที่หายไประหว่างให้น้ำเกลือมีเสียงเตือนแล้ว เพิ่มสุนัขเฝ้าบ้าน รายงานสาเหตุการรีบูต และปฏิเสธแพ็กเก็ตที่ค่าเป็นไปไม่ได้ |
  * | 4.9.3-TOUCH | 2026-09-23 | ย้ายโค้ดวาดจอออกไปไว้ที่ `HostScreen.h` ตรรกะไม่เปลี่ยนแม้แต่บรรทัดเดียว |
@@ -139,7 +140,7 @@
 esp_reset_reason_t bootResetReason = ESP_RST_UNKNOWN;
 
 
-#define APP_VERSION         "4.10.1-TOUCH"
+#define APP_VERSION         "4.10.2-TOUCH"
 #define DEV_NAME            "กิตติพันธ์ รัตนคร"
 #define DEV_ROLE            "นักวิชาการคอมพิวเตอร์"
 #define DEV_INSTITUTION     "มหาวิทยาลัยมหาจุฬาลงกรณราชวิทยาลัย วิทยาเขตแพร่"
@@ -992,12 +993,29 @@ float readHostBattery() {
   return volts;
 }
 
+// [4.10.2-TOUCH] แก้: เดิมคิดเปอร์เซ็นต์เป็นเส้นตรง 3.2-4.2 V แต่แรงดันลิเธียมไม่เป็นเส้นตรง
+// ช่วง 20-80 % แบนอยู่แค่ 3.74-3.98 V แล้วดิ่งลงใต้ 3.7 V สูตรเดิมจึงแสดง 50 % ที่ 3.70 V
+// ทั้งที่ประจุจริงเหลือราว 13 % ตอนนี้เทียบตารางแรงดันวงจรเปิด (OCV) ของเซลล์ LiCoO2
+// แล้วประมาณค่าเชิงเส้นระหว่างจุด ที่มาของตารางอยู่ใน docs/battery/ (ตาราง 2 ของเอกสารเทคนิค)
+// ตารางเป็นค่าทั่วไปของเคมีนี้ขณะพัก ยังไม่ได้วัดจากเซลล์จริงของโครงการ ขณะเครื่องทำงาน
+// แรงดันจะต่ำกว่า OCV ราว I x R ≈ 15 mV ค่าที่แสดงจึงต่ำกว่าจริงเล็กน้อย ซึ่งพลาดไปทางปลอดภัย
+static const float   BATT_OCV_V[]   = { 3.00f, 3.45f, 3.68f, 3.74f, 3.77f, 3.79f,
+                                        3.82f, 3.87f, 3.92f, 3.98f, 4.06f, 4.20f };
+static const uint8_t BATT_OCV_PCT[] = {    0,     5,    10,    20,    30,    40,
+                                           50,    60,    70,    80,    90,   100 };
+static const int     BATT_OCV_N     = sizeof(BATT_OCV_V) / sizeof(BATT_OCV_V[0]);
+
 int calculateBatteryPct(float volts) {
-  if (volts <= 0.5) return 100;
-  int pct = (int)(((volts - 3.2) / (4.2 - 3.2)) * 100.0);
-  if (pct > 100) pct = 100;
-  if (pct < 0) pct = 0;
-  return pct;
+  if (volts <= 0.5) return 100;                       // ไม่มีวงจรวัด/เสียบ USB อย่างเดียว
+  if (volts <= BATT_OCV_V[0]) return 0;
+  if (volts >= BATT_OCV_V[BATT_OCV_N - 1]) return 100;
+  for (int i = 1; i < BATT_OCV_N; i++) {
+    if (volts <= BATT_OCV_V[i]) {
+      float f = (volts - BATT_OCV_V[i - 1]) / (BATT_OCV_V[i] - BATT_OCV_V[i - 1]);
+      return (int)(BATT_OCV_PCT[i - 1] + f * (BATT_OCV_PCT[i] - BATT_OCV_PCT[i - 1]) + 0.5f);
+    }
+  }
+  return 100;
 }
 
 void playWelcomeMelody() {
