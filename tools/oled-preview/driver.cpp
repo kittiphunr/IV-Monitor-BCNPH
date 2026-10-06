@@ -178,6 +178,17 @@ int main(int argc, char** argv) {
   globalAlarmTriggered = true;
   currentOledPage = 0; updateHostOLED(); emitMark("08_block_8beds");
 
+  // ---- แบตต่ำ (4.10.0-OLED): เตียง 4 แบตต่ำ และแบต Host เองวิกฤต ----
+  globalAlarmTriggered = false;
+  for (int i = 0; i < 8; i++) stations[i].alertCode = ALERT_NONE;
+  stations[3].batteryVolts = 3.66f; stations[3].battState = BATT_STATE_LOW;
+  currentOledPage = 0; updateHostOLED(); emitMark("18_block_bed_low_battery");
+  currentOledPage = 4; updateHostOLED(); emitMark("19_detail_bed_low_battery");
+  hostBatteryVolts = 3.48f; hostBatteryPct = calculateBatteryPct(3.48f); hostBattState = BATT_STATE_CRIT;
+  stations[3].batteryVolts = 3.9f; stations[3].battState = BATT_STATE_OK;
+  currentOledPage = 0; updateHostOLED(); emitMark("20_block_host_battery_crit");
+  hostBatteryVolts = 4.2f; hostBatteryPct = 100; hostBattState = BATT_STATE_OK;
+
   // ---- Screensaver (นาฬิกา) ----
   globalAlarmTriggered = false;
   for (int i = 0; i < 8; i++) stations[i].alertCode = ALERT_NONE;

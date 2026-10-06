@@ -1,8 +1,8 @@
 /**
  * @file      web_dashboard.h
  * @brief     หน้าเว็บ Dashboard ของเครื่องส่วนกลาง รุ่นจอสัมผัส 2.4 นิ้ว
- * @version   4.10.0
- * @date      2026-09-23
+ * @version   4.11.0-TOUCH
+ * @date      2026-10-06
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
  * @par Organization
@@ -16,6 +16,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 4.11.0-TOUCH | 2026-10-06 | เตือนแบตต่ำบนการ์ดเตียงและป้ายแบต Host · เปอร์เซ็นต์แบตเตียงรับจากเครื่อง (ตาราง OCV) แทนการคิดเส้นตรงในหน้าเว็บ |
  * | 4.10.0 | 2026-09-23 | หน้าเว็บขึ้นแดงเป็นเหตุวิกฤตเมื่อเตียงที่กำลังให้น้ำเกลือหายไปจากอากาศ |
  * | 4.9.2 | 2026-09-23 | เพิ่มแถบวินิจฉัย คุณภาพลิงก์ และการเตือนเลขเตียงซ้ำ ให้เท่ารุ่นจอ OLED |
  * | 4.9.0 | 2026-09-12 | แยกหน้าเว็บออกจากไฟล์ .ino มาไว้ในไฟล์นี้ |
@@ -1226,8 +1227,11 @@ const char PAGE_INDEX[] PROGMEM = R"rawliteral(
 
         const sig = getSignalMeta(st.rssi, st.online);
         const lnk = getLinkMeta(st.link || 0, st.online, (lastHostData && lastHostData.linkWeakPct) || 60);
+        // [4.11.0-TOUCH] แก้: เปอร์เซ็นต์มาจากเครื่อง (ตาราง OCV) เดิมคิดเส้นตรง 3.2-4.2 V ซึ่งสูงเกินจริงมาก
+        // batState 1 = แบตต่ำ 2 = วิกฤต (ใกล้ดับ) ตัดสินที่เครื่องพร้อมค่าหน่วงแล้ว
+        const batLow = st.battery > 0.5 && st.batState > 0;
         const batText = st.battery > 0.5
-          ? `🔋 ${st.battery.toFixed(2)}V (${Math.min(100, Math.max(0, Math.round(((st.battery - 3.2) / (4.2 - 3.2)) * 100)))}%)`
+          ? `${batLow ? '🪫' : '🔋'} ${st.battery.toFixed(2)}V (${st.batPct}%)${st.batState === 2 ? ' แบตใกล้หมด ต้องชาร์จทันที' : (batLow ? ' แบตต่ำ' : '')}`
           : '🔋 N/A';
         const progress = st.planVolume > 0 ? Math.min(100, (st.volumeMl / st.planVolume) * 100) : 0;
         const planText = st.planVolume > 0 ? ` / ${st.planVolume} mL (${progress.toFixed(0)}%)` : ' mL (ยังไม่ตั้งแผน)';
@@ -1247,7 +1251,7 @@ const char PAGE_INDEX[] PROGMEM = R"rawliteral(
           </div>
           <div class="telemetry-row">
             <span style="color:${sig.color}; font-weight:600;">📶 ${sig.text}</span>
-            <span style="font-weight:600; color:#4a5568;">${batText}</span>
+            <span style="font-weight:600; color:${batLow ? '#c53030' : '#4a5568'};">${batText}</span>
             <div class="signal-bars lvl-${sig.lvl}">
               <div class="bar b1"></div>
               <div class="bar b2"></div>
@@ -1640,8 +1644,12 @@ const char PAGE_INDEX[] PROGMEM = R"rawliteral(
           const hPct = data.hostBatPct;
           const hostEl = document.getElementById('hostBatDisplay');
           if (hVolts > 0.5) {
-            hostEl.innerText = `🔋 Host: ${hVolts.toFixed(2)}V (${hPct}%)`;
-            if (hPct <= 20) {
+            // [4.11.0-TOUCH] เพิ่ม: บอกเป็นคำเมื่อถึงเกณฑ์เตือนแบตต่ำ ไม่ใช่แค่เปลี่ยนสี
+            const hState = data.hostBatState || 0;
+            hostEl.innerText = hState === 2 ? `🪫 Host แบตใกล้หมด: ${hVolts.toFixed(2)}V (${hPct}%) ต้องชาร์จทันที`
+              : hState === 1 ? `🪫 Host แบตต่ำ: ${hVolts.toFixed(2)}V (${hPct}%)`
+              : `🔋 Host: ${hVolts.toFixed(2)}V (${hPct}%)`;
+            if (hPct <= 20 || hState > 0) {
               hostEl.style.background = '#e53e3e';
               hostEl.style.color = '#ffffff';
             } else {

@@ -31,7 +31,9 @@ MOCK = """
     { id:5, name:'อนงค์ วงศ์ทอง', alert:6, vol:0,    rate:0.0,   plan:1000, link:100 }
   ];
   const stations = beds.map(b => ({
-    id:b.id, online:b.id!==3, running:true, rssi:-62, battery:3.95, link:b.link, rxTotal:1234,
+    id:b.id, online:b.id!==3, running:true, rssi:-62, link:b.link, rxTotal:1234,
+    // 4.10.0-OLED: เปอร์เซ็นต์และสถานะเตือนแบตมาจากเครื่อง (ตาราง OCV) เตียง 2 แบตต่ำให้เห็นป้าย
+    battery:(b.id===2 ? 3.66 : 3.95), batPct:(b.id===2 ? 10 : 75), batState:(b.id===2 ? 1 : 0),
     idConflict:(b.id===1), mac:'28:AB:'+(0x10+b.id).toString(16).toUpperCase(),
     totalDrops:Math.round(b.vol*20), volumeMl:b.vol, flowRateHr:b.rate,
     msSinceLastDrop:1200, targetRate:100, planVolume:b.plan, dropFactor:20,
@@ -43,7 +45,7 @@ MOCK = """
     timeSynced:true, timeApprox:false, apClients:2, apMaxClients:8, channel:6,
     // v4.7.6: ฟิลด์ของโหมดเครือข่ายและจังหวะ poll ต้องตรงกับที่ handleApiData ส่งจริง
     pollMs:1000, netMode:'ROUTER', netIP:'192.168.1.42', staRssi:-58,
-    hostBatVolts:4.05, hostBatPct:92, snoozed:false, linkWeakPct:60, syncFail:0, heardBeyond:0, stations
+    hostBatVolts:4.05, hostBatPct:88, hostBatState:0, snoozed:false, linkWeakPct:60, syncFail:0, heardBeyond:0, stations
   };
   // ประวัติ 60 นาทีแบบสมจริง ใช้ให้กราฟและตารางในคู่มือมีข้อมูลให้ดู
   // เตียง 1 ไหลนิ่งราว 80 mL/h แล้วช่วงท้ายค่อย ๆ ช้าลง (สายเริ่มพับ) เพื่อให้เห็นรูปกราฟจริง

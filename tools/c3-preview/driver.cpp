@@ -317,6 +317,18 @@ int main(int argc, char** argv) {
   uiMode = MODE_NORMAL; currentPage = PAGE_STATUS;
   drawScreen(); emitMark("27_link_oneway");
 
+  // ---- แบตต่ำ (1.4.0-C3): หัวจอสลับนาฬิกากับ LOW BAT / วิกฤตค้าง LOW BAT ----
+  hostHeard();
+  batteryVolts = 3.66f; battState = BATT_STATE_LOW;
+  g_micros = (g_micros / 4000000UL + 1) * 4000000UL + 2000000UL;   // ครึ่งรอบที่ขึ้น LOW BAT
+  hostHeard();
+  uiMode = MODE_NORMAL; currentPage = PAGE_STATUS;
+  drawScreen(); emitMark("28_battery_low");
+  batteryVolts = 3.48f; battState = BATT_STATE_CRIT;
+  currentPage = PAGE_RATE;
+  drawScreen(); emitMark("29_battery_crit_rate");
+  batteryVolts = 3.95f; battState = BATT_STATE_OK;
+
   fclose(g_ops);
   return 0;
 }

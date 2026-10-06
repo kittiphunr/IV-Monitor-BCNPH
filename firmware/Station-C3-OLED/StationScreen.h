@@ -1,8 +1,8 @@
 /**
  * @file      StationScreen.h
  * @brief     ทุกอย่างที่วาดลงจอ OLED 0.42 นิ้ว (72x40) ของเครื่องประจำเตียงรุ่นบอร์ดเล็ก
- * @version   1.3.1-C3
- * @date      2026-09-23
+ * @version   1.4.0-C3
+ * @date      2026-10-06
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
  * @par Organization
@@ -18,6 +18,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 1.4.0-C3 | 2026-10-06 | หัวจอขึ้น LOW BAT เมื่อแบตต่ำ (สลับกับนาฬิกา) หรือวิกฤต (ค้าง) หน้าสถานะบอก LOW / CRIT ต่อท้ายแรงดัน |
  * | 1.3.1-C3 | 2026-09-28 | เพิ่ม drawCenteredStrW() จัดกึ่งกลางด้วยความกว้างจริงจากไลบรารี ตัด ADV_LOGI ที่ผิดทิ้ง |
  * | 1.3.0-C3 | 2026-09-28 | หัวจอขึ้น 1-WAY และหน้าสถานะบอกสาเหตุ |
  * | 1.2.0-C3 | 2026-09-24 | เพิ่มหน้าจอของตัวช่วยคาลิเบรตสี่ขั้นตอน |
@@ -152,8 +153,14 @@ void drawHeader() {
     u8g2.drawStr(12, 6, "NO LINK");
   }
 
+  // [1.4.0-C3] เพิ่ม: แบตต่ำ = นาฬิกาสลับกับ LOW BAT ทุก 2 วินาที / วิกฤต = LOW BAT ค้าง
+  // หยุดชั่วคราวยังขึ้น PAUSE ก่อน เพราะเป็นสิ่งที่พยาบาลตั้งใจทำเอง
+  bool lowBatNow = battState == BATT_STATE_CRIT ||
+                   (battState == BATT_STATE_LOW && (millis() / 2000) % 2 == 1);
   if (!isRunning) {
     if ((millis() / 500) % 2 == 0) drawRightStr(SCR_W, 6, ADV_4X6, "PAUSE");
+  } else if (lowBatNow) {
+    drawRightStr(SCR_W, 6, ADV_4X6, "LOW BAT");
   } else {
     drawRightStr(SCR_W, 6, ADV_4X6, clockStr().c_str());
   }
@@ -322,7 +329,10 @@ void drawPageStatus() {
   snprintf(b, sizeof(b), "sensor %s", sensorStateWord());
   u8g2.drawStr(0, 29, b);
 
-  if (batteryVolts >= 0.5f) snprintf(b, sizeof(b), "bat %.2fV %d%%", batteryVolts, batteryPct());
+  // [1.4.0-C3] แก้: ต่อท้ายสถานะเตือนแบต ("bat 3.48V 5% CRIT" กว้าง 17 ตัว = 68 พิกเซล จอกว้าง 72)
+  if (batteryVolts >= 0.5f) snprintf(b, sizeof(b), "bat %.2fV %d%%%s", batteryVolts, batteryPct(),
+                                     battState == BATT_STATE_CRIT ? " CRIT" :
+                                     battState == BATT_STATE_LOW  ? " LOW"  : "");
   else                      snprintf(b, sizeof(b), "USB power");
   u8g2.drawStr(0, 36, b);
 }

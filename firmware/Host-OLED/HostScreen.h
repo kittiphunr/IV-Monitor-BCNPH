@@ -1,8 +1,8 @@
 /**
  * @file      HostScreen.h
  * @brief     ทุกอย่างที่วาดลงจอ OLED 128x64 ของเครื่องส่วนกลาง
- * @version   4.9.1-OLED
- * @date      2026-09-23
+ * @version   4.10.0-OLED
+ * @date      2026-10-06
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
  * @par Organization
@@ -17,6 +17,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 4.10.0-OLED | 2026-10-06 | เตือนแบตต่ำ: นาฬิกาบนหัวจอสลับกับ LOW BAT เมื่อแบต Host ต่ำ ป้ายเตียง LOW BAT / BATT และแถบล่างบอกเตียงที่แบตต่ำ |
  * | 4.9.1-OLED | 2026-09-28 | จัดกึ่งกลางหน้าพักจอด้วย getStrWidth() |
  * | 4.9.0-OLED | 2026-09-28 | ออกแบบหน้าจอใหม่ตาม Station ทั้งหัวจอ การ์ด ป้ายเตียงแบบทึบ แถบบอกหน้า และหน้ารายเตียงแบบ IV BAG |
  * | 4.7.7 | 2026-09-23 | แยกออกมาจากไฟล์หลัก ย้ายที่อยู่ล้วน ๆ ไม่ได้แก้เนื้อในแม้แต่บรรทัดเดียว |
@@ -120,7 +121,11 @@ void drawTopBar(const char *chip) {
     u8g2.drawStr(3, 7, chip);
   }
 
+  // [4.10.0-OLED] เพิ่ม: แบต Host ต่ำ = นาฬิกาสลับกับคำว่า LOW BAT ทุก 2 วินาที
+  // วิกฤต = LOW BAT ค้างไว้ ไม่แสดงนาฬิกา เพราะเครื่องจะดับในไม่กี่นาที
   String clk = getOledClockStr();
+  if (hostBattState == BATT_STATE_CRIT ||
+      (hostBattState == BATT_STATE_LOW && (millis() / 2000) % 2 == 1)) clk = "LOW BAT";
   u8g2.drawStr((128 - (int)clk.length() * 5) / 2, 7, clk.c_str());
 
   // ขวาสุด: เกาะเราเตอร์ = แท่งสัญญาณสี่ขีดแบบเดียวกับ Station / เปิด AP เอง = คำว่า AP
@@ -180,7 +185,7 @@ const char* pillWordOf(int i) {
     case ALERT_NO_SIGNAL: return "NO DRIP";
     case ALERT_COMPLETE:  return "DONE";
     case ALERT_NEAR_END:  return s.nearEndAck ? "NEAR" : "NEW BAG";
-    default:              return "NORMAL";
+    default:              return bedBatteryLow(i) ? "LOW BAT" : "NORMAL";   // [4.10.0-OLED] เพิ่ม
   }
 }
 
@@ -242,7 +247,7 @@ void renderBedDetail(int idx) {
   u8g2.drawVLine(9, 57, 5);                           // สายต่อลงไปหาผู้ป่วย
 
   drawCardLabel(24, 18, "RATE");
-  drawPill(86, 12, 42, 10, pillWordOf(idx), bedNeedsAttention(idx) ||
+  drawPill(86, 12, 42, 10, pillWordOf(idx), bedNeedsAttention(idx) || bedBatteryLow(idx) ||
            (s.alertCode == ALERT_NEAR_END && !s.nearEndAck));
 
   char b[16];
@@ -315,7 +320,7 @@ void renderBlockStyleGrid() {
     drawCardLabel(80, topY + 17, "mL/h");
     snprintf(b, sizeof(b), "SET %.0f", stations[0].cfg.targetRateHr);
     drawCardLabel(80, topY + 25, b);
-    drawPill(78, topY + 28, 46, 10, pillWordOf(0), bedNeedsAttention(0));
+    drawPill(78, topY + 28, 46, 10, pillWordOf(0), bedNeedsAttention(0) || bedBatteryLow(0));
   }
   else if (activeStationCount == 2) {
     int cardW = 62;
@@ -343,7 +348,7 @@ void renderBlockStyleGrid() {
       u8g2.drawStr(x + 4, topY + 28, rBuf);
       drawCardLabel(x + 40, topY + 28, "mL/h");
 
-      drawPill(x + 3, topY + 30, cardW - 6, 9, pillWordOf(i), attn);
+      drawPill(x + 3, topY + 30, cardW - 6, 9, pillWordOf(i), attn || bedBatteryLow(i));
     }
   }
   else {
@@ -433,6 +438,15 @@ void renderBlockStyleGrid() {
       const StationData &ns = stations[nearBed - 1];
       int pct = (ns.cfg.planVolumeMl > 0) ? (int)(ns.totalVolumeMl * 100.0f / ns.cfg.planVolumeMl) : 0;
       snprintf(buf, sizeof(buf), "B%d NEW BAG SOON %d%%", nearBed, pct);
+      u8g2.drawFrame(0, 54, 128, 10);
+      u8g2.drawStr(2, 62, buf);
+    } else if (worstBatteryState() != BATT_STATE_OK) {
+      // [4.10.0-OLED] เพิ่ม: บอกว่าแบตของเครื่องไหนต่ำ เตียงมาก่อน Host เพราะต้องเดินไปเสียบสาย
+      int lowBed = 0;
+      for (int i = 0; i < activeStationCount; i++) if (bedBatteryLow(i)) { lowBed = i + 1; break; }
+      if (lowBed > 0) snprintf(buf, sizeof(buf), "B%d LOW BATTERY %d%%", lowBed,
+                               calculateBatteryPct(stations[lowBed - 1].batteryVolts));
+      else            snprintf(buf, sizeof(buf), "HOST LOW BATTERY %d%%", hostBatteryPct);
       u8g2.drawFrame(0, 54, 128, 10);
       u8g2.drawStr(2, 62, buf);
     } else {

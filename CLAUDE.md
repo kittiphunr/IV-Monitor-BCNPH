@@ -146,7 +146,7 @@ bash tools/detector-test/run.sh         # อัลกอริทึมตร�
 bash tools/host-rx-test/run.sh          # เส้นทางรับข้อมูลฝั่ง Host
 bash tools/link-state-test/run.sh       # ไฟสถานะการเชื่อมต่อสองทางของเครื่องประจำเตียง
 bash tools/rate-test/run.sh             # สูตรคำนวณอัตราการไหล
-bash tools/battery-pct-test/run.sh      # เปอร์เซ็นต์แบตเตอรี่จากตาราง OCV ตรงกันทั้ง Host และ Station-C3
+bash tools/battery-pct-test/run.sh      # เปอร์เซ็นต์แบตจากตาราง OCV และเกณฑ์เตือนแบตต่ำ ตรงกันทั้ง Host และ Station-C3
 bash tools/oled-check/run.sh            # คอมไพล์ Host รุ่นจอ OLED
 bash tools/touch-preview/run.sh         # คอมไพล์และเรนเดอร์ Host รุ่นจอสัมผัส
 bash tools/c3-preview/run.sh            # คอมไพล์และเรนเดอร์ Station รุ่นบอร์ดเล็ก

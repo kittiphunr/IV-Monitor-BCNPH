@@ -1,8 +1,8 @@
 /**
  * @file      HostScreen.h
  * @brief     ทุกอย่างที่วาดลงจอสัมผัส 2.4 นิ้ว ของเครื่องส่วนกลาง
- * @version   4.9.3
- * @date      2026-09-23
+ * @version   4.11.0-TOUCH
+ * @date      2026-10-06
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
  * @par Organization
@@ -17,6 +17,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 4.11.0-TOUCH | 2026-10-06 | ไอคอนแบตบนหัวจอเป็นสีแดงเมื่อแบต Host ถึงเกณฑ์เตือนแบตต่ำ |
  * | 4.9.3 | 2026-09-23 | แยกออกมาจากไฟล์หลัก ย้ายที่อยู่ล้วน ๆ ไม่ได้แก้เนื้อในแม้แต่บรรทัดเดียว |
  *
  * @warning  ถูก `#include` ท้ายไฟล์หลักก่อน `setup()` ห้ามย้ายขึ้นไปบนสุด
@@ -90,7 +91,8 @@ void drawBatteryIcon(int x, int y, int pct) {
   tft.drawRoundRect(x, y, 20, 10, 2, C_DIM);
   tft.fillRect(x + 20, y + 3, 2, 4, C_DIM);
   tft.fillRect(x + 2, y + 2, 16, 6, C_BG);
-  uint16_t c = (pct <= 20) ? C_RED : (pct <= 50 ? C_YELLOW : C_GREEN);
+  // [4.11.0-TOUCH] แก้: แดงเมื่อถึงเกณฑ์เตือนแบตต่ำด้วย ไม่ใช่ดูแค่เปอร์เซ็นต์
+  uint16_t c = (pct <= 20 || hostBattState != BATT_STATE_OK) ? C_RED : (pct <= 50 ? C_YELLOW : C_GREEN);
   int w = (16 * pct) / 100;
   if (w > 0) tft.fillRect(x + 2, y + 2, w, 6, c);
 }

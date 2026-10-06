@@ -1,7 +1,7 @@
 /**
  * @file      Host-TFT28.ino
  * @brief     เฟิร์มแวร์เครื่องส่วนกลาง รุ่นจอสี TFT 2.8 นิ้ว
- * @version   4.9.2-TFT
+ * @version   4.10.0-TFT
  * @date      2026-10-06
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
@@ -21,6 +21,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 4.10.0-TFT | 2026-10-06 | เตือนแบตเตอรี่ต่ำ ทั้งแบต Host เองและแบตของแต่ละเตียง ที่ 3.70 V (ต่ำ) และ 3.50 V (วิกฤต) มีเสียงเตือนเบา ป้ายบนจอ และหน้าเว็บ · อ่านแรงดัน Host เฉลี่ย 8 ค่า |
  * | 4.9.2-TFT | 2026-10-06 | เปอร์เซ็นต์แบตเตอรี่ Host เทียบตารางแรงดันวงจรเปิด (OCV) ของลิเธียม แทนเส้นตรง 3.2-4.2 V ที่แสดง 50 % ทั้งที่จริงเหลือราว 13 % |
  * | 4.9.1-TFT | 2026-09-28 | Sync บอกเตียงด้วยว่า Host ได้ยินมันอยู่หรือไม่ (บิตว่างใน flags ขนาดโครงสร้างไม่เปลี่ยน) |
  * | 4.9.0-TFT | 2026-09-23 | เตียงที่หายไประหว่างให้น้ำเกลือมีเสียงเตือนแล้ว เพิ่มสุนัขเฝ้าบ้าน รายงานสาเหตุการรีบูต และปฏิเสธแพ็กเก็ตที่ค่าเป็นไปไม่ได้ |
@@ -108,7 +109,7 @@
 esp_reset_reason_t bootResetReason = ESP_RST_UNKNOWN;
 
 
-#define APP_VERSION         "4.9.2-TFT"
+#define APP_VERSION         "4.10.0-TFT"
 #define DEV_NAME            "กิตติพันธ์ รัตนคร"
 #define DEV_ROLE            "นักวิชาการคอมพิวเตอร์"
 #define DEV_INSTITUTION     "มหาวิทยาลัยมหาจุฬาลงกรณราชวิทยาลัย วิทยาเขตแพร่"
@@ -161,6 +162,20 @@ esp_reset_reason_t bootResetReason = ESP_RST_UNKNOWN;
 #define ALERT_COMPLETE    4   // ให้ครบตามแผนแล้ว
 #define ALERT_OCCLUSION   5   // สายพับ / หยุดไหล
 #define ALERT_LOST_LINK   7   // [4.9.0-TFT] เพิ่ม: เตียงที่กำลังให้น้ำเกลือหายไปจากอากาศ (ใช้ฝั่ง Host เท่านั้น)
+
+// [4.10.0-TFT] เพิ่ม: ระดับเตือนแบตเตอรี่ต่ำ ใช้ทั้งแบตของ Host เองและแบตของแต่ละเตียงที่รายงานมา
+// ค่ามาจาก docs/battery/ (รายงานการทำงานแบตเตอรี่ หัวข้อ 7.2)
+//   LOW  3.70 V ≈ 13 % เหลือราว 20-25 นาทีสำหรับเซลล์ 600 mAh
+//   CRIT 3.50 V ≈ 6 %  ใกล้ขีดที่ LDO บนบอร์ดยังจ่าย 3.0 V ได้ ต่ำกว่านี้เครื่องเสี่ยงรีเซ็ตเอง
+//   HYST 0.05 V กันสถานะกะพริบเมื่อแรงดันแกว่งตามจังหวะวิทยุส่ง ต้องสูงกว่าเกณฑ์ 50 mV จึงหายเตือน
+// ชุดค่าและฟังก์ชัน batteryAlertState() ต้องเหมือนกันทุกบรรทัดทั้ง Host และ Station-C3
+// ตรวจด้วย tools/battery-pct-test ยังไม่ได้ทดสอบกับแบตเตอรี่จริง
+#define BATT_STATE_OK     0
+#define BATT_STATE_LOW    1
+#define BATT_STATE_CRIT   2
+#define BATT_LOW_V        3.70f
+#define BATT_CRIT_V       3.50f
+#define BATT_HYST_V       0.05f
 
 SPIClass SPI_TFT(FSPI);
 Adafruit_ST7789 tft = Adafruit_ST7789(&SPI_TFT, TFT_CS, TFT_DC, TFT_RST);
@@ -217,7 +232,7 @@ uint8_t broadcastAddress[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 
 // ---- สถานะของเตียงสำหรับการแสดงผล ----
 // ต้องประกาศไว้ตอนต้นไฟล์ เพราะ Arduino IDE แทรก prototype ของฟังก์ชันไว้ก่อนส่วนแสดงผล
-enum BedUiStatus { BU_NORMAL = 0, BU_FAST, BU_SLOW, BU_NOFLOW, BU_NEAREND, BU_DONE, BU_PAUSED, BU_OFFLINE };
+enum BedUiStatus { BU_NORMAL = 0, BU_FAST, BU_SLOW, BU_NOFLOW, BU_NEAREND, BU_DONE, BU_PAUSED, BU_OFFLINE, BU_LOWBAT };
 
 // ----------------------------------------------------------------------------
 // โครงสร้างข้อมูลรับ-ส่ง ESP-NOW (Protocol v2) — ต้องเหมือนกับ Station ทุกไบต์
@@ -303,6 +318,7 @@ struct StationData {
   bool wasMonitoring = false;   // [4.9.0-TFT] เพิ่ม: เคยเห็นเตียงนี้ออนไลน์และกำลังนับอยู่จริง
   bool lostLinkAck = false;     // [4.9.0-TFT] เพิ่ม: พยาบาลรับทราบว่าเตียงนี้ขาดการติดต่อแล้ว
   unsigned long nearNextChime = 0;
+  uint8_t battState = BATT_STATE_OK;   // [4.10.0-TFT] เพิ่ม: สถานะแบตของเตียงนี้ (คิดทุก 2 วินาทีจาก batteryVolts)
 
   BedConfig cfg;
   TrialCaseRecord trialCase;
@@ -325,6 +341,13 @@ bool globalAlarmTriggered            = false;
 unsigned long lastBuzzerAlarmTime    = 0;
 uint8_t nearChimeRemaining           = 0;
 unsigned long nearChimeNextBeep      = 0;
+// [4.10.0-TFT] เพิ่ม: สถานะแบตของ Host เอง และจังหวะเสียงเตือนแบตต่ำ
+uint8_t hostBattState                = BATT_STATE_OK;
+unsigned long battNextChime          = 0;
+uint8_t battChimeRemaining           = 0;
+unsigned long battChimeNextBeep      = 0;
+#define BATT_REMIND_LOW_MS      300000   // แบตต่ำ เตือนซ้ำทุก 5 นาที
+#define BATT_REMIND_CRIT_MS      60000   // แบตวิกฤต เตือนซ้ำทุก 1 นาที
 
 // ฟังก์ชันวาดจอที่ย้ายไป HostScreen.h แล้ว แต่ถูกเรียกจากโค้ดเหนือบรรทัด include
 void textAt(const String &s, int x, int y, uint8_t size, uint16_t col, uint16_t bg);
@@ -582,8 +605,11 @@ void broadcastSyncToNodes() {
 }
 
 float readHostBattery() {
-  int raw = analogRead(HOST_BAT_ADC_PIN);
-  float volts = (raw / 4095.0) * 3.3 * 2.0;
+  // [4.10.0-TFT] แก้: เฉลี่ย 8 ค่าเหมือนฝั่ง Station เดิมอ่านค่าเดียว ตัวเลขกระโดดตามจังหวะวิทยุส่ง
+  // ซึ่งตอนนี้มีผลต่อการตัดสินเตือนแบตต่ำด้วย
+  long sum = 0;
+  for (int i = 0; i < 8; i++) sum += analogRead(HOST_BAT_ADC_PIN);
+  float volts = ((sum / 8.0f) / 4095.0f) * 3.3f * 2.0f;
   if (volts > 4.25) volts = 4.2;
   if (volts < 2.5) volts = 0.0;
   return volts;
@@ -612,6 +638,17 @@ int calculateBatteryPct(float volts) {
     }
   }
   return 100;
+}
+
+// [4.10.0-TFT] เพิ่ม: สถานะแบตจากแรงดัน พร้อมค่าหน่วง (ลงทันทีที่ถึงเกณฑ์ ขึ้นต้องเกินเกณฑ์ + HYST)
+// prev คือสถานะรอบก่อน แรงดัน <= 0.5 V คือไม่มีวงจรวัดหรือเสียบ USB อย่างเดียว จึงไม่เตือน
+uint8_t batteryAlertState(uint8_t prev, float volts) {
+  if (volts <= 0.5f) return BATT_STATE_OK;
+  if (volts <= BATT_CRIT_V) return BATT_STATE_CRIT;
+  if (prev == BATT_STATE_CRIT && volts <= BATT_CRIT_V + BATT_HYST_V) return BATT_STATE_CRIT;
+  if (volts <= BATT_LOW_V) return BATT_STATE_LOW;
+  if (prev != BATT_STATE_OK && volts <= BATT_LOW_V + BATT_HYST_V) return BATT_STATE_LOW;
+  return BATT_STATE_OK;
 }
 
 void playWelcomeMelody() {
@@ -750,6 +787,41 @@ void acknowledgeAllNearEnd() {
 }
 
 // เสียงเตือนใกล้หมด: 3 ครั้งสั้น ๆ ต่อเตียง ซ้ำทุก 5 นาทีจนกว่าจะรับทราบ (ไม่ดังทับเหตุวิกฤต)
+// [4.10.0-TFT] เพิ่ม: เตียงนี้แบตต่ำไหม (นับเฉพาะเตียงที่ยังได้ยินอยู่ เตียงที่หายไปมีเตือน LOST แยกแล้ว)
+bool bedBatteryLow(int i) {
+  return isStationOnline(i) && stations[i].battState != BATT_STATE_OK;
+}
+
+// [4.10.0-TFT] เพิ่ม: สถานะแบตที่แย่ที่สุดของทั้งระบบ (แบต Host เอง และทุกเตียงที่ยังได้ยิน)
+uint8_t worstBatteryState() {
+  uint8_t w = hostBattState;
+  for (int i = 0; i < activeStationCount; i++) {
+    if (isStationOnline(i) && stations[i].battState > w) w = stations[i].battState;
+  }
+  return w;
+}
+
+// [4.10.0-TFT] เพิ่ม: เสียงเตือนแบตต่ำ เสียงต่ำสองครั้ง ซ้ำทุก 5 นาที (ต่ำ) หรือทุก 1 นาที (วิกฤต)
+// เป็นเสียงเบาแบบเดียวกับเตือนใกล้หมด ไม่ใช่เหตุวิกฤตทางคลินิก จึงไม่ดังทับเสียงเตือนวิกฤต
+// และรอให้เสียงใกล้หมดจบก่อน ไม่มีปุ่มรับทราบ เพราะเสียบสายชาร์จแล้วแรงดันขึ้น เสียงจะหยุดเอง
+void handleBatteryChime() {
+  unsigned long now = millis();
+  uint8_t st = worstBatteryState();
+  if (st == BATT_STATE_OK) { battNextChime = 0; battChimeRemaining = 0; return; }
+  if (battChimeRemaining == 0 && nearChimeRemaining == 0 &&
+      (battNextChime == 0 || (long)(now - battNextChime) >= 0)) {
+    battNextChime = now + ((st == BATT_STATE_CRIT) ? BATT_REMIND_CRIT_MS : BATT_REMIND_LOW_MS);
+    if (battNextChime == 0) battNextChime = 1;        // 0 ใช้เป็นค่า "ยังไม่เคยเตือน"
+    battChimeRemaining = 2;
+    battChimeNextBeep = now;
+  }
+  if (battChimeRemaining > 0 && (long)(now - battChimeNextBeep) >= 0) {
+    tone(BUZZER_PIN, 900, 150);
+    battChimeNextBeep = now + 350;
+    battChimeRemaining--;
+  }
+}
+
 void handleNearEndChime() {
   unsigned long now = millis();
   if (globalAlarmTriggered && !isSnoozed()) { nearChimeRemaining = 0; return; }
@@ -778,6 +850,7 @@ void handleBuzzerAlarm() {
   if (!globalAlarmTriggered || isSnoozed()) {
     beepPhase = 0;
     handleNearEndChime();
+    handleBatteryChime();   // [4.10.0-TFT] เพิ่ม: เสียงเตือนแบตต่ำ ดังเฉพาะตอนไม่มีเหตุวิกฤตที่ยังไม่พักเสียง
     return;
   }
 
@@ -1004,7 +1077,8 @@ BedUiStatus bedUiStatus(int i) {
     case ALERT_TOO_SLOW:  return BU_SLOW;
     case ALERT_COMPLETE:  return BU_DONE;
     case ALERT_NEAR_END:  return BU_NEAREND;
-    default:              return BU_NORMAL;
+    // [4.10.0-TFT] เพิ่ม: แบตต่ำแสดงเมื่อไม่มีเหตุอื่น เหตุทางคลินิกสำคัญกว่าเสมอ
+    default:              return bedBatteryLow(i) ? BU_LOWBAT : BU_NORMAL;
   }
 }
 
@@ -1017,6 +1091,7 @@ uint16_t bedColor(BedUiStatus s) {
     case BU_NEAREND: return C_ORANGE;
     case BU_DONE:    return C_CYAN;
     case BU_PAUSED:  return C_SKY;
+    case BU_LOWBAT:  return C_YELLOW;
     default:         return C_LINE;
   }
 }
@@ -1030,6 +1105,7 @@ const char* bedWord(BedUiStatus s) {
     case BU_NEAREND: return "NEXT BAG";
     case BU_DONE:    return "COMPLETE";
     case BU_PAUSED:  return "PAUSED";
+    case BU_LOWBAT:  return "LOW BATT";
     default:         return "OFFLINE";
   }
 }
@@ -1217,6 +1293,7 @@ void handleApiData() {
   json += "\"channel\":" + String(currentWifiChannel()) + ",";
   json += "\"hostBatVolts\":" + String(hostBatteryVolts, 2) + ",";
   json += "\"hostBatPct\":" + String(hostBatteryPct) + ",";
+  json += "\"hostBatState\":" + String(hostBattState) + ",";   // [4.10.0-TFT] เพิ่ม
   json += "\"snoozed\":" + String(isSnoozed() ? "true" : "false") + ",";
   json += "\"stations\":[";
   for (int i = 0; i < activeStationCount; i++) {
@@ -1229,6 +1306,9 @@ void handleApiData() {
     json += "\"running\":" + String(s.isRunning ? "true" : "false") + ",";
     json += "\"rssi\":" + String(isOnline ? s.rssi : 0) + ",";
     json += "\"battery\":" + String(s.batteryVolts, 2) + ",";
+    // [4.10.0-TFT] เพิ่ม: เปอร์เซ็นต์คิดที่ตัวเครื่องด้วยตาราง OCV เดิมหน้าเว็บคิดเองแบบเส้นตรง
+    json += "\"batPct\":" + String(calculateBatteryPct(s.batteryVolts)) + ",";
+    json += "\"batState\":" + String(s.battState) + ",";
     json += "\"totalDrops\":" + String(s.totalDrops) + ",";
     json += "\"volumeMl\":" + String(s.totalVolumeMl, 2) + ",";
     json += "\"flowRateHr\":" + String(s.flowRate_ml_hr, 2) + ",";
@@ -1554,6 +1634,7 @@ void setup() {
 
   hostBatteryVolts = readHostBattery();
   hostBatteryPct = calculateBatteryPct(hostBatteryVolts);
+  hostBattState = batteryAlertState(BATT_STATE_OK, hostBatteryVolts);
 
   preferences.begin("sys-config", true);
   activeStationCount = preferences.getUChar("bedCount", 5);
@@ -1658,10 +1739,14 @@ void loop() {
   if (currentMillis - lastCalcTime >= 2000) {
     hostBatteryVolts = readHostBattery();
     hostBatteryPct = calculateBatteryPct(hostBatteryVolts);
+    hostBattState = batteryAlertState(hostBattState, hostBatteryVolts);   // [4.10.0-TFT] เพิ่ม
 
     portENTER_CRITICAL(&dataMux);
     for (int i = 0; i < MAX_SUPPORTED_STATIONS; i++) {
       stations[i].totalVolumeMl = (float)stations[i].totalDrops / (float)safeDropFactor(stations[i].cfg.dropFactor);
+      // [4.10.0-TFT] เพิ่ม: สถานะแบตของเตียง เตียงที่ไม่ได้ยินแล้วล้างทิ้ง เพราะมีเตือน LOST แยกอยู่แล้ว
+      stations[i].battState = isStationOnline(i)
+          ? batteryAlertState(stations[i].battState, stations[i].batteryVolts) : BATT_STATE_OK;
       if (!stations[i].isRunning || !isStationOnline(i)) {
         stations[i].flowRate_ml_hr = 0.0;
       }

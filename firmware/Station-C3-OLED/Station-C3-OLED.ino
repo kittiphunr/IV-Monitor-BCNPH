@@ -1,7 +1,7 @@
 /**
  * @file      Station-C3-OLED.ino
  * @brief     เฟิร์มแวร์เครื่องประจำเตียง รุ่นบอร์ดเล็ก จอ OLED 0.42 นิ้ว
- * @version   1.3.2-C3
+ * @version   1.4.0-C3
  * @date      2026-10-06
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
@@ -25,6 +25,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 1.4.0-C3 | 2026-10-06 | เตือนแบตต่ำที่ 3.70 V และวิกฤตที่ 3.50 V: หัวจอขึ้น LOW BAT เสียงสองครั้งซ้ำทุก 5 นาที (วิกฤตทุก 1 นาที) เกณฑ์และฟังก์ชันชุดเดียวกับ Host |
  * | 1.3.2-C3 | 2026-10-06 | เปอร์เซ็นต์แบตเตอรี่เทียบตารางแรงดันวงจรเปิด (OCV) ชุดเดียวกับ Host แทนเส้นตรง 3.30-4.20 V ที่แสดง 44 % ทั้งที่จริงเหลือราว 13 % |
  * | 1.3.1-C3 | 2026-09-28 | จัดกึ่งกลางเลขเตียงและนาฬิกาหน้าพักจอด้วย getStrWidth() เดิมเดาความกว้าง logisoso16 ผิด นาฬิกาเยื้องซ้าย 5 พิกเซล |
  * | 1.3.0-C3 | 2026-09-28 | ไฟสถานะการเชื่อมต่อดูสองทาง ขึ้น ONE-WAY เมื่อได้ยิน Host แต่ Host ไม่ได้ยินเตียง |
@@ -114,7 +115,7 @@ esp_reset_reason_t bootResetReason = ESP_RST_UNKNOWN;
 
 #include "drop_detector.h"   // อัลกอริทึมตรวจจับหยด (ทดสอบบน PC ได้: tools/detector-test)
 
-#define APP_VERSION         "1.3.2-C3"
+#define APP_VERSION         "1.4.0-C3"
 
 // ---------------------------------------------------------------------------
 // ขา
@@ -152,6 +153,18 @@ esp_reset_reason_t bootResetReason = ESP_RST_UNKNOWN;
 #define ALERT_NEAR_END    3
 #define ALERT_COMPLETE    4
 #define ALERT_OCCLUSION   5
+
+// [1.4.0-C3] เพิ่ม: ระดับเตือนแบตเตอรี่ต่ำ ชุดเดียวกับ Host ทุกบรรทัด (ตรวจด้วย tools/battery-pct-test)
+// LOW 3.70 V ≈ 13 % เหลือราว 20-25 นาที / CRIT 3.50 V ≈ 6 % ใกล้ขีดที่ LDO ยังจ่าย 3.0 V ได้
+// HYST 0.05 V ต้องสูงกว่าเกณฑ์ 50 mV จึงหายเตือน กันกะพริบตามจังหวะวิทยุส่ง ที่มา docs/battery/
+#define BATT_STATE_OK     0
+#define BATT_STATE_LOW    1
+#define BATT_STATE_CRIT   2
+#define BATT_LOW_V        3.70f
+#define BATT_CRIT_V       3.50f
+#define BATT_HYST_V       0.05f
+#define BATT_REMIND_LOW_MS  300000UL   // แบตต่ำ เตือนซ้ำทุก 5 นาที
+#define BATT_REMIND_CRIT_MS  60000UL   // แบตวิกฤต เตือนซ้ำทุก 1 นาที
 
 // ---------------------------------------------------------------------------
 // โครงสร้างแพ็กเก็ต Protocol v3 — ต้องเหมือน Host ทุกไบต์
@@ -210,6 +223,8 @@ float    currentFlowRate_ml_hr = 0.0f;
 float    currentGttMin        = 0.0f;
 float    totalVolumeMl        = 0.0f;
 float    batteryVolts         = 0.0f;
+uint8_t  battState            = 0;      // [1.4.0-C3] เพิ่ม: BATT_STATE_OK / LOW / CRIT
+unsigned long battNextBeep     = 0;      // [1.4.0-C3] เพิ่ม: 0 = ยังไม่เคยเตือน
 int      sensorRaw            = 0;
 
 unsigned long lastDropTimestamp   = 0;
@@ -479,6 +494,29 @@ int calculateBatteryPct(float volts) {
     }
   }
   return 100;
+}
+
+// [1.4.0-C3] เพิ่ม: สถานะแบตจากแรงดัน พร้อมค่าหน่วง (ลงทันทีที่ถึงเกณฑ์ ขึ้นต้องเกินเกณฑ์ + HYST)
+// prev คือสถานะรอบก่อน แรงดัน <= 0.5 V คือเสียบ USB ไม่มีแบตเตอรี่ จึงไม่เตือน
+uint8_t batteryAlertState(uint8_t prev, float volts) {
+  if (volts <= 0.5f) return BATT_STATE_OK;
+  if (volts <= BATT_CRIT_V) return BATT_STATE_CRIT;
+  if (prev == BATT_STATE_CRIT && volts <= BATT_CRIT_V + BATT_HYST_V) return BATT_STATE_CRIT;
+  if (volts <= BATT_LOW_V) return BATT_STATE_LOW;
+  if (prev != BATT_STATE_OK && volts <= BATT_LOW_V + BATT_HYST_V) return BATT_STATE_LOW;
+  return BATT_STATE_OK;
+}
+
+// [1.4.0-C3] เพิ่ม: เสียงเตือนแบตต่ำ สองครั้งยาว ซ้ำทุก 5 นาที (วิกฤตทุก 1 นาที)
+// รอให้ลำโพงว่างก่อน และไม่ดังทับหน้าเตือนเหตุทางคลินิก ไม่มีปุ่มรับทราบ
+// เพราะเสียบสายชาร์จแล้วแรงดันขึ้นพ้นเกณฑ์ เสียงจะหยุดเอง
+void serviceBatteryBeep(unsigned long now) {
+  if (battState == BATT_STATE_OK) { battNextBeep = 0; return; }
+  if (uiMode == MODE_ALERT || beepRemaining != 0 || beepIsOn) return;
+  if (battNextBeep != 0 && (long)(now - battNextBeep) < 0) return;
+  beepPattern(2, 150, 200);
+  battNextBeep = now + ((battState == BATT_STATE_CRIT) ? BATT_REMIND_CRIT_MS : BATT_REMIND_LOW_MS);
+  if (battNextBeep == 0) battNextBeep = 1;
 }
 
 uint8_t batteryPct() {
@@ -1214,6 +1252,8 @@ void loop() {
     lastSendTime = now;
     sendJitter   = (uint16_t)random(0, SEND_JITTER_MS * 2);
     batteryVolts = readBattery();
+    battState    = batteryAlertState(battState, batteryVolts);   // [1.4.0-C3] เพิ่ม
+    serviceBatteryBeep(now);
 
     // หยดหยุดไปนานแล้ว ตัวเลขบนจอต้องไหลลงหาศูนย์ ไม่ใช่ค้างค่าเดิม
     if (isRunning && hasFirstDropOccurred && msSinceLastDrop() > occlusionThresholdMs()) {
