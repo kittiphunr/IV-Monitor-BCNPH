@@ -1,8 +1,8 @@
 /**
  * @file      Station-C3-OLED.ino
  * @brief     เฟิร์มแวร์เครื่องประจำเตียง รุ่นบอร์ดเล็ก จอ OLED 0.42 นิ้ว
- * @version   1.3.1-C3
- * @date      2026-09-23
+ * @version   1.3.2-C3
+ * @date      2026-10-06
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
  * @par Organization
@@ -25,6 +25,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 1.3.2-C3 | 2026-10-06 | เปอร์เซ็นต์แบตเตอรี่เทียบตารางแรงดันวงจรเปิด (OCV) ชุดเดียวกับ Host แทนเส้นตรง 3.30-4.20 V ที่แสดง 44 % ทั้งที่จริงเหลือราว 13 % |
  * | 1.3.1-C3 | 2026-09-28 | จัดกึ่งกลางเลขเตียงและนาฬิกาหน้าพักจอด้วย getStrWidth() เดิมเดาความกว้าง logisoso16 ผิด นาฬิกาเยื้องซ้าย 5 พิกเซล |
  * | 1.3.0-C3 | 2026-09-28 | ไฟสถานะการเชื่อมต่อดูสองทาง ขึ้น ONE-WAY เมื่อได้ยิน Host แต่ Host ไม่ได้ยินเตียง |
  * | 1.2.0-C3 | 2026-09-24 | เพิ่มตัวช่วยคาลิเบรตสี่ขั้นตอนที่หน้าเครื่อง วัดทิศสัญญาณเอง และบันทึกสิ่งที่เรียนรู้ลง NVS |
@@ -113,7 +114,7 @@ esp_reset_reason_t bootResetReason = ESP_RST_UNKNOWN;
 
 #include "drop_detector.h"   // อัลกอริทึมตรวจจับหยด (ทดสอบบน PC ได้: tools/detector-test)
 
-#define APP_VERSION         "1.3.1-C3"
+#define APP_VERSION         "1.3.2-C3"
 
 // ---------------------------------------------------------------------------
 // ขา
@@ -456,12 +457,33 @@ float readBattery() {
   return ((sum / 8.0f) / 4095.0f) * 3.3f * 2.0f;
 }
 
+// [1.3.2-C3] แก้: เดิมคิดเปอร์เซ็นต์เป็นเส้นตรง 3.30-4.20 V แต่แรงดันลิเธียมไม่เป็นเส้นตรง
+// ที่ 3.70 V สูตรเดิมแสดง 44 % ทั้งที่ประจุจริงเหลือราว 13 % ตอนนี้ใช้ตาราง OCV และฟังก์ชัน
+// ชุดเดียวกับ Host ทุกบรรทัด (ตรวจด้วย tools/battery-pct-test) เพื่อให้แบตก้อนเดียวกัน
+// ขึ้นเปอร์เซ็นต์เท่ากันทั้งที่จอเตียงและที่ Host ที่มาของตารางอยู่ใน docs/battery/
+// ตารางเป็นค่าทั่วไปของเคมี LiCoO2 ขณะพัก ยังไม่ได้วัดจากเซลล์จริงของโครงการ
+static const float   BATT_OCV_V[]   = { 3.00f, 3.45f, 3.68f, 3.74f, 3.77f, 3.79f,
+                                        3.82f, 3.87f, 3.92f, 3.98f, 4.06f, 4.20f };
+static const uint8_t BATT_OCV_PCT[] = {    0,     5,    10,    20,    30,    40,
+                                           50,    60,    70,    80,    90,   100 };
+static const int     BATT_OCV_N     = sizeof(BATT_OCV_V) / sizeof(BATT_OCV_V[0]);
+
+int calculateBatteryPct(float volts) {
+  if (volts <= 0.5) return 100;                       // ไม่มีวงจรวัด/เสียบ USB อย่างเดียว
+  if (volts <= BATT_OCV_V[0]) return 0;
+  if (volts >= BATT_OCV_V[BATT_OCV_N - 1]) return 100;
+  for (int i = 1; i < BATT_OCV_N; i++) {
+    if (volts <= BATT_OCV_V[i]) {
+      float f = (volts - BATT_OCV_V[i - 1]) / (BATT_OCV_V[i] - BATT_OCV_V[i - 1]);
+      return (int)(BATT_OCV_PCT[i - 1] + f * (BATT_OCV_PCT[i] - BATT_OCV_PCT[i - 1]) + 0.5f);
+    }
+  }
+  return 100;
+}
+
 uint8_t batteryPct() {
   if (batteryVolts < 0.5f) return 0;                  // เสียบ USB ไม่มีแบตเตอรี่
-  float p = (batteryVolts - 3.30f) / (4.20f - 3.30f) * 100.0f;
-  if (p < 0)   p = 0;
-  if (p > 100) p = 100;
-  return (uint8_t)p;
+  return (uint8_t)calculateBatteryPct(batteryVolts);
 }
 
 // ---------------------------------------------------------------------------
