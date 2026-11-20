@@ -52,6 +52,13 @@ public:
   String substring(unsigned int from, unsigned int to) const { return String(s.substr(from, to - from)); }
   String substring(unsigned int from) const { return String(s.substr(from)); }
   float toFloat() const { return (float)atof(s.c_str()); }
+  // เมธอดเสริมที่เฟิร์มแวร์ Host-Gateway ใช้แกะคำตอบของพีซี (ตรงกับ String ของ Arduino จริง)
+  int indexOf(char c, unsigned int from = 0) const { size_t p = s.find(c, from); return p == std::string::npos ? -1 : (int)p; }
+  void trim() {
+    size_t a = s.find_first_not_of(" \t\r\n"); if (a == std::string::npos) { s.clear(); return; }
+    size_t b = s.find_last_not_of(" \t\r\n"); s = s.substr(a, b - a + 1);
+  }
+  char operator[](unsigned int i) const { return i < s.size() ? s[i] : 0; }
   void replace(const String& a, const String& b) {
     size_t p=0; while((p=s.find(a.s,p))!=std::string::npos){ s.replace(p,a.s.size(),b.s); p+=b.s.size(); }
   }
@@ -97,6 +104,12 @@ public:
   void printf(const char*,...) {}
 };
 extern SerialClass Serial;
+// ---- FreeRTOS แบบเปล่า: บน PC ไม่มีเธรดส่งจริง การทดสอบเรียกฟังก์ชันของเธรดโดยตรง ----
+typedef void* TaskHandle_t;
+typedef void (*TaskFunction_t)(void*);
+#define pdMS_TO_TICKS(ms) (ms)
+inline int xTaskCreatePinnedToCore(TaskFunction_t, const char*, unsigned int, void*, unsigned int, TaskHandle_t*, int) { return 1; }
+inline void vTaskDelay(unsigned int) {}
 class ESPClass { public: void restart() {} unsigned int getFreeHeap(){return 0;} };
 extern ESPClass ESP;
 

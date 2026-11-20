@@ -18,6 +18,8 @@ public:
   String toString() const { return v; }
 };
 typedef IPAddressStub IPAddress;
+// ไคลเอนต์ TCP แบบเปล่า (เฟิร์มแวร์ Host-Gateway ส่งให้ HTTPClient)
+class WiFiClient {};
 class WiFiClassStub {
 public:
   void mode(int) {}
