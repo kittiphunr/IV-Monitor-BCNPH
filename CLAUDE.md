@@ -10,12 +10,21 @@ firmware/
 ├── Station-Stable/   เครื่องประจำเตียง สายเสถียร (อัลกอริทึมตรวจจับเดิม)
 ├── Station-C3-OLED/  เครื่องประจำเตียง บอร์ดเล็ก (ESP32-C3 + จอ OLED 0.42" 72x40)
 ├── Station-Fallout/  เครื่องประจำเตียง รุ่นพิเศษ Fallout (สำเนาสายหลัก ต่างแค่ธีมและหน้าจอ)
+├── Station-Thin/     เครื่องประจำเตียงแบบบาง (แตกจากสายหลัก) ส่งแค่หยด แสดงผลที่ Host คำนวณ Protocol v4
 ├── Host-OLED/        เครื่องส่วนกลาง จอ SH1106 128×64
+├── Host-Gateway/     เครื่องส่วนกลางรุ่นเกตเวย์ (แตกจาก Host-OLED) ไม่เปิดเว็บเอง ส่งข้อมูลขึ้นพีซี
+├── Host-TFT-Gateway/ เครื่องส่วนกลางจอ TFT 2.8" รุ่นเกตเวย์ (แตกจาก Host-TFT28) คู่กับ Station-Thin Protocol v4
 ├── Host-TFT28/       เครื่องส่วนกลาง จอ ST7789V 2.8" 320×240 แนวนอน
 ├── Host-Touch24/     เครื่องส่วนกลาง จอสัมผัส ILI9341+XPT2046 2.4" 240×320
 ├── FlowSim-Lab/      เครื่องมือจำลอง ไม่มีเลขเวอร์ชัน
 └── reference/        เอกสารอ้างอิง ไม่มีเลขเวอร์ชัน
+
+server/
+└── PC-Dashboard/     โปรแกรมฝั่งพีซีคู่กับ Host-Gateway (Python มาตรฐานล้วน) เวอร์ชัน `-PC`
 ```
+
+`server/` ไม่ใช่เฟิร์มแวร์ จึงไม่อยู่ใต้ `firmware/` และไม่ถูกตัวตรวจหัวไฟล์ Doxygen ของเฟิร์มแวร์เหมารวม
+ใช้หัวไฟล์แบบ docstring ที่มี `@version` และตารางประวัติ ตรวจด้วยชุดทดสอบของมันเอง
 
 ชื่อไฟล์ `.ino` ต้องตรงกับชื่อโฟลเดอร์เสมอ เพราะ Arduino IDE บังคับ
 เช่น `firmware/Station/Station.ino`
@@ -31,6 +40,29 @@ firmware/
 | `StationScreen.h` / `HostScreen.h` | ทุกอย่างที่วาดลงจอ |
 | `web_dashboard.h` | หน้าเว็บ (เฉพาะฝั่ง Host) |
 | `drop_detector.h` | อัลกอริทึมตรวจจับหยด (สายหลัก สายบอร์ดเล็ก และ Fallout ต้องเหมือนกันทุกไบต์) |
+
+### สาย Host-Gateway (ต้องตามให้ทัน Host-OLED)
+
+`Host-Gateway` แตกมาจาก `Host-OLED` เพื่อลดภาระของ Host (ย้ายเว็บ ล็อก CSV ไปพีซี) จึงมีโค้ดตรรกะเตือน การรับแพ็กเก็ต การส่ง Sync และการวาดจอ **ซ้ำกันสองสำเนา**
+ต่างจาก Fallout ตรงที่ไม่มีเครื่องมือสร้างอัตโนมัติ เพราะสองสายต่างกันจริงในส่วนเครือข่าย เวลา และคำสั่ง
+
+**แก้ตรรกะเตือน/รับแพ็กเก็ต/Sync/จอใน `Host-OLED` เมื่อไร ต้องแก้ `Host-Gateway` ให้ตรงกันด้วย** แล้วรัน `bash tools/gateway-sync/run.sh` ซึ่งเทียบตัวฟังก์ชัน โครงสร้างแพ็กเก็ต และค่าคงที่ที่ใช้ตัดสินเตือนทีละบรรทัด
+ส่วนที่ `Host-Gateway` แก้ไว้ตั้งใจและไม่ถูกเทียบมีป้าย `// [1.0.0-GW]` ในโค้ด (`HostScreen.h` ต่างกันแค่ `updateHostOLED` กับ `drawTopBar`)
+
+รายละเอียดสถาปัตยกรรมที่ [`docs/GATEWAY-DESIGN.md`](docs/GATEWAY-DESIGN.md) และข้อความที่ส่งระหว่างเครื่องที่ [`docs/GATEWAY-PROTOCOL.md`](docs/GATEWAY-PROTOCOL.md) **แก้โค้ดฝั่งใดฝั่งหนึ่งแล้วต้องแก้เอกสารโปรโตคอลและรัน `bash tools/gateway-test/run.sh` เสมอ** เพราะชุดทดสอบรันเฟิร์มแวร์จริงคู่กับเซิร์ฟเวอร์จริง
+
+`server/PC-Dashboard/static/dashboard.html` สร้างจาก `firmware/Host-OLED/web_dashboard.h` แก้หน้าเว็บที่ต้นฉบับแล้วรัน `python3 server/PC-Dashboard/extract_dashboard.py` ห้ามแก้ไฟล์สำเนาด้วยมือ
+
+### สาย Station-Thin + Host-TFT-Gateway (Protocol v4)
+
+คู่นี้ใช้ **Protocol v4** ([`docs/PROTOCOL-V4.md`](docs/PROTOCOL-V4.md)) ซึ่งเป็นคนละชนิดกับ Protocol v3 ที่ล็อกไว้กับสายอื่นทั้งหมด แพ็กเก็ตสองชนิดแยกกันด้วยความยาวและไบต์แรก จึงไม่ตีความข้ามกัน แต่คุยกันไม่ได้ **ห้ามสลับคู่ข้ามโปรโตคอล**
+
+- `protocol_v4.h` ต้องเหมือนกันทุกไบต์ในสองโฟลเดอร์ ตรวจด้วย `bash tools/v4-test/run.sh` และ `bash tools/gateway-sync/run.sh`
+- `Station-Thin` แตกจาก `Station`: **แก้ตัวตรวจจับหยด (`drop_detector.h`) ที่ `Station` แล้วต้องคัดลอกไป `Station-Thin` ให้เหมือนทุกไบต์** (ตัวตรวจ gateway-sync เทียบให้) ส่วนหน้าจอและปุ่มที่แก้ใน `Station` ต้องตามมาแก้ `Station-Thin` ด้วยมือ ต่างกันเฉพาะจุดที่มีป้าย `// [1.0.0-TH]`
+- `Host-TFT-Gateway` แตกจาก `Host-TFT28` (ตรรกะเตือน จอ ปุ่ม) และ `Host-Gateway` (ลิงก์พีซี) ฟังก์ชันที่ยกมาถูกเทียบทีละบรรทัดโดย `tools/gateway-sync`
+- ตรรกะเตือนยังอยู่ที่ Host ที่เดียว ห้ามเพิ่มการตัดสินเตือนลงใน `Station-Thin`
+- `battery_check.h` ต้องเหมือนกันทุกไบต์ในสองโฟลเดอร์ (เกณฑ์แบตเตอรี่สองฝั่งต้องตรงกัน) ตรวจด้วย `bash tools/gateway-sync/run.sh` ระดับแบตเตอรี่เป็นเรื่องบำรุงรักษา **ห้ามปนกับรหัส `ALERT_*` และห้ามนับเป็นเหตุวิกฤต** และห้ามใช้สีแดงซึ่งสงวนไว้ให้เหตุทางคลินิก
+- ตัวคำนวณอัตราไหลของ Host (`rate_estimator.h`) ต้องผ่าน `tools/v4-test/estimator_test.cpp` ซึ่งเทียบกับวิธีเดิมของ Station ว่าต่างไม่เกิน 6%
 
 `Station-Fallout.ino` เป็นสำเนาของ `Station.ino` ที่ต่างได้แค่หัวไฟล์ `APP_VERSION` และค่าสี
 **แก้ `Station.ino` เมื่อไร ต้องรัน `python3 tools/fallout-sync/sync.py --write` ทุกครั้ง**
@@ -95,6 +127,9 @@ release/<ลำดับ ๒ หลัก>-s<เวอร์ชัน Station>-h
 | `-touch<เวอร์ชัน>` | Host จอสัมผัส 2.4" ขยับ | `release/14-s7.7.3-h4.7.5-touch4.9.2` |
 | `-c3v<เวอร์ชัน>` | Station บอร์ดเล็กขยับ | `release/17-s7.8.0-h4.7.7-c3v1.0.0` |
 | `-fo<เวอร์ชัน>` | Station รุ่นพิเศษ Fallout ขยับ | `release/23-s7.10.0-h4.9.1-fo1.0.0` |
+| `-gw<เวอร์ชัน>` | Host-Gateway ขยับ (ชุดใช้งานต้องมี `server/PC-Dashboard` เวอร์ชันที่ตารางใน `VERSIONS.md` ระบุคู่กัน) | `release/29-s7.10.0-h4.9.1-gw1.0.0` |
+| `-th<เวอร์ชัน>` | Station-Thin ขยับ (ใช้คู่กับ Host-TFT-Gateway เท่านั้น) | `release/30-s7.10.0-h4.9.1-th1.0.0-tg1.0.0` |
+| `-tg<เวอร์ชัน>` | Host-TFT-Gateway ขยับ | `release/30-s7.10.0-h4.9.1-th1.0.0-tg1.0.0` |
 
 ลำดับ ๒ หลักทำให้เรียงตามเวลาได้เองในหน้า Branches
 ชื่อแบรนช์บอกทันทีว่า **จะแฟลชทั้งระบบต้องใช้เวอร์ชันอะไรบ้าง** โดยไม่ต้องเปิดดูข้างใน
@@ -151,6 +186,10 @@ bash tools/touch-preview/run.sh         # คอมไพล์และเร�
 bash tools/c3-preview/run.sh            # คอมไพล์และเรนเดอร์ Station รุ่นบอร์ดเล็ก
 bash tools/fallout-sync/run.sh          # สาย Fallout ใช้ตรรกะเดียวกับสายหลักทุกบรรทัด และภาพตัวละครตรงต้นทาง
 bash tools/font-check/run.sh            # ฟอนต์ตัวจริงของภาพจำลอง และค่าความกว้างตัวอักษรในเฟิร์มแวร์
+bash tools/gateway-sync/run.sh          # ตรรกะเตือนของ Host-Gateway ตรงกับ Host-OLED ทุกบรรทัด
+bash tools/gateway-test/run.sh          # Host-Gateway: คำสั่งจากพีซี การส่งขึ้นพีซี และคู่กับเซิร์ฟเวอร์จริง
+bash tools/v4-test/run.sh               # Protocol v4: ตัวคำนวณอัตราไหล Station-Thin Host-TFT-Gateway และวงจรปิดสามฝั่ง
+(cd server/PC-Dashboard && python3 -m unittest test_server && python3 extract_dashboard.py --check)
 bash hardware/verify.sh                 # ผังวงจรตรงกับหมายเลขขาในเฟิร์มแวร์
 bash hardware/verify_pcb.sh             # DRC ของแผ่นวงจรพิมพ์
 ```
