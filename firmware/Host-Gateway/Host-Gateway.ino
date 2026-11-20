@@ -1,7 +1,7 @@
 /**
  * @file      Host-Gateway.ino
  * @brief     เฟิร์มแวร์เครื่องส่วนกลางรุ่นเกตเวย์ รับทุกเตียงแล้วส่งต่อพีซี ไม่เปิดเว็บเอง
- * @version   1.0.0-GW
+ * @version   1.0.1-GW
  * @date      2026-11-19
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
@@ -34,6 +34,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 1.0.1-GW | 2026-11-20 | แก้บั๊ก: สุนัขเฝ้าบ้านและการบันทึกสาเหตุรีบูตทำงานทุกครั้งที่เปิดเครื่อง เดิมทำงานเฉพาะตอนปลุกจาก deep sleep เพราะวงเล็บปิดบล็อก if อยู่ผิดที่ ตอนเสียบไฟปกติจึงไม่มีสุนัขเฝ้าบ้าน |
  * | 1.0.0-GW | 2026-11-19 | รุ่นแรก แตกจาก Host-OLED 4.9.1-OLED ตัดเว็บเซิร์ฟเวอร์ ล็อก CSV และ AP ออก เพิ่มลิงก์ขึ้นพีซีในเธรดแยก คำสั่งมีเลขลำดับและ ack เวลามาจากพีซี |
  * | ↓ | ↓ | ป้ายรุ่นด้านล่างสืบมาจากโค้ดของ Host-OLED ที่ยกมาโดยไม่แก้ ใช้ตามรอยเหตุผลของแต่ละจุดได้ในไฟล์ Host-OLED.ino |
  * | 4.9.0-OLED | 2026-09-28 | หน้าจอใช้ภาษาการออกแบบเดียวกับ Station: หัวจอป้าย/นาฬิกา/สัญญาณ หน้ารายเตียงแบบถุงน้ำเกลือ ป้ายสถานะเม็ดยา |
@@ -114,7 +115,7 @@
 esp_reset_reason_t bootResetReason = ESP_RST_UNKNOWN;
 
 
-#define APP_VERSION         "1.0.0-GW"
+#define APP_VERSION         "1.0.1-GW"
 #define DEV_NAME            "กิตติพันธ์ รัตนคร"
 #define DEV_ROLE            "นักวิชาการคอมพิวเตอร์"
 #define DEV_INSTITUTION     "มหาวิทยาลัยมหาจุฬาลงกรณราชวิทยาลัย วิทยาเขตแพร่"
@@ -1927,11 +1928,12 @@ void setup() {
 
     while (digitalRead(POWER_BTN_PIN) == LOW) { feedWatchdog(); delay(10); }
     delay(150);
-  
+  }   // [1.0.1-GW] แก้: ปิดบล็อก if ตรงนี้ เดิม 3 บรรทัดข้างล่างตกอยู่ข้างในและทำงานเฉพาะตอนปลุกจาก deep sleep
+
+  // [1.0.1-GW] แก้: ทุกครั้งที่เปิดเครื่อง ทั้ง cold boot และปลุกจาก deep sleep (ต้องเรียกก่อนช่วงที่ setup() ใช้เวลานาน)
   bootResetReason = esp_reset_reason();   // [4.8.0-OLED] เพิ่ม: จำไว้ว่ารีบูตครั้งล่าสุดเพราะอะไร
   Serial.printf("[boot] reset reason: %s\n", resetReasonText(bootResetReason));
   setupLoopWatchdog();
-}
 
   analogReadResolution(12);
   analogSetAttenuation(ADC_11db);
@@ -2032,8 +2034,10 @@ void setup() {
   xTaskCreatePinnedToCore(uplinkTask, "uplink", UPLINK_TASK_STACK, NULL, 1, NULL, 0);
 
   lastUserActivityTime = millis();
+  feedWatchdog();   // [1.0.1-GW] เพิ่ม: สุนัขเฝ้าบ้านเริ่มทำงานตั้งแต่ต้น setup() แล้ว ป้อนก่อนช่วงเสียงต้อนรับ
   playWelcomeMelody();
   delay(1400);
+  feedWatchdog();   // [1.0.1-GW] เพิ่ม: ป้อนหลังหน่วง 1.4 วินาที
 
   unsigned long nowMs = millis();
   lastCalcTime = nowMs;
