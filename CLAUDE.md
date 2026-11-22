@@ -13,6 +13,7 @@ firmware/
 ├── Host-OLED/        เครื่องส่วนกลาง จอ SH1106 128×64
 ├── Host-TFT28/       เครื่องส่วนกลาง จอ ST7789V 2.8" 320×240 แนวนอน
 ├── Host-Touch24/     เครื่องส่วนกลาง จอสัมผัส ILI9341+XPT2046 2.4" 240×320
+├── Host-CYD28/       เครื่องส่วนกลาง บอร์ดสำเร็จรูป ESP32-2432S028 (CYD) จอสัมผัส 2.8" 240×320
 ├── FlowSim-Lab/      เครื่องมือจำลอง ไม่มีเลขเวอร์ชัน
 └── reference/        เอกสารอ้างอิง ไม่มีเลขเวอร์ชัน
 ```
@@ -44,6 +45,10 @@ firmware/
 ต้องประกาศล่วงหน้าไว้ในไฟล์หลักด้วย และ **ห้ามใส่ค่าปริยายซ้ำ** ทั้งที่ประกาศ
 และที่นิยาม เพราะ C++ อนุญาตแค่ที่เดียว ตรวจทั้งสองข้อด้วย
 `bash tools/split-check/run.sh` ซึ่งยกมาจากโครงการ MCUPR-CANTEEN
+
+`Host-CYD28` แตกจาก `Host-Touch24` ที่ v4.10.1 `HostScreen.h` และ `web_dashboard.h` เป็นสำเนาตรงตัว
+และตรรกะใน `.ino` เหมือนกันทุกบรรทัดนอกจากส่วนผังขาและไดรเวอร์ จึง **แก้บั๊กฝั่ง Touch24 เมื่อไร ต้องพิจารณาแก้ฝั่ง CYD ด้วยทุกครั้ง**
+ยังไม่มีเครื่องมือซิงก์อัตโนมัติแบบ Fallout
 
 ### มาตรฐานคอมเมนต์
 
@@ -93,6 +98,7 @@ release/<ลำดับ ๒ หลัก>-s<เวอร์ชัน Station>-h
 | `-lts<เวอร์ชัน>` | สายเสถียรของ Station ขยับ | `release/13-s7.7.3-h4.7.5-lts7.5.4` |
 | `-tft<เวอร์ชัน>` | Host จอ TFT 2.8" ขยับ | `release/02-s7.5.0-h4.7.0-tft4.8.0` |
 | `-touch<เวอร์ชัน>` | Host จอสัมผัส 2.4" ขยับ | `release/14-s7.7.3-h4.7.5-touch4.9.2` |
+| `-cyd<เวอร์ชัน>` | Host บอร์ด CYD (ESP32-2432S028) 2.8" ขยับ | `release/29-s7.10.0-h4.9.1-cyd1.0.0` |
 | `-c3v<เวอร์ชัน>` | Station บอร์ดเล็กขยับ | `release/17-s7.8.0-h4.7.7-c3v1.0.0` |
 | `-fo<เวอร์ชัน>` | Station รุ่นพิเศษ Fallout ขยับ | `release/23-s7.10.0-h4.9.1-fo1.0.0` |
 
@@ -148,6 +154,8 @@ bash tools/link-state-test/run.sh       # ไฟสถานะการเช�
 bash tools/rate-test/run.sh             # สูตรคำนวณอัตราการไหล
 bash tools/oled-check/run.sh            # คอมไพล์ Host รุ่นจอ OLED
 bash tools/touch-preview/run.sh         # คอมไพล์และเรนเดอร์ Host รุ่นจอสัมผัส
+bash tools/cyd-preview/run.sh           # คอมไพล์และเรนเดอร์ Host รุ่นบอร์ด CYD
+bash tools/cyd-touch-test/run.sh        # ไดรเวอร์ทัช bit-bang ของบอร์ด CYD
 bash tools/c3-preview/run.sh            # คอมไพล์และเรนเดอร์ Station รุ่นบอร์ดเล็ก
 bash tools/fallout-sync/run.sh          # สาย Fallout ใช้ตรรกะเดียวกับสายหลักทุกบรรทัด และภาพตัวละครตรงต้นทาง
 bash tools/font-check/run.sh            # ฟอนต์ตัวจริงของภาพจำลอง และค่าความกว้างตัวอักษรในเฟิร์มแวร์
