@@ -1,7 +1,7 @@
 /**
  * @file      User_Setup_CYD2USB.h
  * @brief     ค่าตั้ง TFT_eSPI สำหรับบอร์ด CYD ที่มีพอร์ต USB สองช่อง (จอ ST7789) ใช้กับสาย Host-CYD-LVGL
- * @version   1.0.0-LVGL
+ * @version   1.0.1-LVGL
  * @date      2026-11-23
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
@@ -21,6 +21,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 1.0.1-LVGL | 2026-11-23 | ประกาศ VSPI_HOST/HSPI_HOST ให้ TFT_eSPI คอมไพล์ผ่านกับ ESP32 core รุ่นใหม่ (4.0.0) |
  * | 1.0.0-LVGL | 2026-11-23 | สร้างไฟล์ค่าตั้ง TFT_eSPI สำหรับ CYD รุ่นจอ ST7789 |
  *
  * @warning  ยังไม่ได้ทดสอบบนฮาร์ดแวร์จริง
@@ -51,3 +52,15 @@
 
 #define SPI_FREQUENCY       40000000
 #define SPI_READ_FREQUENCY  20000000
+
+// ---- ความเข้ากันได้กับ ESP32 Arduino core รุ่นใหม่ (เช่น 4.0.0) ----
+// TFT_eSPI 2.5.43 (รุ่นล่าสุด) ยังเรียกชื่อ VSPI_HOST / HSPI_HOST ในส่วน DMA ของ ESP32 รุ่นปกติ
+// แต่ core รุ่นใหม่เอาชื่อเหล่านี้ออกแล้ว (คอมไพเลอร์ขึ้น 'VSPI_HOST' was not declared ... did you mean 'SPI3_HOST')
+// ไฟล์นี้ถูกอ่านก่อนส่วนนั้นของไลบรารี จึงประกาศชื่อเดิมให้ชี้ไปที่ชื่อใหม่ได้ โดยไม่ต้องแก้ไลบรารี
+// ESP32 รุ่นปกติ: HSPI = SPI2_HOST, VSPI = SPI3_HOST  (core รุ่นเก่ามีชื่อนี้อยู่แล้ว บล็อกนี้จึงไม่มีผล)
+#ifndef VSPI_HOST
+  #define VSPI_HOST SPI3_HOST
+#endif
+#ifndef HSPI_HOST
+  #define HSPI_HOST SPI2_HOST
+#endif
