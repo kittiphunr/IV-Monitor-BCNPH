@@ -6,4 +6,5 @@ public:
   Adafruit_ST7789(SPIClass*,int,int,int){}
   void init(int,int){}
   void setSPISpeed(unsigned long){}
+  void invertDisplay(bool){}
 };
