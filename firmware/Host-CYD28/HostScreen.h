@@ -1,8 +1,8 @@
 /**
  * @file      HostScreen.h
  * @brief     ทุกอย่างที่วาดลงจอสัมผัส 2.8 นิ้ว ของเครื่องส่วนกลาง บอร์ด CYD
- * @version   1.0.0-CYD
- * @date      2026-11-22
+ * @version   1.1.0-CYD
+ * @date      2026-11-23
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
  * @par Organization
@@ -11,13 +11,14 @@
  * อาจารย์ที่ปรึกษา ดร.กรรณิการ์ กาศสมบูรณ์
  *
  * @par Description
- * สำเนาจาก `Host-Touch24/HostScreen.h` v4.9.3 เนื้อโค้ดเหมือนกันทุกบรรทัด (จอ 240x320 แนวตั้งเท่ากัน)
+ * สำเนาจาก `Host-Touch24/HostScreen.h` v4.9.3 ส่วนผังแนวตั้งเหมือนกันทุกบรรทัด ผังแนวนอนเพิ่มใหม่ในรุ่นนี้
  * แยกออกมาจากไฟล์หลักเพื่อให้ไฟล์หลักสั้นและหาของเจอเร็วขึ้น
  * มีหน้ารวม หน้ารายเตียง หน้าตั้งค่า แป้นตัวเลข หน้าระบบ และหน้าคาลิเบรตจอสัมผัส
  *
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 1.1.0-CYD | 2026-11-23 | เพิ่มผังแนวนอน 320x240 ทุกหน้า (เลือกด้วย `UI_LANDSCAPE`) ผังแนวตั้งเดิมไม่เปลี่ยนแม้แต่พิกเซล |
  * | 1.0.0-CYD | 2026-11-22 | คัดลอกจาก Host จอสัมผัส 2.4" v4.9.3 มาใช้กับบอร์ด ESP32-2432S028 ไม่ได้แก้โค้ด |
  *
  * @warning  ถูก `#include` ท้ายไฟล์หลักก่อน `setup()` ห้ามย้ายขึ้นไปบนสุด
@@ -150,22 +151,37 @@ void drawHomeFocusPanel(int focus, bool force) {
                                                          : String((int)(s.flowRate_ml_hr + 0.5f));
   if (rateStr != cacheRate) {
     cacheRate = rateStr;
+#if UI_LANDSCAPE
+    tft.fillRect(FOCUS_X + 8, 66, 120, 48, C_CARD);                       // [1.1.0-CYD] เพิ่ม: ตัวเลขใหญ่ขึ้นเป็นขนาด 6 ในแนวนอน
+    textAt(rateStr, FOCUS_X + 8, 66, 6, bedIsAlarm(st) ? sc : C_WHITE, C_CARD);
+#else
     tft.fillRect(FOCUS_X + 8, 58, 120, 40, C_CARD);
     textAt(rateStr, FOCUS_X + 8, 58, 5, bedIsAlarm(st) ? sc : C_WHITE, C_CARD);
+#endif
   }
 
   String setStr = (s.cfg.targetRateHr > 0) ? ("SET " + String((int)(s.cfg.targetRateHr + 0.5f))) : String("SET --");
   if (setStr != cacheSetRate) {
     cacheSetRate = setStr;
+#if UI_LANDSCAPE
+    textAt("mL/h", FOCUS_X + 8, 120, 1, C_DIM, C_CARD);
+    textRight(padTo(setStr, 9), FOCUS_X + FOCUS_W - 8, 120, 1, C_SKY, C_CARD);
+#else
     textAt("mL/h", FOCUS_X + 132, 80, 1, C_DIM, C_CARD);
     textRight(padTo(setStr, 9), FOCUS_X + FOCUS_W - 8, 62, 1, C_SKY, C_CARD);
+#endif
   }
 
   int pct = bedPct(focus);
   if (pct != cachePct) {
     cachePct = pct;
+#if UI_LANDSCAPE
+    drawProgressBar(FOCUS_X + 8, 140, FOCUS_W - 16, 12, (pct < 0) ? 0 : pct,
+                    (st == BU_NEAREND) ? C_ORANGE : C_CYAN);
+#else
     drawProgressBar(FOCUS_X + 8, 104, FOCUS_W - 16, 10, (pct < 0) ? 0 : pct,
                     (st == BU_NEAREND) ? C_ORANGE : C_CYAN);
+#endif
   }
 
   int mins = bedMinutesLeft(focus);
@@ -178,9 +194,15 @@ void drawHomeFocusPanel(int focus, bool force) {
   String sum = String(vol) + "|" + String(tl);
   if (sum != cacheSummary) {
     cacheSummary = sum;
+#if UI_LANDSCAPE
+    tft.fillRect(FOCUS_X + 6, 160, FOCUS_W - 12, 40, C_CARD);            // [1.1.0-CYD] เพิ่ม: ปริมาตรบนหนึ่งบรรทัด เวลาที่เหลือใต้ลงมาตัวใหญ่
+    textAt(String(vol), FOCUS_X + 8, 162, 1, C_DIM, C_CARD);
+    textAt(String(tl), FOCUS_X + 8, 178, 3, bedIsAlarm(st) ? sc : C_WHITE, C_CARD);
+#else
     tft.fillRect(FOCUS_X + 6, 120, FOCUS_W - 12, 10, C_CARD);
     textAt(String(vol), FOCUS_X + 8, 120, 1, C_DIM, C_CARD);
     textRight(String(tl), FOCUS_X + FOCUS_W - 8, 120, 1, bedIsAlarm(st) ? sc : C_WHITE, C_CARD);
+#endif
   }
 }
 
@@ -191,8 +213,8 @@ void drawHomeRow(int idx, int y, int rowH) {
   uint16_t card = dim ? C_CARD2 : C_CARD;
   uint16_t sc = bedColor(st);
 
-  tft.fillRoundRect(FOCUS_X, y, FOCUS_W, rowH, 5, card);
-  tft.fillRect(FOCUS_X, y, 5, rowH, sc);
+  tft.fillRoundRect(LIST_X, y, LIST_W, rowH, 5, card);
+  tft.fillRect(LIST_X, y, 5, rowH, sc);
 
   char bed[8];
   snprintf(bed, sizeof(bed), "B%02d", idx + 1);
@@ -202,12 +224,14 @@ void drawHomeRow(int idx, int y, int rowH) {
   else                      rateStr = String((int)(s.flowRate_ml_hr + 0.5f));
 
   int ty = y + (rowH - 16) / 2;
-  textAt(String(bed), FOCUS_X + 12, ty, 2, dim ? C_DIM : C_WHITE, card);
+  textAt(String(bed), LIST_X + 12, ty, 2, dim ? C_DIM : C_WHITE, card);
+#if !UI_LANDSCAPE   // [1.1.0-CYD] แก้: แนวนอนรายการแคบ ไม่มีที่พอสำหรับชื่อผู้ป่วย (ดูชื่อได้ที่หน้ารายเตียง)
   String name = String(s.cfg.patientName);
   if (name.length() > 10) name = name.substring(0, 10);
-  if (rowH >= 28 && name.length() > 0) textAt(name, FOCUS_X + 56, ty + 4, 1, C_DIM, card);
-  textRight(rateStr, FOCUS_X + FOCUS_W - 40, ty, 2, bedIsAlarm(st) ? sc : (dim ? C_DIM : C_WHITE), card);
-  textRight(">", FOCUS_X + FOCUS_W - 10, ty, 2, C_DIM, card);
+  if (rowH >= 28 && name.length() > 0) textAt(name, LIST_X + 56, ty + 4, 1, C_DIM, card);
+#endif
+  textRight(rateStr, LIST_X + LIST_W - 40, ty, 2, bedIsAlarm(st) ? sc : (dim ? C_DIM : C_WHITE), card);
+  textRight(">", LIST_X + LIST_W - 10, ty, 2, C_DIM, card);
 }
 
 void drawHomeList(int focus, bool force) {
@@ -220,7 +244,7 @@ void drawHomeList(int focus, bool force) {
 
   if (force || rowH != homeRowH) {
     homeRowH = rowH;
-    tft.fillRect(FOCUS_X, LIST_Y, FOCUS_W, LIST_H, C_BG);
+    tft.fillRect(LIST_X, LIST_Y, LIST_W, LIST_H, C_BG);
     for (int i = 0; i < MAX_SUPPORTED_STATIONS; i++) cacheSide[i] = "";
   }
 
@@ -272,7 +296,7 @@ void drawHomeBottomBar() {
   if (line == cacheBottom) return;
   cacheBottom = line;
   tft.fillRoundRect(ZONE_ALERT.x, ZONE_ALERT.y, ZONE_ALERT.w, ZONE_ALERT.h, 6, bg);
-  textCenterIn(line, ZONE_ALERT.x, ZONE_ALERT.w, ZONE_ALERT.y + 10, 1, fg, bg);
+  textCenterIn(line, ZONE_ALERT.x, ZONE_ALERT.w, ZONE_ALERT.y + (ZONE_ALERT.h - 8) / 2, 1, fg, bg);   // [1.1.0-CYD] แก้: คำนวณจากความสูงปุ่ม (แนวตั้งยังได้ +10 เท่าเดิม)
 }
 
 void drawHomeScreen(bool force) {
@@ -303,13 +327,21 @@ void drawBedScreen(bool force) {
     char title[16];
     snprintf(title, sizeof(title), "BED %02d", i + 1);
     drawTitleBar(String(title));
+#if UI_LANDSCAPE
+    tft.fillRoundRect(6, 62, 308, 96, 8, C_CARD);     // [1.1.0-CYD] เพิ่ม: แนวนอนกว้าง การ์ดบนกินเต็มความกว้าง
+    tft.fillRoundRect(6, 164, 308, 46, 8, C_CARD);
+    textAt("INFUSED", 14, 170, 1, C_DIM, C_CARD);
+#else
     tft.fillRoundRect(6, 62, 228, 100, 8, C_CARD);
     tft.fillRoundRect(6, 168, 228, 64, 8, C_CARD);
     textAt("INFUSED", 14, 176, 1, C_DIM, C_CARD);
+#endif
     drawButton(ZONE_BED_NEWBAG, "NEW BAG", C_BTN, C_WHITE);
     drawButton(ZONE_BED_ACK, "ACK", C_BTN, C_WHITE);
     drawButton(ZONE_BED_SET, "SET", C_BTN, C_WHITE);
+#if !UI_LANDSCAPE
     textCenterIn("tap SET to change target / plan", 0, SCR_W, 300, 1, C_DIM, C_BG);
+#endif
     cacheBedKey = "";
   } else {
     drawStatusBar(false);
@@ -320,7 +352,11 @@ void drawBedScreen(bool force) {
   String key = String((int)st) + ":" + String((int)(s.flowRate_ml_hr + 0.5f)) + ":" +
                String((int)s.cfg.targetRateHr) + ":" + String(pct) + ":" + String(mins);
   // กระเปาะหยดต้องวาดทุกเฟรม ไม่งั้นจะไม่ขยับ จึงวาดก่อนการตรวจแคชของตัวเลข
+#if UI_LANDSCAPE
+  drawDripChamber(138, 90, 42, 46, i);
+#else
   drawDripChamber(180, 86, 42, 46, i);
+#endif
 
   if (key == cacheBedKey) return;
   cacheBedKey = key;
@@ -328,16 +364,30 @@ void drawBedScreen(bool force) {
   String name = String(s.cfg.patientName);
   if (name.length() > 14) name = name.substring(0, 14);
   textAt(padTo(name, 14), 14, 70, 1, C_DIM, C_CARD);
+#if UI_LANDSCAPE
+  tft.fillRoundRect(222, 66, 86, 20, 5, sc);
+  textCenterIn(String(bedWord(st)), 222, 86, 72, 1, C_BG, sc);
+#else
   tft.fillRoundRect(146, 66, 82, 20, 5, sc);
   textCenterIn(String(bedWord(st)), 146, 82, 72, 1, C_BG, sc);
+#endif
 
+#if UI_LANDSCAPE
+  tft.fillRect(12, 90, 120, 48, C_CARD);
+#else
   tft.fillRect(12, 90, 140, 48, C_CARD);
+#endif
   String rateStr = (st == BU_OFFLINE || st == BU_PAUSED) ? String("--")
                                                          : String((int)(s.flowRate_ml_hr + 0.5f));
   textAt(rateStr, 14, 90, 6, bedIsAlarm(st) ? sc : C_WHITE, C_CARD);
   textAt("mL/h", 14, 142, 1, C_DIM, C_CARD);
   textRight(padTo(s.cfg.targetRateHr > 0 ? ("SET " + String((int)s.cfg.targetRateHr) + " mL/h")
-                                         : String("SET --"), 14), 226, 142, 1, C_SKY, C_CARD);
+                                         : String("SET --"), 14),
+#if UI_LANDSCAPE
+            306, 142, 1, C_SKY, C_CARD);
+#else
+            226, 142, 1, C_SKY, C_CARD);
+#endif
 
   // ---- บรรทัดวินิจฉัยการเชื่อมต่อ (ใหม่ใน 4.9.2) ----
   // คุณภาพลิงก์ต่างจากความแรงสัญญาณ: RSSI บอกว่าสัญญาณแรงแค่ไหน
@@ -353,30 +403,58 @@ void drawBedScreen(bool force) {
     diag = "LINK " + String(s.linkPct) + "%  " + macTail(s);
     diagCol = (s.linkPct >= 90) ? C_GREEN : (s.linkPct >= LINK_WEAK_PCT ? C_SKY : C_RED);
   }
+#if UI_LANDSCAPE
+  textAt(padTo(diag, 21), 186, 112, 1, diagCol, C_CARD);   // [1.1.0-CYD] แก้: ย้ายไปด้านขวาของตัวเลขอัตราไหล
+#else
   textAt(padTo(diag, 24), 14, 152, 1, diagCol, C_CARD);
+#endif
 
+#if UI_LANDSCAPE
+  textRight(padTo(pct >= 0 ? (String(pct) + "%") : String("--"), 5), 306, 170, 1, C_WHITE, C_CARD);
+  drawProgressBar(14, 182, 292, 10, (pct < 0) ? 0 : pct, (st == BU_NEAREND) ? C_ORANGE : C_CYAN);
+#else
   textRight(padTo(pct >= 0 ? (String(pct) + "%") : String("--"), 5), 226, 176, 1, C_WHITE, C_CARD);
   drawProgressBar(14, 190, 212, 12, (pct < 0) ? 0 : pct, (st == BU_NEAREND) ? C_ORANGE : C_CYAN);
+#endif
   char sub[44];
   if (mins >= 0) snprintf(sub, sizeof(sub), "%d/%d mL   %dh %02dm left",
                           (int)s.totalVolumeMl, (int)s.cfg.planVolumeMl, mins / 60, mins % 60);
   else           snprintf(sub, sizeof(sub), "%d/%d mL   --h --m left",
                           (int)s.totalVolumeMl, (int)s.cfg.planVolumeMl);
+#if UI_LANDSCAPE
+  textAt(padTo(String(sub), 30), 14, 196, 1, C_DIM, C_CARD);
+#else
   textAt(padTo(String(sub), 30), 14, 212, 1, C_DIM, C_CARD);
+#endif
 }
 
-void drawSettingRow(int y, const char* label, const String &value, const char* unit, bool force) {
+void drawSettingRow(int x, int y, const char* label, const String &value, const char* unit, bool force) {
+#if UI_LANDSCAPE
+  // [1.1.0-CYD] เพิ่ม: ช่องแนวนอนแคบ หน่วยจึงลงไปอยู่ใต้ค่า ไม่ชนปุ่ม - +
   if (force) {
-    tft.fillRoundRect(6, y, 228, 44, 7, C_CARD);
-    textAt(String(label), 14, y + 5, 1, C_DIM, C_CARD);
-    tft.fillRoundRect(140, y + 4, 44, 36, 6, C_BTN);
-    textCenterIn("-", 140, 44, y + 14, 2, C_WHITE, C_BTN);
-    tft.fillRoundRect(188, y + 4, 42, 36, 6, C_BTN);
-    textCenterIn("+", 188, 42, y + 14, 2, C_WHITE, C_BTN);
+    tft.fillRoundRect(x, y, SET_ROW_W, SET_ROW_H, 7, C_CARD);
+    textAt(String(label), x + 8, y + 5, 1, C_DIM, C_CARD);
+    tft.fillRoundRect(x + SET_M_X, y + SET_BTN_Y, SET_M_W, SET_BTN_H, 6, C_BTN);
+    textCenterIn("-", x + SET_M_X, SET_M_W, y + SET_BTN_Y + 7, 2, C_WHITE, C_BTN);
+    tft.fillRoundRect(x + SET_P_X, y + SET_BTN_Y, SET_P_W, SET_BTN_H, 6, C_BTN);
+    textCenterIn("+", x + SET_P_X, SET_P_W, y + SET_BTN_Y + 7, 2, C_WHITE, C_BTN);
+    textAt(String(unit), x + 8, y + 38, 1, C_DIM, C_CARD);
   }
-  tft.fillRect(12, y + 18, 124, 20, C_CARD);
-  textAt(value, 14, y + 20, 2, C_WHITE, C_CARD);
-  textAt(String(unit), 14 + (int)value.length() * 12 + 6, y + 26, 1, C_DIM, C_CARD);
+  tft.fillRect(x + 6, y + 16, SET_M_X - 10, 20, C_CARD);
+  textAt(value, x + 8, y + 18, 2, C_WHITE, C_CARD);
+#else
+  if (force) {
+    tft.fillRoundRect(x, y, 228, 44, 7, C_CARD);
+    textAt(String(label), x + 8, y + 5, 1, C_DIM, C_CARD);
+    tft.fillRoundRect(x + 134, y + 4, 44, 36, 6, C_BTN);
+    textCenterIn("-", x + 134, 44, y + 14, 2, C_WHITE, C_BTN);
+    tft.fillRoundRect(x + 182, y + 4, 42, 36, 6, C_BTN);
+    textCenterIn("+", x + 182, 42, y + 14, 2, C_WHITE, C_BTN);
+  }
+  tft.fillRect(x + 6, y + 18, 124, 20, C_CARD);
+  textAt(value, x + 8, y + 20, 2, C_WHITE, C_CARD);
+  textAt(String(unit), x + 8 + (int)value.length() * 12 + 6, y + 26, 1, C_DIM, C_CARD);
+#endif
 }
 
 void drawBedSetScreen(bool force) {
@@ -391,10 +469,10 @@ void drawBedSetScreen(bool force) {
   } else {
     drawStatusBar(false);
   }
-  drawSettingRow(SET_ROW_Y[0], "TARGET RATE", String((int)editTargetRate),  "mL/h",   force);
-  drawSettingRow(SET_ROW_Y[1], "PLAN VOLUME", String((int)editPlanVolume),  "mL",     force);
-  drawSettingRow(SET_ROW_Y[2], "DROP FACTOR", String((int)editDropFactor),  "gtt/mL", force);
-  drawSettingRow(SET_ROW_Y[3], "NEXT BAG AT", String((int)editNearPct),     "%",      force);
+  drawSettingRow(SET_ROW_X[0], SET_ROW_Y[0], "TARGET RATE", String((int)editTargetRate),  "mL/h",   force);
+  drawSettingRow(SET_ROW_X[1], SET_ROW_Y[1], "PLAN VOLUME", String((int)editPlanVolume),  "mL",     force);
+  drawSettingRow(SET_ROW_X[2], SET_ROW_Y[2], "DROP FACTOR", String((int)editDropFactor),  "gtt/mL", force);
+  drawSettingRow(SET_ROW_X[3], SET_ROW_Y[3], "NEXT BAG AT", String((int)editNearPct),     "%",      force);
 }
 
 // ============================================================================
@@ -405,14 +483,19 @@ void drawNumpadScreen(bool force) {
     tft.fillScreen(C_BG);
     drawStatusBar(true);
     drawTitleBar("ENTER");
+#if UI_LANDSCAPE
+    tft.fillRoundRect(6, 62, 102, 72, 7, C_CARD);      // [1.1.0-CYD] เพิ่ม: แนวนอน ช่องค่าอยู่ซ้าย แป้นอยู่ขวา
+    textAt(String(editNumLabel), 14, 68, 1, C_DIM, C_CARD);
+    textAt(String(editNumUnit), 14, 120, 1, C_DIM, C_CARD);
+#else
     tft.fillRoundRect(6, 62, 228, 46, 7, C_CARD);
     textAt(String(editNumLabel), 14, 68, 1, C_DIM, C_CARD);
     textRight(String(editNumUnit), 226, 88, 1, C_DIM, C_CARD);
+#endif
 
     const char* keys[12] = { "1","2","3","4","5","6","7","8","9","C","0","OK" };
     for (int i = 0; i < 12; i++) {
-      int col = i % 3, row = i / 3;
-      TouchZone z = { 6 + col * 78, 116 + row * 50, 72, 44 };
+      TouchZone z = numpadKeyZone(i);
       bool ok = (i == 11), clr = (i == 9);
       drawButton(z, String(keys[i]), ok ? C_GREEN : (clr ? C_ORANGE : C_BTN),
                  (ok || clr) ? C_BG : C_WHITE, 2);
@@ -424,8 +507,13 @@ void drawNumpadScreen(bool force) {
   String v = (editNumBuf[0] == '\0') ? String("_") : String(editNumBuf);
   if (v != cacheNumValue) {
     cacheNumValue = v;
+#if UI_LANDSCAPE
+    tft.fillRect(12, 88, 92, 26, C_CARD);
+    textAt(v, 14, 90, 3, C_WHITE, C_CARD);
+#else
     tft.fillRect(12, 80, 120, 24, C_CARD);
     textAt(v, 14, 82, 3, C_WHITE, C_CARD);
+#endif
   }
 }
 
@@ -436,6 +524,17 @@ void drawSysScreen(bool force) {
     drawTitleBar("SETTINGS");
     drawButton(ZONE_SYS_CALIB, "TOUCH CALIBRATION", C_BTN, C_WHITE);
 
+#if UI_LANDSCAPE
+    // [1.1.0-CYD] เพิ่ม: แนวนอนแบ่งการ์ดข้อมูลเป็นสองคอลัมน์ ซ้ายเครือข่าย ขวานาฬิกากับ SD
+    tft.fillRoundRect(6, 154, 308, 82, 7, C_CARD);
+    textAt("WI-FI / WEB", 14, 160, 1, C_DIM, C_CARD);
+    textAt("CLOCK / SD", 164, 160, 1, C_DIM, C_CARD);
+    textRight("v" APP_VERSION, 306, 160, 1, C_DIM, C_CARD);
+    textAt(String(default_ap_ssid), 14, 178, 1, C_WHITE, C_CARD);
+    textAt("pass " + String(default_ap_pass), 14, 194, 1, C_DIM, C_CARD);
+    textAt("http://" + WiFi.softAPIP().toString(), 14, 210, 1, C_SKY, C_CARD);
+    tft.drawFastVLine(156, 160, 70, C_DIM);
+#else
     tft.fillRoundRect(6, 204, 228, 112, 7, C_CARD);
     textAt("WI-FI / WEB", 14, 210, 1, C_DIM, C_CARD);
     textRight("v" APP_VERSION, 226, 210, 1, C_DIM, C_CARD);
@@ -444,13 +543,15 @@ void drawSysScreen(bool force) {
     textAt("http://" + WiFi.softAPIP().toString(), 14, 252, 1, C_SKY, C_CARD);
     tft.drawFastHLine(14, 267, 212, C_DIM);
     textAt("CLOCK / SD CARD", 14, 274, 1, C_DIM, C_CARD);
+#endif
     cacheSummary = "";
   } else {
     drawStatusBar(false);
   }
 
-  drawSettingRow(62,  "ACTIVE BEDS",       String(activeStationCount), "beds", force);
-  drawSettingRow(112, "SCREEN BRIGHTNESS", String(screenBrightness),   "%",    force);
+  drawSettingRow(SYS_CELL_X[0], SYS_CELL_Y[0], "ACTIVE BEDS",       String(activeStationCount), "beds", force);
+  drawSettingRow(SYS_CELL_X[1], SYS_CELL_Y[1], UI_LANDSCAPE ? "BRIGHTNESS" : "SCREEN BRIGHTNESS",
+                 String(screenBrightness), "%", force);
 
   // แถวสถานะแบบเปลี่ยนแปลงได้: จำนวนอุปกรณ์ที่ต่ออยู่ + สถานะนาฬิกา DS3231 + SD card
   String devTxt = String((int)WiFi.softAPgetStationNum()) + " dev";
@@ -459,11 +560,19 @@ void drawSysScreen(bool force) {
   String key = devTxt + "|" + rtcTxt + "|" + sdTxt;
   if (key != cacheSummary) {
     cacheSummary = key;
+#if UI_LANDSCAPE
+    textAt(padTo("RTC " + rtcTxt, 24), 164, 178, 1,
+           (rtcPresent && rtcTimeOk) ? C_GREEN : C_YELLOW, C_CARD);
+    textAt(padTo("SD  " + sdTxt, 24), 164, 194, 1,
+           sdPresent ? C_GREEN : C_YELLOW, C_CARD);
+    textAt(padTo(devTxt, 24), 164, 210, 1, C_DIM, C_CARD);
+#else
     textRight(padTo(devTxt, 8), 226, 224, 1, C_DIM, C_CARD);
     textAt(padTo("RTC " + rtcTxt, 24), 14, 288, 1,
            (rtcPresent && rtcTimeOk) ? C_GREEN : C_YELLOW, C_CARD);
     textAt(padTo("SD  " + sdTxt, 24), 14, 302, 1,
            sdPresent ? C_GREEN : C_YELLOW, C_CARD);
+#endif
   }
 }
 
@@ -478,16 +587,37 @@ void drawAlarmScreen(bool force) {
 
   if (force) {
     tft.fillScreen(C_RED);
+#if UI_LANDSCAPE
+    tft.fillRoundRect(10, 10, 300, 42, 8, C_WHITE);   // [1.1.0-CYD] เพิ่ม: แนวนอนจัดผังใหม่ให้พอดีความสูง 240
+    char head[16];
+    snprintf(head, sizeof(head), "BED %02d", bed + 1);
+    textCenterIn(String(head), 10, 300, 21, 3, C_RED, C_WHITE);
+#else
     tft.fillRoundRect(10, 14, 220, 44, 8, C_WHITE);
     char head[16];
     snprintf(head, sizeof(head), "BED %02d", bed + 1);
     textCenterIn(String(head), 10, 220, 28, 3, C_RED, C_WHITE);
+#endif
 
     const char* sub = "CHECK IV SYSTEM";
     if (code == ALERT_OCCLUSION)     sub = "LINE BLOCKED - CHECK TUBING";
     else if (code == ALERT_TOO_FAST) sub = "FLOW ABOVE TARGET";
     else if (code == ALERT_TOO_SLOW) sub = "FLOW BELOW TARGET";
     else if (code == ALERT_COMPLETE) sub = "INFUSION FINISHED";
+#if UI_LANDSCAPE
+    textCenterIn(String(alertTextEn(code)), 0, SCR_W, 58, 3, C_WHITE, C_RED);
+    textCenterIn(String(sub), 0, SCR_W, 90, 1, C_YELLOW, C_RED);
+
+    tft.fillRoundRect(16, 104, 288, 70, 8, C_BG);
+    textAt("RATE", 28, 110, 1, C_DIM, C_BG);
+    textAt("mL/h", 28, 160, 1, C_DIM, C_BG);
+    textRight(s.cfg.targetRateHr > 0 ? ("SET " + String((int)s.cfg.targetRateHr) + " mL/h") : String("SET --"),
+              292, 160, 1, C_SKY, C_BG);
+
+    tft.fillRoundRect(16, 182, 288, 48, 10, C_WHITE);
+    textCenterIn("TAP = SNOOZE 2 MIN", 16, 288, 194, 1, C_RED, C_WHITE);
+    textCenterIn("BUTTON = SILENCE", 16, 288, 210, 1, C_RED, C_WHITE);
+#else
     textCenterIn(String(alertTextEn(code)), 0, SCR_W, 74, 3, C_WHITE, C_RED);
     textCenterIn(String(sub), 0, SCR_W, 112, 1, C_YELLOW, C_RED);
 
@@ -500,14 +630,20 @@ void drawAlarmScreen(bool force) {
     tft.fillRoundRect(16, 232, 208, 72, 10, C_WHITE);
     textCenterIn("TAP = SNOOZE 2 MIN", 16, 208, 252, 1, C_RED, C_WHITE);
     textCenterIn("BUTTON = SILENCE", 16, 208, 274, 1, C_RED, C_WHITE);
+#endif
     cacheAlarmRate = "";
   }
 
   String rate = String((int)(s.flowRate_ml_hr + 0.5f));
   if (rate != cacheAlarmRate) {
     cacheAlarmRate = rate;
+#if UI_LANDSCAPE
+    tft.fillRect(26, 122, 150, 34, C_BG);
+    textAt(rate, 28, 122, 4, C_WHITE, C_BG);
+#else
     tft.fillRect(26, 158, 150, 34, C_BG);
     textAt(rate, 28, 158, 4, C_WHITE, C_BG);
+#endif
   }
 }
 
@@ -520,10 +656,15 @@ void drawCalibCross(int x, int y, uint16_t col) {
 void drawCalibScreen(bool force) {
   if (!force) return;
   tft.fillScreen(C_BG);
-  textCenterIn("TOUCH CALIBRATION", 0, SCR_W, 120, 2, C_WHITE, C_BG);
+#if UI_LANDSCAPE
+  const int calY = 90;      // [1.1.0-CYD] เพิ่ม: แนวนอนขยับข้อความขึ้นให้อยู่กลางจอ (ห่างจากกากบาทมุมจอ)
+#else
+  const int calY = 120;
+#endif
+  textCenterIn("TOUCH CALIBRATION", 0, SCR_W, calY, 2, C_WHITE, C_BG);
   textCenterIn(calibStep == 0 ? "tap the cross (1 of 2)" : "tap the cross (2 of 2)",
-               0, SCR_W, 150, 1, C_DIM, C_BG);
-  textCenterIn("use a stylus for best accuracy", 0, SCR_W, 170, 1, C_DIM, C_BG);
+               0, SCR_W, calY + 30, 1, C_DIM, C_BG);
+  textCenterIn("use a stylus for best accuracy", 0, SCR_W, calY + 50, 1, C_DIM, C_BG);
   drawCalibCross(CALIB_PT[calibStep][0], CALIB_PT[calibStep][1], C_YELLOW);
 }
 
@@ -532,23 +673,39 @@ void drawPowerOffProgress(int pct) {
   if (uiScreenDrawn != SCR_POWER) {
     uiScreenDrawn = SCR_POWER;
     tft.fillScreen(C_BG);
-    textCenterIn("POWER OFF ?", 0, SCR_W, 110, 3, C_WHITE, C_BG);
-    textCenterIn("KEEP HOLDING TO TURN OFF", 0, SCR_W, 150, 1, C_DIM, C_BG);
-    tft.drawRoundRect(18, 178, 204, 24, 6, C_WHITE);
+#if UI_LANDSCAPE
+    const int poY = 60;     // [1.1.0-CYD] เพิ่ม: แนวนอนขยับขึ้น 50 พิกเซลให้อยู่กลางจอ
+#else
+    const int poY = 110;
+#endif
+    textCenterIn("POWER OFF ?", 0, SCR_W, poY, 3, C_WHITE, C_BG);
+    textCenterIn("KEEP HOLDING TO TURN OFF", 0, SCR_W, poY + 40, 1, C_DIM, C_BG);
+    tft.drawRoundRect((SCR_W - 204) / 2, poY + 68, 204, 24, 6, C_WHITE);
   }
+#if UI_LANDSCAPE
+  const int poBarY = 60 + 70;
+#else
+  const int poBarY = 110 + 70;
+#endif
+  const int poBarX = (SCR_W - 204) / 2 + 2;
   if (pct < 0) pct = 0;
   if (pct > 100) pct = 100;
   int w = (200 * pct) / 100;
-  tft.fillRect(20, 180, w, 20, C_RED);
-  tft.fillRect(20 + w, 180, 200 - w, 20, C_BG);
+  tft.fillRect(poBarX, poBarY, w, 20, C_RED);
+  tft.fillRect(poBarX + w, poBarY, 200 - w, 20, C_BG);
 }
 
 void drawGoodbyeScreen() {
   uiScreenDrawn = SCR_POWER;
   tft.fillScreen(C_BG);
-  textCenterIn("GOODBYE", 0, SCR_W, 120, 4, C_SKY, C_BG);
-  textCenterIn("RELEASE BUTTON TO TURN OFF", 0, SCR_W, 170, 1, C_DIM, C_BG);
-  textCenterIn("HOLD 2s TO POWER ON AGAIN", 0, SCR_W, 190, 1, C_DIM, C_BG);
+#if UI_LANDSCAPE
+  const int gbY = 70;       // [1.1.0-CYD] เพิ่ม: แนวนอนขยับข้อความขึ้น
+#else
+  const int gbY = 120;
+#endif
+  textCenterIn("GOODBYE", 0, SCR_W, gbY, 4, C_SKY, C_BG);
+  textCenterIn("RELEASE BUTTON TO TURN OFF", 0, SCR_W, gbY + 50, 1, C_DIM, C_BG);
+  textCenterIn("HOLD 2s TO POWER ON AGAIN", 0, SCR_W, gbY + 70, 1, C_DIM, C_BG);
 }
 
 void setDisplaySleep(bool sleep) {
@@ -566,6 +723,18 @@ void setDisplaySleep(bool sleep) {
 
 void drawSplashScreen() {
   tft.fillScreen(C_BG);
+#if UI_LANDSCAPE
+  // [1.1.0-CYD] เพิ่ม: แนวนอนเลื่อนทั้งชุดขึ้นและกางข้อความท้ายให้พอดีความสูง 240
+  tft.fillRoundRect(60, 20, 200, 96, 10, C_TOPBAR);
+  textCenterIn("SMART IV", 0, SCR_W, 38, 4, C_WHITE, C_TOPBAR);
+  textCenterIn("CENTRAL HOST", 0, SCR_W, 80, 2, C_SKY, C_TOPBAR);
+  textCenterIn("Host v" APP_VERSION, 0, SCR_W, 132, 1, C_DIM, C_BG);
+  char buf[40];
+  snprintf(buf, sizeof(buf), "BEDS %d   TOUCH SCREEN", activeStationCount);
+  textCenterIn(String(buf), 0, SCR_W, 150, 1, C_DIM, C_BG);
+  textCenterIn(String(default_ap_ssid), 0, SCR_W, 176, 1, C_WHITE, C_BG);
+  textCenterIn("BCN Phrae Innovation", 0, SCR_W, 204, 1, C_GREEN, C_BG);
+#else
   tft.fillRoundRect(20, 70, 200, 96, 10, C_TOPBAR);
   textCenterIn("SMART IV", 0, SCR_W, 88, 4, C_WHITE, C_TOPBAR);
   textCenterIn("CENTRAL HOST", 0, SCR_W, 130, 2, C_SKY, C_TOPBAR);
@@ -575,4 +744,5 @@ void drawSplashScreen() {
   textCenterIn(String(buf), 0, SCR_W, 208, 1, C_DIM, C_BG);
   textCenterIn(String(default_ap_ssid), 0, SCR_W, 232, 1, C_WHITE, C_BG);
   textCenterIn("BCN Phrae Innovation", 0, SCR_W, 258, 1, C_GREEN, C_BG);
+#endif
 }

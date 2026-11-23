@@ -46,8 +46,8 @@ firmware/
 และที่นิยาม เพราะ C++ อนุญาตแค่ที่เดียว ตรวจทั้งสองข้อด้วย
 `bash tools/split-check/run.sh` ซึ่งยกมาจากโครงการ MCUPR-CANTEEN
 
-`Host-CYD28` แตกจาก `Host-Touch24` ที่ v4.10.1 `HostScreen.h` และ `web_dashboard.h` เป็นสำเนาตรงตัว
-และตรรกะใน `.ino` เหมือนกันทุกบรรทัดนอกจากส่วนผังขาและไดรเวอร์ จึง **แก้บั๊กฝั่ง Touch24 เมื่อไร ต้องพิจารณาแก้ฝั่ง CYD ด้วยทุกครั้ง**
+`Host-CYD28` แตกจาก `Host-Touch24` ที่ v4.10.1 `web_dashboard.h` เป็นสำเนาตรงตัว `HostScreen.h` เหมือนกันในผังแนวตั้ง
+(ผังแนวนอนเพิ่มใหม่ ใช้ `#if UI_LANDSCAPE`) และตรรกะใน `.ino` เหมือนกันทุกบรรทัดนอกจากส่วนผังขา ไดรเวอร์ และผังหน้าจอ จึง **แก้บั๊กฝั่ง Touch24 เมื่อไร ต้องพิจารณาแก้ฝั่ง CYD ด้วยทุกครั้ง**
 ยังไม่มีเครื่องมือซิงก์อัตโนมัติแบบ Fallout
 
 ### มาตรฐานคอมเมนต์
@@ -156,6 +156,7 @@ bash tools/oled-check/run.sh            # คอมไพล์ Host รุ่�
 bash tools/touch-preview/run.sh         # คอมไพล์และเรนเดอร์ Host รุ่นจอสัมผัส
 bash tools/cyd-preview/run.sh           # คอมไพล์และเรนเดอร์ Host รุ่นบอร์ด CYD
 bash tools/cyd-touch-test/run.sh        # ไดรเวอร์ทัช bit-bang ของบอร์ด CYD
+bash tools/cyd-tap-test/run.sh          # โซนแตะตรงปุ่มทุกหน้าของ Host CYD ทั้งสองแนว
 bash tools/c3-preview/run.sh            # คอมไพล์และเรนเดอร์ Station รุ่นบอร์ดเล็ก
 bash tools/fallout-sync/run.sh          # สาย Fallout ใช้ตรรกะเดียวกับสายหลักทุกบรรทัด และภาพตัวละครตรงต้นทาง
 bash tools/font-check/run.sh            # ฟอนต์ตัวจริงของภาพจำลอง และค่าความกว้างตัวอักษรในเฟิร์มแวร์

@@ -1,8 +1,8 @@
 /**
  * @file      Host-CYD28.ino
  * @brief     เฟิร์มแวร์เครื่องส่วนกลาง รุ่นบอร์ดสำเร็จรูป ESP32-2432S028 (CYD) จอสัมผัส 2.8 นิ้ว
- * @version   1.0.0-CYD
- * @date      2026-11-22
+ * @version   1.1.0-CYD
+ * @date      2026-11-23
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
  * @par Organization
@@ -27,6 +27,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 1.1.0-CYD | 2026-11-23 | หน้าจอแนวนอน 320x240 เป็นค่าปริยาย จัดผังใหม่ทุกหน้า ผังแนวตั้งเดิมยังเลือกได้ด้วย `TFT_ROTATION 0` |
  * | 1.0.0-CYD | 2026-11-22 | สร้างรุ่นใหม่สำหรับบอร์ด ESP32-2432S028 แตกจาก Host จอสัมผัส 2.4" v4.10.1-TOUCH (ประวัติก่อนหน้าอยู่ในบันทึกโดยละเอียดด้านล่าง) |
  *
  * @warning  ไฟล์วาดจอถูก `#include` ท้ายไฟล์นี้ก่อน `setup()` ห้ามย้ายขึ้นไปบนสุด
@@ -40,6 +41,12 @@
  * @par บันทึกการเปลี่ยนแปลงโดยละเอียด
  * เก็บข้อความเดิมไว้ทั้งหมด เพราะเหตุผลเชิงเทคนิคในนั้นหาจากที่อื่นไม่ได้
  * ป้าย "(รับจาก Touch24 vX)" ในเนื้อโค้ดคือประวัติที่รับมาจาก Host จอสัมผัส 2.4" ส่วนที่เปลี่ยนในรุ่นนี้ใช้ป้าย [1.0.0-CYD]
+ *
+ *  เปลี่ยนใน V1.1.0-CYD: หน้าจอแนวนอน
+ *   - `TFT_ROTATION` ปริยายเป็น 1 (แนวนอน 320x240) ตั้งเป็น 3 เพื่อกลับด้าน หรือ 0/2 เพื่อใช้แนวตั้งแบบเดิม
+ *   - จัดผังใหม่ทุกหน้า: HOME ซ้ายโฟกัส/ขวารายการ, BED สองการ์ดกว้าง, ช่องตั้งค่าเป็นตาราง 2x2,
+ *     แป้นตัวเลขอยู่ขวา, SYSTEM สองคอลัมน์ ผังแนวตั้งให้ภาพเท่ารุ่น 1.0.0 ทุกพิกเซล
+ *   - โซนแตะของทุกหน้าอ่านจากตารางเดียวกับที่ใช้วาด (ตรวจด้วย tools/cyd-tap-test)
  *
  *  เปลี่ยนใน V1.0.0-CYD: รุ่นแรกของบอร์ด ESP32-2432S028
  *   - จอ ILI9341 (Adafruit_ILI9341) บนบัส HSPI ขา 14/12/13 CS=15 DC=2 ไฟหลังจอ=21
@@ -148,7 +155,7 @@
 esp_reset_reason_t bootResetReason = ESP_RST_UNKNOWN;
 
 
-#define APP_VERSION         "1.0.0-CYD"
+#define APP_VERSION         "1.1.0-CYD"
 #define DEV_NAME            "กิตติพันธ์ รัตนคร"
 #define DEV_ROLE            "นักวิชาการคอมพิวเตอร์"
 #define DEV_INSTITUTION     "มหาวิทยาลัยมหาจุฬาลงกรณราชวิทยาลัย วิทยาเขตแพร่"
@@ -171,7 +178,9 @@ esp_reset_reason_t bootResetReason = ESP_RST_UNKNOWN;
 #define TFT_SCLK            14
 #define TFT_MISO            12  // ไม่ได้อ่านค่าจากจอ แต่เป็นขาประจำของบัส HSPI
 #define TFT_BLK             21  // ไฟหลังจอ เปิดเมื่อขาสูง ใช้ PWM ปรับความสว่าง
-#define TFT_ROTATION        0   // 0 = แนวตั้ง 240x320 (ถ้าภาพกลับหัวให้ใช้ 2)
+#ifndef TFT_ROTATION            // [1.1.0-CYD] เพิ่ม: ครอบด้วย #ifndef เพื่อให้เครื่องมือตรวจกำหนดทิศทางจากภายนอกได้
+#define TFT_ROTATION        1   // [1.1.0-CYD] แก้: 1 = แนวนอน 320x240 (ปริยาย) · 3 = แนวนอนกลับด้าน · 0 = แนวตั้ง 240x320 · 2 = แนวตั้งกลับด้าน
+#endif
 #define TFT_INVERT          0   // บอร์ดรุ่นใหม่บางล็อตใช้จอ ST7789 สีจะกลับด้านให้ตั้งเป็น 1
 #define TFT_SPI_HZ          40000000
 
@@ -453,7 +462,7 @@ void uiGoBack();
 void serviceTouch();
 void drawPowerOffProgress(int pct);
 void drawGoodbyeScreen();
-void drawSettingRow(int y, const char* label, const String &value, const char* unit, bool force);
+void drawSettingRow(int x, int y, const char* label, const String &value, const char* unit, bool force);
 void stepEditedValue(int field, int dir);
 void openNumpad(int field);
 
@@ -1443,9 +1452,17 @@ void OnDataRecv(const uint8_t *mac, const uint8_t *incomingDataBytes, int len) {
 #define C_RED       0xF800
 #define C_SKY       0x5DFF
 
-// ---- ผังหน้าจอแนวตั้ง 240x320 ----
-#define SCR_W       240
-#define SCR_H       320
+// ---- ผังหน้าจอ: แนวนอน 320x240 (TFT_ROTATION 1,3) หรือแนวตั้ง 240x320 (0,2) ----
+// [1.1.0-CYD] เพิ่ม: แนวนอนจัดผังใหม่ทุกหน้า ส่วนแนวตั้งเป็นผังเดิมของรุ่น 2.4" ทุกพิกเซล
+#if (TFT_ROTATION & 1)
+  #define UI_LANDSCAPE 1
+  #define SCR_W       320
+  #define SCR_H       240
+#else
+  #define UI_LANDSCAPE 0
+  #define SCR_W       240
+  #define SCR_H       320
+#endif
 #define TOPBAR_H    22
 
 // ค่าที่กำลังแก้ชั่วคราว (ยังไม่บันทึกจนกว่าจะกด SAVE)
@@ -1684,17 +1701,34 @@ const TouchZone ZONE_BACK = { 4, 25, 44, 30 };
 // ============================================================================
 // หน้า HOME — เตียงที่ต้องดูตอนนี้ตัวใหญ่ + รายการเตียงอื่น (แตะได้ทุกส่วน)
 // ============================================================================
-#define FOCUS_X   6
-#define FOCUS_Y   26
-#define FOCUS_W   228
-#define FOCUS_H   122
-#define LIST_Y    154
-#define LIST_H    128
-#define BOTBAR_Y  288
-
-const TouchZone ZONE_FOCUS = { FOCUS_X, FOCUS_Y, FOCUS_W, FOCUS_H };
-const TouchZone ZONE_GEAR  = { 190, 290, 44, 28 };
-const TouchZone ZONE_ALERT = { 6, 290, 180, 28 };
+#if UI_LANDSCAPE
+  // [1.1.0-CYD] เพิ่ม: แนวนอน = ซ้ายเตียงที่ต้องดู / ขวารายการเตียงอื่น / ล่างแถบสรุปกับปุ่ม SET
+  #define FOCUS_X   6
+  #define FOCUS_Y   26
+  #define FOCUS_W   172
+  #define FOCUS_H   182
+  #define LIST_X    184
+  #define LIST_W    130
+  #define LIST_Y    26
+  #define LIST_H    182
+  #define BOTBAR_Y  212
+  const TouchZone ZONE_FOCUS = { FOCUS_X, FOCUS_Y, FOCUS_W, FOCUS_H };
+  const TouchZone ZONE_GEAR  = { 262, 214, 52, 24 };
+  const TouchZone ZONE_ALERT = { 6, 214, 250, 24 };
+#else
+  #define FOCUS_X   6
+  #define FOCUS_Y   26
+  #define FOCUS_W   228
+  #define FOCUS_H   122
+  #define LIST_X    FOCUS_X
+  #define LIST_W    FOCUS_W
+  #define LIST_Y    154
+  #define LIST_H    128
+  #define BOTBAR_Y  288
+  const TouchZone ZONE_FOCUS = { FOCUS_X, FOCUS_Y, FOCUS_W, FOCUS_H };
+  const TouchZone ZONE_GEAR  = { 190, 290, 44, 28 };
+  const TouchZone ZONE_ALERT = { 6, 290, 180, 28 };
+#endif
 
 int homeRowH = 30;          // ความสูงแถวรายการเตียง (ปรับตามจำนวนเตียง)
 int homeRowBed[MAX_SUPPORTED_STATIONS];   // เตียงที่อยู่ในแต่ละแถว (ใช้ตอนแตะ)
@@ -1727,7 +1761,7 @@ void handleHomeTap(int tx, int ty) {
     }
     return;
   }
-  if (ty >= LIST_Y && ty < LIST_Y + LIST_H) {
+  if (tx >= LIST_X && ty >= LIST_Y && ty < LIST_Y + LIST_H) {   // [1.1.0-CYD] แก้: ตรวจแกน x ด้วย เพราะแนวนอนรายการอยู่ครึ่งขวา
     int gap = 4;
     int slot = (ty - LIST_Y) / (homeRowH + gap);
     if (slot >= 0 && slot < homeRowCount) {
@@ -1741,9 +1775,15 @@ void handleHomeTap(int tx, int ty) {
 // ============================================================================
 // หน้า BED — รายละเอียดเตียงและปุ่มสั่งงาน
 // ============================================================================
+#if UI_LANDSCAPE
+const TouchZone ZONE_BED_NEWBAG = {   6, 214, 100, 24 };
+const TouchZone ZONE_BED_ACK    = { 110, 214, 100, 24 };
+const TouchZone ZONE_BED_SET    = { 214, 214, 100, 24 };
+#else
 const TouchZone ZONE_BED_NEWBAG = {   6, 244,  74, 46 };
 const TouchZone ZONE_BED_ACK    = {  84, 244,  72, 46 };
 const TouchZone ZONE_BED_SET    = { 160, 244,  74, 46 };
+#endif
 
 
 void handleBedTap(int tx, int ty) {
@@ -1790,9 +1830,48 @@ void handleBedTap(int tx, int ty) {
 // ============================================================================
 // หน้า BED SET — ปรับค่าด้วยปุ่ม - + หรือแตะที่ค่าเพื่อพิมพ์ตัวเลข
 // ============================================================================
-const int SET_ROW_Y[4] = { 62, 112, 162, 212 };
-const TouchZone ZONE_SET_SAVE   = {   6, 266, 111, 46 };
-const TouchZone ZONE_SET_CANCEL = { 123, 266, 111, 46 };
+// ช่องตั้งค่าหนึ่งช่อง = ป้ายชื่อ + ค่า + ปุ่ม - + (ตำแหน่งปุ่มวัดจากขอบซ้ายของช่อง)
+// [1.1.0-CYD] แก้: เดิมเป็นแถวเต็มความกว้างเรียงลงล่าง แนวนอนจัดเป็นตาราง 2x2
+#if UI_LANDSCAPE
+  const int SET_ROW_X[4] = {   6, 162,   6, 162 };
+  const int SET_ROW_Y[4] = {  62,  62, 114, 114 };
+  #define SET_ROW_W    152
+  #define SET_ROW_H    48
+  #define SET_BTN_Y    14
+  #define SET_BTN_H    30
+  #define SET_M_X      64      // ปุ่ม -
+  #define SET_M_W      38
+  #define SET_P_X      108     // ปุ่ม +
+  #define SET_P_W      38
+  #define SET_V_W      60      // ส่วนค่า (แตะเพื่อพิมพ์เอง)
+  const TouchZone ZONE_SET_SAVE   = {   6, 184, 152, 46 };
+  const TouchZone ZONE_SET_CANCEL = { 162, 184, 152, 46 };
+#else
+  const int SET_ROW_X[4] = {   6,   6,   6,   6 };
+  const int SET_ROW_Y[4] = {  62, 112, 162, 212 };
+  #define SET_ROW_W    228
+  #define SET_ROW_H    44
+  #define SET_BTN_Y    4
+  #define SET_BTN_H    36
+  #define SET_M_X      134
+  #define SET_M_W      44
+  #define SET_P_X      182
+  #define SET_P_W      42
+  #define SET_V_W      130
+  const TouchZone ZONE_SET_SAVE   = {   6, 266, 111, 46 };
+  const TouchZone ZONE_SET_CANCEL = { 123, 266, 111, 46 };
+#endif
+
+// ตำแหน่งช่องตั้งค่าที่ใช้ร่วมกันระหว่างหน้า BED SET และหน้า SYSTEM
+// คืน 0 = ไม่โดนช่องนี้ · 1 = ปุ่ม - · 2 = ปุ่ม + · 3 = ส่วนค่า
+int settingCellHit(int cx, int cy, int tx, int ty) {
+  if (ty < cy || ty >= cy + SET_ROW_H) return 0;
+  int rel = tx - cx;
+  if (rel >= SET_M_X && rel < SET_M_X + SET_M_W) return 1;
+  if (rel >= SET_P_X && rel < SET_P_X + SET_P_W) return 2;
+  if (rel < SET_V_W) return 3;
+  return 0;
+}
 
 
 
@@ -1884,15 +1963,28 @@ void handleBedSetTap(int tx, int ty) {
     return;
   }
   for (int f = 0; f < 4; f++) {
-    int y = SET_ROW_Y[f];
-    if (ty < y || ty >= y + 44) continue;
-    if (tx >= 140 && tx < 184)      stepEditedValue(f, -1);   // ปุ่ม -
-    else if (tx >= 188 && tx < 230) stepEditedValue(f, +1);   // ปุ่ม +
-    else if (tx < 136)              openNumpad(f);            // แตะที่ค่า = พิมพ์เอง
+    // [1.1.0-CYD] แก้: ตรวจตำแหน่งผ่านตารางช่อง (แนวตั้งให้ผลเท่าเดิม)
+    if (tx >= SET_ROW_X[f] + SET_ROW_W || (SET_ROW_X[f] > 6 && tx < SET_ROW_X[f] - 2)) continue;
+    int h = settingCellHit(SET_ROW_X[f], SET_ROW_Y[f], tx, ty);
+    if (h == 0) continue;
+    if (h == 1)      stepEditedValue(f, -1);   // ปุ่ม -
+    else if (h == 2) stepEditedValue(f, +1);   // ปุ่ม +
+    else             openNumpad(f);            // แตะที่ค่า = พิมพ์เอง
     return;
   }
 }
 
+
+// [1.1.0-CYD] เพิ่ม: ตำแหน่งปุ่มแป้นตัวเลข ใช้ร่วมกันระหว่างตอนวาดกับตอนแตะ
+TouchZone numpadKeyZone(int i) {
+  int col = i % 3, row = i / 3;
+#if UI_LANDSCAPE
+  TouchZone z = { 114 + col * 68, 62 + row * 44, 64, 40 };
+#else
+  TouchZone z = { 6 + col * 78, 116 + row * 50, 72, 44 };
+#endif
+  return z;
+}
 
 void handleNumpadTap(int tx, int ty) {
   if (zoneHit(ZONE_BACK, tx, ty)) {
@@ -1901,8 +1993,7 @@ void handleNumpadTap(int tx, int ty) {
     return;
   }
   for (int i = 0; i < 12; i++) {
-    int col = i % 3, row = i / 3;
-    TouchZone z = { 6 + col * 78, 116 + row * 50, 72, 44 };
+    TouchZone z = numpadKeyZone(i);
     if (!zoneHit(z, tx, ty)) continue;
     if (i == 9) {                                   // ปุ่ม C = ล้าง
       editNumBuf[0] = '\0';
@@ -1931,7 +2022,15 @@ void handleNumpadTap(int tx, int ty) {
 // ============================================================================
 // หน้า SYSTEM — ตั้งค่าระบบ (ทุกค่ายังแก้จากหน้าเว็บได้เหมือนเดิม)
 // ============================================================================
+#if UI_LANDSCAPE
+const TouchZone ZONE_SYS_CALIB = { 6, 114, 308, 34 };   // [1.1.0-CYD] แนวนอน: ช่องตั้งค่าสองช่องอยู่แถวบน ปุ่มคาลิเบรตอยู่ใต้
+const int SYS_CELL_X[2] = {   6, 162 };
+const int SYS_CELL_Y[2] = {  62,  62 };
+#else
 const TouchZone ZONE_SYS_CALIB = { 6, 162, 228, 40 };
+const int SYS_CELL_X[2] = {   6,   6 };
+const int SYS_CELL_Y[2] = {  62, 112 };
+#endif
 
 
 void handleSysTap(int tx, int ty) {
@@ -1945,15 +2044,19 @@ void handleSysTap(int tx, int ty) {
     uiNeedFramework = true;
     return;
   }
-  if (ty >= 62 && ty < 106) {                        // แถวจำนวนเตียง
-    if (tx >= 140 && tx < 184)      stepEditedValue(4, -1);
-    else if (tx >= 188 && tx < 230) stepEditedValue(4, +1);
-    else if (tx < 136)              openNumpad(4);
-    return;
-  }
-  if (ty >= 112 && ty < 156) {                       // แถวความสว่างหน้าจอ
-    if (tx >= 140 && tx < 184)      setScreenBrightness(screenBrightness - 25);
-    else if (tx >= 188 && tx < 230) setScreenBrightness(screenBrightness + 25);
+  // [1.1.0-CYD] แก้: ตรวจผ่านตารางช่อง (แนวตั้งให้ผลเท่าเดิม)
+  for (int c = 0; c < 2; c++) {
+    if (tx >= SYS_CELL_X[c] + SET_ROW_W || (SYS_CELL_X[c] > 6 && tx < SYS_CELL_X[c] - 2)) continue;
+    int h = settingCellHit(SYS_CELL_X[c], SYS_CELL_Y[c], tx, ty);
+    if (h == 0) continue;
+    if (c == 0) {                                    // ช่องจำนวนเตียง
+      if (h == 1)      stepEditedValue(4, -1);
+      else if (h == 2) stepEditedValue(4, +1);
+      else             openNumpad(4);
+    } else {                                         // ช่องความสว่างหน้าจอ
+      if (h == 1)      setScreenBrightness(screenBrightness - 25);
+      else if (h == 2) setScreenBrightness(screenBrightness + 25);
+    }
     return;
   }
 }
@@ -2011,7 +2114,7 @@ void serviceCalibScreen() {
 
   calibStep = 0;
   tft.fillScreen(C_BG);
-  textCenterIn("CALIBRATION SAVED", 0, SCR_W, 140, 2, C_GREEN, C_BG);
+  textCenterIn("CALIBRATION SAVED", 0, SCR_W, SCR_H / 2 - 20, 2, C_GREEN, C_BG);   // [1.1.0-CYD] แก้: กึ่งกลางจอทั้งสองแนว (แนวตั้งยังเป็น 140)
   delay(900);
   uiScreen = SCR_SYS;
   uiNeedFramework = true;
@@ -2539,7 +2642,7 @@ void setup() {
   SPI_TFT.begin(TFT_SCLK, TFT_MISO, TFT_MOSI, TFT_CS);   // MISO จำเป็นสำหรับอ่านค่าทัช
   tft.begin(TFT_SPI_HZ);           // [1.0.0-CYD] แก้: ILI9341 ความละเอียด 240x320 อยู่ในไลบรารีแล้ว
   tft.invertDisplay(TFT_INVERT);
-  tft.setRotation(TFT_ROTATION);   // 0 = แนวตั้ง 240x320
+  tft.setRotation(TFT_ROTATION);   // [1.1.0-CYD] แก้: ปริยายเป็นแนวนอน 1
   tft.setTextWrap(false);
   tft.fillScreen(0x0000);
 
