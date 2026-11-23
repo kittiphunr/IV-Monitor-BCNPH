@@ -1,0 +1,30 @@
+/**
+ * lv_conf.h แบบย่อสำหรับ Host-CYD-LVGL (ใช้กับ LVGL 9.x)
+ *
+ * วิธีใช้: คัดลอกไฟล์นี้ไปไว้ที่ Documents/Arduino/libraries/lv_conf.h
+ * (ข้างโฟลเดอร์ lvgl ไม่ใช่ข้างใน) แล้วคอมไพล์ใหม่
+ *
+ * ไฟล์นี้ตั้งเฉพาะค่าที่เฟิร์มแวร์ต้องใช้ ค่าอื่นทั้งหมด LVGL ใช้ค่าปริยายของตัวเองจาก lv_conf_internal.h
+ * (LVGL 9.x รองรับไฟล์ตั้งค่าแบบย่อ) ถ้าต้องการปรับละเอียด ให้ใช้ lv_conf_template.h ของไลบรารีแทน
+ *
+ * ยังไม่ได้ทดสอบกับ LVGL จริง เขียนตามเอกสารของ LVGL 9.x
+ */
+
+#if 1   /* ต้องเป็น 1 ไม่งั้น LVGL จะไม่ใช้ไฟล์นี้ */
+
+#ifndef LV_CONF_H
+#define LV_CONF_H
+
+/* จอ RGB565 */
+#define LV_COLOR_DEPTH 16
+
+/* ฟอนต์ที่เฟิร์มแวร์ใช้ (ดู F_XS/F_S/F_M/F_L/F_XL ใน HostScreen.h) */
+#define LV_FONT_MONTSERRAT_12 1
+#define LV_FONT_MONTSERRAT_16 1
+#define LV_FONT_MONTSERRAT_20 1
+#define LV_FONT_MONTSERRAT_28 1
+#define LV_FONT_MONTSERRAT_48 1
+
+#endif /* LV_CONF_H */
+
+#endif /* "Set this to 1 to enable content" */
