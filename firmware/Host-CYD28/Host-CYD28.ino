@@ -1,7 +1,7 @@
 /**
  * @file      Host-CYD28.ino
  * @brief     เฟิร์มแวร์เครื่องส่วนกลาง รุ่นบอร์ดสำเร็จรูป ESP32-2432S028 (CYD) จอสัมผัส 2.8 นิ้ว
- * @version   1.4.0-CYD
+ * @version   1.4.1-CYD
  * @date      2026-11-23
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
@@ -27,6 +27,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 1.4.1-CYD | 2026-11-23 | รองรับ ESP32 core รุ่นใหม่ (4.0.0): ไฟล์ค่าตั้ง TFT_eSPI ประกาศ VSPI_HOST/HSPI_HOST และข้าม ADC เมื่อไม่ได้วัดแบต |
  * | 1.4.0-CYD | 2026-11-23 | แก้ค่าของจอ ST7789 (บอร์ด CYD สองพอร์ต USB) ให้ตรงต้นแบบ OttoMeister/ESP32-2432S028R: ปิดโหมดกลับสี และสลับเป็นลำดับสี BGR |
  * | 1.3.0-CYD | 2026-11-23 | เพิ่มตัวเลือกใช้ไลบรารี TFT_eSPI (`TFT_LIB 1`) ตามโปรเจ็ก witnessmenow/ESP32-Cheap-Yellow-Display พร้อมไฟล์ค่าตั้ง tft_espi/User_Setup.h |
  * | 1.2.0-CYD | 2026-11-23 | เลือกชิปจอตอนคอมไพล์ได้ (`TFT_CONTROLLER` 9341 หรือ 7789) แก้อาการสีซีดบนบอร์ดล็อตใหม่ที่ใช้จอ ST7789 |
@@ -44,6 +45,10 @@
  * @par บันทึกการเปลี่ยนแปลงโดยละเอียด
  * เก็บข้อความเดิมไว้ทั้งหมด เพราะเหตุผลเชิงเทคนิคในนั้นหาจากที่อื่นไม่ได้
  * ป้าย "(รับจาก Touch24 vX)" ในเนื้อโค้ดคือประวัติที่รับมาจาก Host จอสัมผัส 2.4" ส่วนที่เปลี่ยนในรุ่นนี้ใช้ป้าย [1.0.0-CYD]
+ *
+ *  เปลี่ยนใน V1.4.1-CYD: รองรับ ESP32 Arduino core รุ่นใหม่ (ผู้ใช้ใช้ 4.0.0)
+ *   - TFT_eSPI 2.5.43 อ้าง VSPI_HOST ซึ่ง core ใหม่เอาออก แก้ในไฟล์ tft_espi/User_Setup*.h ไม่ต้องแก้ไลบรารี
+ *   - analogSetAttenuation(ADC_11db) เรียกเฉพาะเมื่อมีขาวัดแบต (บอร์ดนี้ไม่มี)
  *
  *  เปลี่ยนใน V1.4.0-CYD: แก้ค่าจอ ST7789 ให้ตรงต้นแบบ OttoMeister/ESP32-2432S028R
  *   - ต้นแบบมีสองการตั้งค่า: `cyd` (ILI9341_2_DRIVER) และ `cyd2usb` (ST7789_DRIVER + TFT_RGB_ORDER=TFT_BGR
@@ -194,7 +199,7 @@
 esp_reset_reason_t bootResetReason = ESP_RST_UNKNOWN;
 
 
-#define APP_VERSION         "1.4.0-CYD"
+#define APP_VERSION         "1.4.1-CYD"
 #define DEV_NAME            "กิตติพันธ์ รัตนคร"
 #define DEV_ROLE            "นักวิชาการคอมพิวเตอร์"
 #define DEV_INSTITUTION     "มหาวิทยาลัยมหาจุฬาลงกรณราชวิทยาลัย วิทยาเขตแพร่"
@@ -2673,8 +2678,8 @@ void setup() {
 }
 
   analogReadResolution(12);
+#if HOST_BAT_ADC_PIN >= 0                   // [1.4.1-CYD] แก้: ข้าม ADC เมื่อไม่ได้วัดแบต (ADC_11db เป็นชื่อเก่าที่ core รุ่นใหม่อาจเอาออก)
   analogSetAttenuation(ADC_11db);
-#if HOST_BAT_ADC_PIN >= 0
   pinMode(HOST_BAT_ADC_PIN, INPUT);
 #endif
 

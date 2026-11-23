@@ -1,7 +1,7 @@
 /**
  * @file      Host-CYD-LVGL.ino
  * @brief     เฟิร์มแวร์เครื่องส่วนกลาง บอร์ด ESP32-2432S028 (CYD) ใช้ TFT_eSPI + XPT2046_Touchscreen + LVGL
- * @version   1.0.0-LVGL
+ * @version   1.0.1-LVGL
  * @date      2026-11-23
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
@@ -30,6 +30,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 1.0.1-LVGL | 2026-11-23 | รองรับ ESP32 core รุ่นใหม่ (4.0.0): ไฟล์ค่าตั้ง TFT_eSPI ประกาศ VSPI_HOST/HSPI_HOST และข้าม ADC เมื่อไม่ได้วัดแบต |
  * | 1.0.0-LVGL | 2026-11-23 | สร้างสายใหม่ แตกจาก Host-CYD28 v1.4.0 ใช้ TFT_eSPI + XPT2046_Touchscreen + LVGL ปิดการบันทึก SD |
  *
  * @warning  **โค้ดฝั่ง LVGL ยังไม่เคยถูกคอมไพล์กับไลบรารี LVGL จริง** เครื่องมือบน PC ไม่มี LVGL
@@ -42,6 +43,10 @@
  * @warning  ยังไม่ได้ทดสอบบนฮาร์ดแวร์จริง ตรวจด้วยเครื่องมือจำลองบนเครื่อง PC เท่านั้น
  *
  * @par บันทึกการเปลี่ยนแปลงโดยละเอียด
+ *  เปลี่ยนใน V1.0.1-LVGL: รองรับ ESP32 Arduino core รุ่นใหม่ (ผู้ใช้ใช้ 4.0.0)
+ *   - TFT_eSPI 2.5.43 อ้าง VSPI_HOST ซึ่ง core ใหม่เอาออก แก้ในไฟล์ tft_espi/User_Setup*.h ไม่ต้องแก้ไลบรารี
+ *   - analogSetAttenuation(ADC_11db) เรียกเฉพาะเมื่อมีขาวัดแบต (บอร์ดนี้ไม่มี)
+ *
  * ประวัติเชิงเทคนิคของตรรกะ ESP-NOW การแจ้งเตือน และหน้าเว็บ อยู่ในหัวไฟล์ของ firmware/Host-CYD28/Host-CYD28.ino
  * และ firmware/Host-Touch24/Host-Touch24.ino ซึ่งเป็นต้นทางของไฟล์นี้ ป้าย "(รับจาก Touch24 vX)" ในเนื้อโค้ด
  * คือประวัติที่รับมาจากสายนั้น ส่วนที่เปลี่ยนในสายนี้ใช้ป้าย [1.0.0-LVGL]
@@ -78,7 +83,7 @@
 esp_reset_reason_t bootResetReason = ESP_RST_UNKNOWN;
 
 
-#define APP_VERSION         "1.0.0-LVGL"
+#define APP_VERSION         "1.0.1-LVGL"
 #define DEV_NAME            "กิตติพันธ์ รัตนคร"
 #define DEV_ROLE            "นักวิชาการคอมพิวเตอร์"
 #define DEV_INSTITUTION     "มหาวิทยาลัยมหาจุฬาลงกรณราชวิทยาลัย วิทยาเขตแพร่"
@@ -2468,8 +2473,8 @@ void setup() {
 }
 
   analogReadResolution(12);
+#if HOST_BAT_ADC_PIN >= 0                   // [1.0.1-LVGL] แก้: ข้าม ADC เมื่อไม่ได้วัดแบต (ADC_11db เป็นชื่อเก่าที่ core รุ่นใหม่อาจเอาออก)
   analogSetAttenuation(ADC_11db);
-#if HOST_BAT_ADC_PIN >= 0
   pinMode(HOST_BAT_ADC_PIN, INPUT);
 #endif
 

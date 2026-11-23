@@ -65,6 +65,18 @@ LVGL หาไฟล์ `lv_conf.h` ที่ `Documents/Arduino/libraries/lv_co
 เข้าหน้า **SYSTEM → TOUCH CALIBRATION** แตะกากบาทสองจุดด้วยปลายปากกา ถ้าแตะแล้วสลับแกนหรือกลับด้านให้แก้
 `TOUCH_SWAP_XY` / `TOUCH_FLIP_X` / `TOUCH_FLIP_Y` ที่หัวไฟล์ `Host-CYD-LVGL.ino`
 
+## ปัญหาที่พบตอนคอมไพล์
+
+| ข้อความผิดพลาด | สาเหตุ | วิธีแก้ |
+|---|---|---|
+| `fatal error: ../../../../lv_conf.h: No such file or directory` | ยังไม่มีไฟล์ตั้งค่า LVGL ที่ตำแหน่งที่ LVGL หา | คัดลอก `lvgl_conf/lv_conf.h` ไปไว้ที่ `Documents/Arduino/libraries/lv_conf.h` (ข้างโฟลเดอร์ `lvgl`) |
+| `'VSPI_HOST' was not declared in this scope; did you mean 'SPI3_HOST'?` (ใน `TFT_eSPI_ESP32.c`) | TFT_eSPI 2.5.43 ยังใช้ชื่อเก่าที่ ESP32 Arduino core รุ่นใหม่ (เช่น 4.0.0) เอาออกแล้ว | ใช้ไฟล์ค่าตั้งจาก `tft_espi/` รุ่น 1.0.1 ขึ้นไป ซึ่งประกาศชื่อเดิมให้ชี้ไปที่ชื่อใหม่ (ไม่ต้องลด core ไม่ต้องแก้ไลบรารี) และต้อง **คัดลอกไปทับ** `Documents/Arduino/libraries/TFT_eSPI/User_Setup.h` จริง ๆ |
+| `Multiple libraries were found for "SD.h"` | มีไลบรารี SD หลายชุดในเครื่อง | เป็นคำเตือน ไม่ใช่ข้อผิดพลาด ไม่ต้องแก้ |
+
+ถ้าข้อความผิดพลาดเรื่อง `VSPI_HOST` ยังขึ้นหลังทับไฟล์แล้ว แปลว่า TFT_eSPI ยังไม่ได้อ่านไฟล์ของเรา ตรวจว่า
+`Documents/Arduino/libraries/TFT_eSPI/User_Setup_Select.h` ยังเปิด `#include <User_Setup.h>` (ค่าปริยายของไลบรารี)
+และไม่มีบรรทัด `#include <User_Setups/Setup...>` อื่นเปิดอยู่
+
 ## ตรวจบนเครื่อง PC
 
 ```bash
