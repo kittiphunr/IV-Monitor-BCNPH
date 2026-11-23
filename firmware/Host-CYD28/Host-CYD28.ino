@@ -1,7 +1,7 @@
 /**
  * @file      Host-CYD28.ino
  * @brief     เฟิร์มแวร์เครื่องส่วนกลาง รุ่นบอร์ดสำเร็จรูป ESP32-2432S028 (CYD) จอสัมผัส 2.8 นิ้ว
- * @version   1.2.0-CYD
+ * @version   1.3.0-CYD
  * @date      2026-11-23
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
@@ -27,6 +27,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 1.3.0-CYD | 2026-11-23 | เพิ่มตัวเลือกใช้ไลบรารี TFT_eSPI (`TFT_LIB 1`) ตามโปรเจ็ก witnessmenow/ESP32-Cheap-Yellow-Display พร้อมไฟล์ค่าตั้ง tft_espi/User_Setup.h |
  * | 1.2.0-CYD | 2026-11-23 | เลือกชิปจอตอนคอมไพล์ได้ (`TFT_CONTROLLER` 9341 หรือ 7789) แก้อาการสีซีดบนบอร์ดล็อตใหม่ที่ใช้จอ ST7789 |
  * | 1.1.0-CYD | 2026-11-23 | หน้าจอแนวนอน 320x240 เป็นค่าปริยาย จัดผังใหม่ทุกหน้า ผังแนวตั้งเดิมยังเลือกได้ด้วย `TFT_ROTATION 0` |
  * | 1.0.0-CYD | 2026-11-22 | สร้างรุ่นใหม่สำหรับบอร์ด ESP32-2432S028 แตกจาก Host จอสัมผัส 2.4" v4.10.1-TOUCH (ประวัติก่อนหน้าอยู่ในบันทึกโดยละเอียดด้านล่าง) |
@@ -42,6 +43,11 @@
  * @par บันทึกการเปลี่ยนแปลงโดยละเอียด
  * เก็บข้อความเดิมไว้ทั้งหมด เพราะเหตุผลเชิงเทคนิคในนั้นหาจากที่อื่นไม่ได้
  * ป้าย "(รับจาก Touch24 vX)" ในเนื้อโค้ดคือประวัติที่รับมาจาก Host จอสัมผัส 2.4" ส่วนที่เปลี่ยนในรุ่นนี้ใช้ป้าย [1.0.0-CYD]
+ *
+ *  เปลี่ยนใน V1.3.0-CYD: ตัวเลือกไลบรารีจอ TFT_eSPI
+ *   - `TFT_LIB` 0 (ปริยาย) = Adafruit · 1 = TFT_eSPI (ชิปจอและขากำหนดในไฟล์ User_Setup.h ของไลบรารี)
+ *   - ต้องคัดลอก tft_espi/User_Setup.h ไปทับไฟล์ในโฟลเดอร์ไลบรารี TFT_eSPI ก่อนคอมไพล์
+ *   - โค้ดวาดหน้าจอใน HostScreen.h ไม่เปลี่ยน เพราะ TFT_eSPI มีคำสั่งวาดชื่อเดียวกับ Adafruit_GFX ครบ
  *
  *  เปลี่ยนใน V1.2.0-CYD: รองรับบอร์ดล็อตใหม่ที่ใช้จอ ST7789
  *   - `TFT_CONTROLLER` 9341 (ปริยาย) หรือ 7789 ถ้าสีซีดหลังลอง TFT_INVERT แล้วให้เปลี่ยนเป็น 7789
@@ -135,12 +141,22 @@
 #include <WebServer.h>
 #include <Preferences.h>
 #include <ESPmDNS.h>
+// [1.3.0-CYD] เพิ่ม: เลือกไลบรารีจอ 0 = Adafruit (ปริยาย) · 1 = TFT_eSPI (ค่าตั้งอยู่ใน User_Setup.h ของไลบรารี)
+#ifndef TFT_LIB
+#define TFT_LIB             0
+#endif
+#if TFT_LIB == 1
+  #include <TFT_eSPI.h>
+#else
 #include <Adafruit_GFX.h>
+#endif
 // [1.2.0-CYD] แก้: เลือกชิปจอตอนคอมไพล์ (บอร์ด CYD ล็อตเก่าใช้ ILI9341 ล็อตใหม่บางล็อตใช้ ST7789)
 #ifndef TFT_CONTROLLER
 #define TFT_CONTROLLER      9341   // 9341 = ILI9341 (ปริยาย) · 7789 = ST7789 (ถ้าสีซีดหรือสีเพี้ยนให้ลองค่านี้)
 #endif
-#if TFT_CONTROLLER == 7789
+#if TFT_LIB == 1
+  // ใช้ TFT_eSPI: ชิปจอกำหนดในไฟล์ค่าตั้งของไลบรารี ไม่ผ่าน TFT_CONTROLLER
+#elif TFT_CONTROLLER == 7789
   #include <Adafruit_ST7789.h>
 #else
   #include <Adafruit_ILI9341.h>     // [1.0.0-CYD] แก้: จอบอร์ด CYD เป็น ILI9341
@@ -169,7 +185,7 @@
 esp_reset_reason_t bootResetReason = ESP_RST_UNKNOWN;
 
 
-#define APP_VERSION         "1.2.0-CYD"
+#define APP_VERSION         "1.3.0-CYD"
 #define DEV_NAME            "กิตติพันธ์ รัตนคร"
 #define DEV_ROLE            "นักวิชาการคอมพิวเตอร์"
 #define DEV_INSTITUTION     "มหาวิทยาลัยมหาจุฬาลงกรณราชวิทยาลัย วิทยาเขตแพร่"
@@ -266,9 +282,13 @@ esp_reset_reason_t bootResetReason = ESP_RST_UNKNOWN;
 #define ALERT_NO_SIGNAL   6   // เซนเซอร์ยังไม่จับหยดเลย (คนละเรื่องกับสายพับ)
 #define ALERT_LOST_LINK   7   // (รับจาก Touch24 v4.10.0) เพิ่ม: เตียงที่กำลังให้น้ำเกลือหายไปจากอากาศ (ใช้ฝั่ง Host เท่านั้น)
 
+#if TFT_LIB != 1
 SPIClass SPI_TFT(HSPI);   // [1.0.0-CYD] แก้: ESP32 รุ่นปกติไม่มี FSPI ให้ใช้ HSPI สำหรับจอ
+#endif
 SPIClass SPI_SD(VSPI);    // [1.0.0-CYD] เพิ่ม: SD card ใช้ VSPI ขาของมันเอง
-#if TFT_CONTROLLER == 7789
+#if TFT_LIB == 1
+TFT_eSPI tft = TFT_eSPI();            // [1.3.0-CYD] เพิ่ม: ขาและชิปจออ่านจาก User_Setup.h ของไลบรารี
+#elif TFT_CONTROLLER == 7789
 Adafruit_ST7789 tft = Adafruit_ST7789(&SPI_TFT, TFT_CS, TFT_DC, TFT_RST);    // [1.2.0-CYD] เพิ่ม: ST7789 ลำดับ CS ก่อน DC
 #else
 // [1.0.0-CYD] แก้: ILI9341 ลำดับพารามิเตอร์คือ DC ก่อน CS (กลับกับ ST7789)
@@ -2657,8 +2677,13 @@ void setup() {
     ledcAttachPin(TFT_BLK, 0);
   #endif
 #endif
+#if TFT_LIB != 1
   SPI_TFT.begin(TFT_SCLK, TFT_MISO, TFT_MOSI, TFT_CS);   // MISO จำเป็นสำหรับอ่านค่าทัช
-#if TFT_CONTROLLER == 7789
+#endif
+#if TFT_LIB == 1
+  tft.init();                      // [1.3.0-CYD] เพิ่ม: TFT_eSPI รู้ชิปและขาจาก User_Setup.h
+  tft.invertDisplay(TFT_INVERT);
+#elif TFT_CONTROLLER == 7789
   tft.init(240, 320);              // [1.2.0-CYD] เพิ่ม: ST7789 ต้องบอกความละเอียดแผง
   tft.setSPISpeed(TFT_SPI_HZ);
   tft.invertDisplay(!TFT_INVERT);  // ไลบรารีเปิดโหมดกลับสีไว้ตั้งแต่ init จึงกลับค่า
