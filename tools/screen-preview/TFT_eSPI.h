@@ -6,4 +6,8 @@ public:
   TFT_eSPI(int = 240, int = 320) {}
   void init(uint8_t = 0) {}
   void invertDisplay(bool) {}
+  void startWrite() {}
+  void endWrite() {}
+  void setAddrWindow(int, int, int, int) {}
+  void pushColors(uint16_t*, uint32_t, bool = true) {}
 };

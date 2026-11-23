@@ -16,6 +16,7 @@
 | `firmware/Host-TFT28/` | **เฟิร์มแวร์เครื่องส่วนกลาง จอสี TFT 2.8"** — หน้าจอแนวทาง FOCUS + จอเตือนเต็มจอ |
 | `firmware/Host-Touch24/` | **เฟิร์มแวร์เครื่องส่วนกลาง จอสัมผัส 2.4"** — ตั้งค่าได้บนจอ นาฬิกา DS3231 บันทึกลงการ์ด SD พร้อมคุณสมบัติครบเท่ารุ่นจอ OLED |
 | `firmware/Host-CYD28/` | **เฟิร์มแวร์เครื่องส่วนกลาง บอร์ด CYD (ESP32-2432S028)** — บอร์ดสำเร็จรูปจอสัมผัส 2.8" ไม่ต้องต่อสายเอง หน้าจอและตรรกะเหมือนรุ่นสัมผัส 2.4" ต่างที่ผังขาและไดรเวอร์ |
+| `firmware/Host-CYD-LVGL/` | **เฟิร์มแวร์เครื่องส่วนกลาง CYD แบบ LVGL** — ใช้ TFT_eSPI + XPT2046_Touchscreen + LVGL แตกจาก Host-CYD28 ปิดการบันทึก SD **ยังไม่เคยคอมไพล์กับ LVGL จริง** |
 | `firmware/FlowSim-Lab/` | **เฟิร์มแวร์แบบจำลองกราฟการไหล + ทดสอบเซนเซอร์** (ไม่เชื่อมต่อ Host) — ใช้ทดลอง สาธิต และออกแบบหน้าจอ |
 | `firmware/reference/` | เฟิร์มแวร์ตัวจริงที่ใช้อ้างอิง: Station v7.3.0 / v7.4.0 และ Host v4.6.0 |
 | `tools/check-ino-types.py` | ตรวจว่า enum/struct ถูกประกาศก่อนจุดที่ Arduino แทรก prototype (กัน error `does not name a type`) |
@@ -23,6 +24,8 @@
 | `tools/touch-preview/` | เรนเดอร์ภาพหน้าจอของเฟิร์มแวร์ Host จอสัมผัส v4.9.0 บน PC |
 | `tools/cyd-preview/` | เรนเดอร์ภาพหน้าจอของเฟิร์มแวร์ Host บอร์ด CYD ทุกหน้า |
 | `tools/cyd-touch-test/` | ทดสอบไดรเวอร์ทัช XPT2046 แบบ bit-bang กับแบบจำลองชิป |
+| `tools/lvgl-preview/` | เรนเดอร์ภาพหน้าจอของ Host-CYD-LVGL ผ่านตัวแทน LVGL (ไม่ใช่ของจริง) |
+| `tools/lvgl-tap-test/` | ทดสอบโซนแตะและเส้นทางคลิก LVGL ของ Host-CYD-LVGL |
 | `tools/host-preview/` | เรนเดอร์ภาพหน้าจอ TFT ของเฟิร์มแวร์ Host v4.8.0-TFT บน PC |
 | `tools/protocol-test/` | **ตรวจว่าโครงสร้างแพ็กเก็ต ESP-NOW ของทุกเฟิร์มแวร์ตรงกัน** (Host กับ Station ต้องตรงกันทุกไบต์) |
 | `tools/oled-check/` | ตรวจว่าเฟิร์มแวร์ Host จอ OLED คอมไพล์ผ่านบน PC |
@@ -38,6 +41,7 @@
 | `docs/ui-concepts/` | ภาพเปรียบเทียบแบบร่าง UI ทั้ง 3 แนวทาง |
 | `docs/screens-touch/` | ภาพหน้าจอจริงของ Host v4.9.1-TOUCH ทุกหน้า |
 | `docs/screens-cyd/` | ภาพหน้าจอจริงของ Host v1.0.0-CYD ทุกหน้า |
+| `docs/screens-lvgl/` | ภาพหน้าจอของ Host-CYD-LVGL v1.0.0 (จากตัวแทน LVGL) |
 | `docs/ui-concepts-touch/` | แบบร่าง UI แบบสมาร์ตโฟนที่ใช้ประกอบการเลือก |
 | `docs/screens-host/` | ภาพหน้าจอจริงของ Host v4.8.0-TFT ทุกหน้า |
 | `docs/ui-concepts-host/` | ภาพเปรียบเทียบแบบร่าง UI ของ Host ทั้ง 3 แนวทาง |
