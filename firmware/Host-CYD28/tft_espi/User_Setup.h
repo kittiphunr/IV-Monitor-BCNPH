@@ -1,7 +1,7 @@
 /**
  * @file      User_Setup.h
- * @brief     ค่าตั้งของไลบรารี TFT_eSPI สำหรับบอร์ด ESP32-2432S028 (CYD) ใช้คู่กับ `TFT_LIB 1`
- * @version   1.3.0-CYD
+ * @brief     ค่าตั้งของไลบรารี TFT_eSPI สำหรับบอร์ด ESP32-2432S028 (CYD) พอร์ต USB ช่องเดียว (ILI9341) ใช้คู่กับ `TFT_LIB 1`
+ * @version   1.4.0-CYD
  * @date      2026-11-23
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
@@ -19,6 +19,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 1.4.0-CYD | 2026-11-23 | ตัดบล็อก ST7789 ที่เดาไว้ออก (ผิด) ชี้ไปที่ไฟล์ User_Setup_CYD2USB.h |
  * | 1.3.0-CYD | 2026-11-23 | สร้างไฟล์ค่าตั้ง TFT_eSPI สำหรับบอร์ด CYD |
  *
  * @warning  ยังไม่ได้ทดสอบบนฮาร์ดแวร์จริง
@@ -32,9 +33,7 @@
 #define ILI9341_2_DRIVER
 // ถ้าลำดับสีหรือสีกลับด้านให้ลองสลับ: ILI9341_DRIVER แทน ILI9341_2_DRIVER
 // #define ILI9341_DRIVER
-// จอ ST7789 (ยังไม่ได้ยืนยันกับบอร์ด CYD 2.8" ใด ๆ) ให้ปิดสองบรรทัดบน แล้วเปิดสองบรรทัดนี้
-// #define ST7789_DRIVER
-// #define TFT_INVERSION_ON
+// บอร์ดที่มีพอร์ต USB สองช่อง (Type-C + Micro-USB) ใช้จอ ST7789 ให้ใช้ไฟล์ User_Setup_CYD2USB.h แทนไฟล์นี้
 
 #define TFT_WIDTH  240
 #define TFT_HEIGHT 320

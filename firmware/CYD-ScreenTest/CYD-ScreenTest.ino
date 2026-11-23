@@ -1,7 +1,7 @@
 /**
  * @file      CYD-ScreenTest.ino
  * @brief     เครื่องมือทดสอบจอของบอร์ด ESP32-2432S028 (CYD) หาว่าจอเป็นชิปอะไรและตั้งค่าแบบไหนถึงแสดงถูก
- * @version   S1.1.0
+ * @version   S1.2.0
  * @date      2026-11-23
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
@@ -27,6 +27,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | S1.2.0 | 2026-11-23 | โหมด ST7789 ตรงกับค่า cyd2usb ของ OttoMeister/ESP32-2432S028R (ปิดกลับสี + ลำดับสี BGR) |
  * | S1.1.0 | 2026-11-23 | ลองครบทุกทิศทางการหมุนจอ (0-3) ต่อทุกโหมด รวม 16 ชุด พิมพ์ชื่อชุดบนจอและทาง Serial |
  * | S1.0.0 | 2026-11-23 | สร้างเครื่องมือทดสอบจอสำหรับบอร์ด CYD |
  *
@@ -42,7 +43,7 @@
 #include <Adafruit_ILI9341.h>
 #include <Adafruit_ST7789.h>
 
-#define APP_VERSION   "S1.1.0"
+#define APP_VERSION   "S1.2.0"
 
 #define PIN_SCLK      14
 #define PIN_MOSI      13
@@ -64,8 +65,8 @@ const char* modeName(int m) {
   switch (m & 3) {
     case 0:  return "0: ILI9341  invert OFF";
     case 1:  return "1: ILI9341  invert ON";
-    case 2:  return "2: ST7789   invert ON (lib default)";
-    default: return "3: ST7789   invert OFF";
+    case 2:  return "2: ST7789 BGR inv OFF (cyd2usb ref)";
+    default: return "3: ST7789 BGR inv ON";
   }
 }
 
@@ -124,7 +125,12 @@ void applyMode(int m) {
     st.init(240, 320);
     st.setSPISpeed(40000000);
     st.setRotation(rotOf(m));
-    st.invertDisplay((m & 3) == 2);
+    st.invertDisplay((m & 3) == 3);
+    {   // ลำดับสี BGR (บิต 3 ของ MADCTL) คงบิตหมุนจอเดิมของไลบรารี: 0=MX|MY 1=MY|MV 2=ไม่มี 3=MX|MV
+      const uint8_t madctlBgr[4] = { 0xC8, 0xA8, 0x08, 0x68 };
+      uint8_t v = madctlBgr[rotOf(m) & 3];
+      st.sendCommand(0x36, &v, 1);
+    }
     drawPattern(st, modeName(m));
     Serial.printf("drawn %d x %d\n", st.width(), st.height());
   }

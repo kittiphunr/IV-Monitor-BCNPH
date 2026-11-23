@@ -14,6 +14,7 @@ firmware/
 ├── Host-TFT28/       เครื่องส่วนกลาง จอ ST7789V 2.8" 320×240 แนวนอน
 ├── Host-Touch24/     เครื่องส่วนกลาง จอสัมผัส ILI9341+XPT2046 2.4" 240×320
 ├── Host-CYD28/       เครื่องส่วนกลาง บอร์ดสำเร็จรูป ESP32-2432S028 (CYD) จอสัมผัส 2.8" 240×320
+├── Host-CYD-LVGL/    เครื่องส่วนกลาง บอร์ด CYD แบบ TFT_eSPI + XPT2046_Touchscreen + LVGL (ปิด SD) แตกจาก Host-CYD28
 ├── FlowSim-Lab/      เครื่องมือจำลอง ไม่มีเลขเวอร์ชัน
 ├── CYD-ScreenTest/   เครื่องมือทดสอบจอบอร์ด CYD หาชิปจอและค่าที่ถูกต้อง ไม่มีเลขเวอร์ชัน
 └── reference/        เอกสารอ้างอิง ไม่มีเลขเวอร์ชัน
@@ -50,6 +51,9 @@ firmware/
 `Host-CYD28` แตกจาก `Host-Touch24` ที่ v4.10.1 `web_dashboard.h` เป็นสำเนาตรงตัว `HostScreen.h` เหมือนกันในผังแนวตั้ง
 (ผังแนวนอนเพิ่มใหม่ ใช้ `#if UI_LANDSCAPE`) และตรรกะใน `.ino` เหมือนกันทุกบรรทัดนอกจากส่วนผังขา ไดรเวอร์ และผังหน้าจอ จึง **แก้บั๊กฝั่ง Touch24 เมื่อไร ต้องพิจารณาแก้ฝั่ง CYD ด้วยทุกครั้ง**
 ยังไม่มีเครื่องมือซิงก์อัตโนมัติแบบ Fallout
+
+`Host-CYD-LVGL` แตกจาก `Host-CYD28` ที่ v1.4.0 ตรรกะใน `.ino` และ `web_dashboard.h` เหมือนกัน (ต่างที่ส่วนจอ ทัช และ SD)
+จึง **แก้บั๊กฝั่งตรรกะเมื่อไร ต้องพิจารณาแก้ทั้งสามสาย** (Touch24, CYD28, CYD-LVGL) โค้ด LVGL ตรวจกับตัวแทนบน PC เท่านั้น ยังไม่เคยคอมไพล์กับ LVGL จริง
 
 ### มาตรฐานคอมเมนต์
 
@@ -100,6 +104,7 @@ release/<ลำดับ ๒ หลัก>-s<เวอร์ชัน Station>-h
 | `-tft<เวอร์ชัน>` | Host จอ TFT 2.8" ขยับ | `release/02-s7.5.0-h4.7.0-tft4.8.0` |
 | `-touch<เวอร์ชัน>` | Host จอสัมผัส 2.4" ขยับ | `release/14-s7.7.3-h4.7.5-touch4.9.2` |
 | `-cyd<เวอร์ชัน>` | Host บอร์ด CYD (ESP32-2432S028) 2.8" ขยับ | `release/29-s7.10.0-h4.9.1-cyd1.0.0` |
+| `-lvgl<เวอร์ชัน>` | Host CYD แบบ LVGL ขยับ | `release/34-s7.10.0-h4.9.1-lvgl1.0.0` |
 | `-c3v<เวอร์ชัน>` | Station บอร์ดเล็กขยับ | `release/17-s7.8.0-h4.7.7-c3v1.0.0` |
 | `-fo<เวอร์ชัน>` | Station รุ่นพิเศษ Fallout ขยับ | `release/23-s7.10.0-h4.9.1-fo1.0.0` |
 
@@ -158,6 +163,8 @@ bash tools/touch-preview/run.sh         # คอมไพล์และเร�
 bash tools/cyd-preview/run.sh           # คอมไพล์และเรนเดอร์ Host รุ่นบอร์ด CYD
 bash tools/cyd-touch-test/run.sh        # ไดรเวอร์ทัช bit-bang ของบอร์ด CYD
 bash tools/cyd-tap-test/run.sh          # โซนแตะตรงปุ่มทุกหน้าของ Host CYD ทั้งสองแนว
+bash tools/lvgl-preview/run.sh          # คอมไพล์และเรนเดอร์ Host CYD แบบ LVGL (กับตัวแทน LVGL ไม่ใช่ของจริง)
+bash tools/lvgl-tap-test/run.sh         # โซนแตะและเส้นทางคลิก LVGL ของ Host-CYD-LVGL
 bash tools/c3-preview/run.sh            # คอมไพล์และเรนเดอร์ Station รุ่นบอร์ดเล็ก
 bash tools/fallout-sync/run.sh          # สาย Fallout ใช้ตรรกะเดียวกับสายหลักทุกบรรทัด และภาพตัวละครตรงต้นทาง
 bash tools/font-check/run.sh            # ฟอนต์ตัวจริงของภาพจำลอง และค่าความกว้างตัวอักษรในเฟิร์มแวร์

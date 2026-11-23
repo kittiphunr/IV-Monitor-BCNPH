@@ -13,6 +13,7 @@ public:
   bool begin(SPIClass &sp) { (void)sp; return true; }
   void setRotation(uint8_t) {}
   bool touched() { return g_touched; }
+  bool tirqTouched() { return g_touched; }
   TS_Point getPoint() { return g_point; }
   static bool g_touched;
   static TS_Point g_point;
