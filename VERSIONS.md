@@ -22,6 +22,7 @@
 | Host TFT 2.8" | `firmware/Host-TFT28/` | เครื่องส่วนกลาง | ST7789V 320×240 แนวนอน |
 | Host สัมผัส 2.4" | `firmware/Host-Touch24/` | เครื่องส่วนกลาง | ILI9341 + XPT2046 240×320 แนวตั้ง |
 | Host CYD 2.8" | `firmware/Host-CYD28/` | เครื่องส่วนกลาง บอร์ดสำเร็จรูป ESP32-2432S028 | ILI9341 + XPT2046 240×320 แนวตั้ง |
+| Host CYD LVGL | `firmware/Host-CYD-LVGL/` | เครื่องส่วนกลาง CYD แบบ TFT_eSPI + XPT2046_Touchscreen + LVGL (ปิด SD) | ILI9341 หรือ ST7789 320×240 แนวนอน |
 
 เลือก Host **หนึ่งตัว** ตามชนิดจอที่มี ใช้คู่กับ Station สายใดสายหนึ่ง
 
@@ -58,7 +59,7 @@ release/17-s7.8.0-h4.7.7-c3v1.0.0
 
 ## ตารางรุ่น
 
-| ชื่อรุ่น | Station | สายเสถียร | บอร์ดเล็ก | Fallout | OLED | TFT 2.8" | สัมผัส 2.4" | CYD 2.8" | คอมไพล์ | โหลด zip | คอมมิต | สาระสำคัญ |
+| ชื่อรุ่น | Station | สายเสถียร | บอร์ดเล็ก | Fallout | OLED | TFT 2.8" | สัมผัส 2.4" | CYD 2.8" | CYD LVGL | คอมไพล์ | โหลด zip | คอมมิต | สาระสำคัญ |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | `release/00-h4.7.0` | — | — | — | — | 4.7.0 | — | — | — | — | ❔ | [zip](https://github.com/kittiphun-rut/IV-Monitor-BCNPH/archive/refs/heads/release/00-h4.7.0.zip) | [`676b321`](https://github.com/kittiphun-rut/IV-Monitor-BCNPH/tree/676b3212e3802170e3a465e4a2b30d57e656920e) | host: AP-only mode (remove Wi-Fi management) + station UI concepts<br><sub>16/9/2026</sub> |
 | `release/01-s7.5.0-h4.7.0` | — | 7.5.0 | — | — | 4.7.0 | — | — | — | — | ❔ | [zip](https://github.com/kittiphun-rut/IV-Monitor-BCNPH/archive/refs/heads/release/01-s7.5.0-h4.7.0.zip) | [`4a7dc3b`](https://github.com/kittiphun-rut/IV-Monitor-BCNPH/tree/4a7dc3b69df2e936c5aa88662564b3b79e162c23) | station: redesign TFT UI (IV BAG concept) + 30-min flow trend page<br><sub>12/9/2026</sub> |
