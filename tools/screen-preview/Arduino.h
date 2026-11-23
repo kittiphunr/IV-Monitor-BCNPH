@@ -95,6 +95,8 @@ public:
   void print(const char*) {} void print(const String&) {}
   void println(const char*) {} void println(const String&) {} void println() {}
   void printf(const char*,...) {}
+  int available() { return 0; }
+  int read() { return -1; }
 };
 extern SerialClass Serial;
 class ESPClass { public: void restart() {} unsigned int getFreeHeap(){return 0;} };
