@@ -7,4 +7,5 @@ public:
   void init(int,int){}
   void setSPISpeed(unsigned long){}
   void invertDisplay(bool){}
+  void sendCommand(uint8_t, uint8_t* = nullptr, uint8_t = 0){}
 };

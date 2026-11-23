@@ -1,7 +1,7 @@
 /**
  * @file      Host-CYD28.ino
  * @brief     เฟิร์มแวร์เครื่องส่วนกลาง รุ่นบอร์ดสำเร็จรูป ESP32-2432S028 (CYD) จอสัมผัส 2.8 นิ้ว
- * @version   1.3.0-CYD
+ * @version   1.4.0-CYD
  * @date      2026-11-23
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
@@ -27,6 +27,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 1.4.0-CYD | 2026-11-23 | แก้ค่าของจอ ST7789 (บอร์ด CYD สองพอร์ต USB) ให้ตรงต้นแบบ OttoMeister/ESP32-2432S028R: ปิดโหมดกลับสี และสลับเป็นลำดับสี BGR |
  * | 1.3.0-CYD | 2026-11-23 | เพิ่มตัวเลือกใช้ไลบรารี TFT_eSPI (`TFT_LIB 1`) ตามโปรเจ็ก witnessmenow/ESP32-Cheap-Yellow-Display พร้อมไฟล์ค่าตั้ง tft_espi/User_Setup.h |
  * | 1.2.0-CYD | 2026-11-23 | เลือกชิปจอตอนคอมไพล์ได้ (`TFT_CONTROLLER` 9341 หรือ 7789) แก้อาการสีซีดบนบอร์ดล็อตใหม่ที่ใช้จอ ST7789 |
  * | 1.1.0-CYD | 2026-11-23 | หน้าจอแนวนอน 320x240 เป็นค่าปริยาย จัดผังใหม่ทุกหน้า ผังแนวตั้งเดิมยังเลือกได้ด้วย `TFT_ROTATION 0` |
@@ -43,6 +44,14 @@
  * @par บันทึกการเปลี่ยนแปลงโดยละเอียด
  * เก็บข้อความเดิมไว้ทั้งหมด เพราะเหตุผลเชิงเทคนิคในนั้นหาจากที่อื่นไม่ได้
  * ป้าย "(รับจาก Touch24 vX)" ในเนื้อโค้ดคือประวัติที่รับมาจาก Host จอสัมผัส 2.4" ส่วนที่เปลี่ยนในรุ่นนี้ใช้ป้าย [1.0.0-CYD]
+ *
+ *  เปลี่ยนใน V1.4.0-CYD: แก้ค่าจอ ST7789 ให้ตรงต้นแบบ OttoMeister/ESP32-2432S028R
+ *   - ต้นแบบมีสองการตั้งค่า: `cyd` (ILI9341_2_DRIVER) และ `cyd2usb` (ST7789_DRIVER + TFT_RGB_ORDER=TFT_BGR
+ *     + TFT_INVERSION_OFF) บอร์ดที่มีพอร์ต USB สองช่อง (Type-C + Micro-USB) ตรงกับ cyd2usb
+ *   - ST7789 บนไลบรารี Adafruit: `TFT_INVERT` ตอนนี้หมายถึงสั่งเปิด/ปิดโหมดกลับสีตรง ๆ (ปริยาย 0 = ปิด)
+ *     เดิมในรุ่น 1.2.0-1.3.0 เปิดโหมดกลับสีไว้ ซึ่งผิดสำหรับบอร์ดรุ่นนี้
+ *   - เพิ่ม `TFT_BGR` (ปริยาย 1) สั่ง MADCTL ให้ลำดับสีเป็น BGR เฉพาะ ST7789 บนไลบรารี Adafruit
+ *   - tft_espi/User_Setup_CYD2USB.h ค่าตั้ง TFT_eSPI ของรุ่นสองพอร์ต USB ตรงกับต้นแบบ
  *
  *  เปลี่ยนใน V1.3.0-CYD: ตัวเลือกไลบรารีจอ TFT_eSPI
  *   - `TFT_LIB` 0 (ปริยาย) = Adafruit · 1 = TFT_eSPI (ชิปจอและขากำหนดในไฟล์ User_Setup.h ของไลบรารี)
@@ -185,7 +194,7 @@
 esp_reset_reason_t bootResetReason = ESP_RST_UNKNOWN;
 
 
-#define APP_VERSION         "1.3.0-CYD"
+#define APP_VERSION         "1.4.0-CYD"
 #define DEV_NAME            "กิตติพันธ์ รัตนคร"
 #define DEV_ROLE            "นักวิชาการคอมพิวเตอร์"
 #define DEV_INSTITUTION     "มหาวิทยาลัยมหาจุฬาลงกรณราชวิทยาลัย วิทยาเขตแพร่"
@@ -211,7 +220,10 @@ esp_reset_reason_t bootResetReason = ESP_RST_UNKNOWN;
 #ifndef TFT_ROTATION            // [1.1.0-CYD] เพิ่ม: ครอบด้วย #ifndef เพื่อให้เครื่องมือตรวจกำหนดทิศทางจากภายนอกได้
 #define TFT_ROTATION        1   // [1.1.0-CYD] แก้: 1 = แนวนอน 320x240 (ปริยาย) · 3 = แนวนอนกลับด้าน · 0 = แนวตั้ง 240x320 · 2 = แนวตั้งกลับด้าน
 #endif
-#define TFT_INVERT          0   // 1 = สลับโหมดกลับสีจากค่าปริยายของไลบรารี (ใช้เมื่อสีกลับด้าน ทั้ง ILI9341 และ ST7789)
+#define TFT_INVERT          0   // 1 = เปิดโหมดกลับสี (ใช้เมื่อสีกลับด้าน) ปริยาย 0 = ปิด ใช้ได้ทั้ง ILI9341, ST7789 และ TFT_eSPI
+#ifndef TFT_BGR
+#define TFT_BGR             1   // [1.4.0-CYD] เพิ่ม: ST7789 บนไลบรารี Adafruit ใช้ลำดับสี BGR (ต้นแบบ cyd2usb) ตั้ง 0 ถ้าแดงกับน้ำเงินสลับกัน
+#endif
 #define TFT_SPI_HZ          40000000
 
 // ---- ทัช XPT2046 (ขาแยกจากจอ อ่านแบบ bit-bang) ----
@@ -2686,12 +2698,21 @@ void setup() {
 #elif TFT_CONTROLLER == 7789
   tft.init(240, 320);              // [1.2.0-CYD] เพิ่ม: ST7789 ต้องบอกความละเอียดแผง
   tft.setSPISpeed(TFT_SPI_HZ);
-  tft.invertDisplay(!TFT_INVERT);  // ไลบรารีเปิดโหมดกลับสีไว้ตั้งแต่ init จึงกลับค่า
+  tft.invertDisplay(TFT_INVERT);   // [1.4.0-CYD] แก้: สั่งตรง ๆ (เดิมกลับค่า ทำให้เปิดโหมดกลับสีทั้งที่ต้นแบบปิด)
 #else
   tft.begin(TFT_SPI_HZ);           // [1.0.0-CYD] แก้: ILI9341 ความละเอียด 240x320 อยู่ในไลบรารีแล้ว
   tft.invertDisplay(TFT_INVERT);
 #endif
   tft.setRotation(TFT_ROTATION);   // [1.1.0-CYD] แก้: ปริยายเป็นแนวนอน 1
+#if TFT_LIB != 1 && TFT_CONTROLLER == 7789 && TFT_BGR
+  {
+    // [1.4.0-CYD] เพิ่ม: สลับเป็นลำดับสี BGR (บิต 3 ของ MADCTL) โดยคงบิตหมุนจอเดิมของไลบรารี Adafruit_ST7789
+    // ค่าตามตารางหมุนจอของไลบรารี: 0=MX|MY 1=MY|MV 2=ไม่มี 3=MX|MV แล้วเติมบิต BGR
+    const uint8_t madctlBgr[4] = { 0xC8, 0xA8, 0x08, 0x68 };
+    uint8_t m = madctlBgr[TFT_ROTATION & 3];
+    tft.sendCommand(0x36, &m, 1);
+  }
+#endif
   tft.setTextWrap(false);
   tft.fillScreen(0x0000);
 
