@@ -1,7 +1,7 @@
 /**
  * @file      Host-CYD28.ino
  * @brief     เฟิร์มแวร์เครื่องส่วนกลาง รุ่นบอร์ดสำเร็จรูป ESP32-2432S028 (CYD) จอสัมผัส 2.8 นิ้ว
- * @version   1.4.1-CYD
+ * @version   1.4.2-CYD
  * @date      2026-11-23
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
@@ -27,6 +27,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 1.4.2-CYD | 2026-11-23 | ทัช: หน้าคาลิเบรตตรวจจับแกนสลับเอง (ในแนวนอน) และ TOUCH_SWAP_XY สลับค่าดิบก่อนแปลงพิกัด (เดิมสลับหลังแปลง ผิดในแนวนอน) |
  * | 1.4.1-CYD | 2026-11-23 | รองรับ ESP32 core รุ่นใหม่ (4.0.0): ไฟล์ค่าตั้ง TFT_eSPI ประกาศ VSPI_HOST/HSPI_HOST และข้าม ADC เมื่อไม่ได้วัดแบต |
  * | 1.4.0-CYD | 2026-11-23 | แก้ค่าของจอ ST7789 (บอร์ด CYD สองพอร์ต USB) ให้ตรงต้นแบบ OttoMeister/ESP32-2432S028R: ปิดโหมดกลับสี และสลับเป็นลำดับสี BGR |
  * | 1.3.0-CYD | 2026-11-23 | เพิ่มตัวเลือกใช้ไลบรารี TFT_eSPI (`TFT_LIB 1`) ตามโปรเจ็ก witnessmenow/ESP32-Cheap-Yellow-Display พร้อมไฟล์ค่าตั้ง tft_espi/User_Setup.h |
@@ -199,7 +200,7 @@
 esp_reset_reason_t bootResetReason = ESP_RST_UNKNOWN;
 
 
-#define APP_VERSION         "1.4.1-CYD"
+#define APP_VERSION         "1.4.2-CYD"
 #define DEV_NAME            "กิตติพันธ์ รัตนคร"
 #define DEV_ROLE            "นักวิชาการคอมพิวเตอร์"
 #define DEV_INSTITUTION     "มหาวิทยาลัยมหาจุฬาลงกรณราชวิทยาลัย วิทยาเขตแพร่"
@@ -241,7 +242,9 @@ esp_reset_reason_t bootResetReason = ESP_RST_UNKNOWN;
 
 // ปรับทิศทางของทัชให้ตรงกับภาพบนจอ (ถ้าแตะแล้วตำแหน่งสลับแกนหรือกลับด้าน ให้แก้ 3 ค่านี้
 // หรือเข้าหน้า SYSTEM > CALIBRATE แตะสองมุมเพื่อปรับใหม่)
-#define TOUCH_SWAP_XY       0
+#ifndef TOUCH_SWAP_XY
+#define TOUCH_SWAP_XY       0   // 1 = บังคับสลับแกน X/Y ของค่าดิบ (หน้าคาลิเบรตตรวจจับเองได้ในแนวนอน ปริยายไม่ต้องตั้ง)
+#endif
 #define TOUCH_FLIP_X        0
 #define TOUCH_FLIP_Y        0
 
@@ -1682,6 +1685,7 @@ XPT2046_Bitbang ts(TOUCH_CLK_PIN, TOUCH_MOSI_PIN, TOUCH_MISO_PIN, TOUCH_CS_PIN, 
 // ค่าปรับความแม่น (ค่าดิบที่มุมจอ) — ค่าเริ่มต้นใช้ได้กับโมดูลส่วนใหญ่ ปรับใหม่ได้จากหน้าตั้งค่า
 int touchRawX0 = 300, touchRawX1 = 3800, touchRawY0 = 300, touchRawY1 = 3800;
 bool touchCalibrated = false;
+bool touchSwapAuto = false;   // [1.4.2-CYD] เพิ่ม: หน้าคาลิเบรตตรวจพบว่าแกนทัชสลับกับแกนจอ (เก็บใน NVS)
 
 unsigned long lastTouchEventMs = 0;
 bool touchWasDown = false;
@@ -1693,6 +1697,7 @@ void loadTouchCalibration() {
   touchRawY0 = preferences.getInt("ty0", 300);
   touchRawY1 = preferences.getInt("ty1", 3800);
   touchCalibrated = preferences.getUChar("tcal", 0) == 1;
+  touchSwapAuto = preferences.getUChar("tswap", 0) == 1;   // [1.4.2-CYD] เพิ่ม
   preferences.end();
 }
 
@@ -1703,21 +1708,20 @@ void saveTouchCalibration() {
   preferences.putInt("ty0", touchRawY0);
   preferences.putInt("ty1", touchRawY1);
   preferences.putUChar("tcal", 1);
+  preferences.putUChar("tswap", touchSwapAuto ? 1 : 0);   // [1.4.2-CYD] เพิ่ม
   preferences.end();
   touchCalibrated = true;
 }
 
 // แปลงค่าดิบของ XPT2046 เป็นพิกัดบนจอ (คิดการหมุนจอด้วย)
 void mapTouch(int rawX, int rawY, int &sx, int &sy) {
+  if (TOUCH_SWAP_XY || touchSwapAuto) { int t = rawX; rawX = rawY; rawY = t; }   // [1.4.2-CYD] แก้: สลับค่าดิบก่อนแปลง ไม่ใช่สลับพิกัดจอหลังแปลง
   long x = map(rawX, touchRawX0, touchRawX1, 0, SCR_W - 1);
   long y = map(rawY, touchRawY0, touchRawY1, 0, SCR_H - 1);
   if (x < 0) x = 0;
   if (x > SCR_W - 1) x = SCR_W - 1;
   if (y < 0) y = 0;
   if (y > SCR_H - 1) y = SCR_H - 1;
-#if TOUCH_SWAP_XY
-  long t = x; x = y; y = t;
-#endif
 #if TOUCH_FLIP_X
   x = SCR_W - 1 - x;
 #endif
@@ -2135,6 +2139,39 @@ const int CALIB_PT[2][2] = { { 24, 40 }, { SCR_W - 24, SCR_H - 40 } };
 
 
 
+// [1.4.2-CYD] เพิ่ม: คำนวณค่าปรับจากจุดที่แตะสองจุด (calibRawX/Y ที่จุด CALIB_PT) พร้อมตรวจว่าแกนทัชสลับกับแกนจอหรือไม่
+// หลักการ: ถ้าแกนไม่สลับ ระยะดิบ dRx:dRy จะเทียบกับ (dx/กว้าง):(dy/สูง) ของสองจุด ถ้าสลับจะเทียบกลับด้าน
+// ตัดสินเฉพาะเมื่อสองจุดห่างต่างกันพอ (ในแนวนอนอัตราส่วนคาดหมายราว 1.28 ต่อ 0.78) ในแนวตั้งใกล้ 1 เกินไปจึงไม่ตัดสิน
+// (แนวตั้งให้ตั้ง TOUCH_SWAP_XY เอง) การกลับทิศของแต่ละแกนไม่ต้องตรวจ เพราะความชันที่ติดลบรองรับอยู่แล้ว
+void applyCalibrationPoints() {
+  int dxScreen = CALIB_PT[1][0] - CALIB_PT[0][0];
+  int dyScreen = CALIB_PT[1][1] - CALIB_PT[0][1];
+  if (dxScreen == 0 || dyScreen == 0) return;
+
+  touchSwapAuto = false;
+#if !TOUCH_SWAP_XY
+  long dRx = labs((long)calibRawX[1] - calibRawX[0]);
+  long dRy = labs((long)calibRawY[1] - calibRawY[0]);
+  long eNum = (long)labs(dxScreen) * SCR_H;     // อัตราส่วนคาดหมายของ dRx/dRy เมื่อไม่สลับ = eNum/eDen
+  long eDen = (long)labs(dyScreen) * SCR_W;
+  if (eNum * 100 > eDen * 115 || eNum * 100 < eDen * 87) {
+    long errStraight = labs(dRx * eDen - dRy * eNum);
+    long errSwapped  = labs(dRx * eNum - dRy * eDen);
+    touchSwapAuto = (errSwapped < errStraight);
+  }
+#endif
+  bool sw = (TOUCH_SWAP_XY || touchSwapAuto);
+  const int *rx = sw ? calibRawY : calibRawX;
+  const int *ry = sw ? calibRawX : calibRawY;
+  long slopeX = ((long)(rx[1] - rx[0]) * 1000) / dxScreen;
+  long slopeY = ((long)(ry[1] - ry[0]) * 1000) / dyScreen;
+  touchRawX0 = rx[0] - (int)((slopeX * CALIB_PT[0][0]) / 1000);
+  touchRawX1 = touchRawX0 + (int)((slopeX * (SCR_W - 1)) / 1000);
+  touchRawY0 = ry[0] - (int)((slopeY * CALIB_PT[0][1]) / 1000);
+  touchRawY1 = touchRawY0 + (int)((slopeY * (SCR_H - 1)) / 1000);
+  saveTouchCalibration();
+}
+
 // หน้านี้อ่านค่าดิบเอง ไม่ผ่าน mapTouch เพราะกำลังหาค่าปรับอยู่
 void serviceCalibScreen() {
   if (!ts.touched()) { touchWasDown = false; return; }
@@ -2154,18 +2191,7 @@ void serviceCalibScreen() {
     return;
   }
 
-  // คำนวณค่าดิบที่ขอบจอจากจุดที่แตะสองจุด (เชิงเส้น)
-  int dxScreen = CALIB_PT[1][0] - CALIB_PT[0][0];
-  int dyScreen = CALIB_PT[1][1] - CALIB_PT[0][1];
-  if (dxScreen != 0 && dyScreen != 0) {
-    long slopeX = ((long)(calibRawX[1] - calibRawX[0]) * 1000) / dxScreen;
-    long slopeY = ((long)(calibRawY[1] - calibRawY[0]) * 1000) / dyScreen;
-    touchRawX0 = calibRawX[0] - (int)((slopeX * CALIB_PT[0][0]) / 1000);
-    touchRawX1 = touchRawX0 + (int)((slopeX * (SCR_W - 1)) / 1000);
-    touchRawY0 = calibRawY[0] - (int)((slopeY * CALIB_PT[0][1]) / 1000);
-    touchRawY1 = touchRawY0 + (int)((slopeY * (SCR_H - 1)) / 1000);
-    saveTouchCalibration();
-  }
+  applyCalibrationPoints();            // [1.4.2-CYD] แก้: ย้ายการคำนวณไปเป็นฟังก์ชัน (ทดสอบได้) และตรวจจับแกนสลับ
 
   calibStep = 0;
   tft.fillScreen(C_BG);

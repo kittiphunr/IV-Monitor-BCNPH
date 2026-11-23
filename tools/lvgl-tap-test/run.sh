@@ -21,8 +21,9 @@ main=main.replace('int main(){','int runCyd(){',1).replace('g_ops=fopen("/dev/nu
 open(w+'/cases_all.h','w',encoding='utf-8').write(body+main)
 PY
 cat "$work/cases_all.h" >> "$work/drv.cpp"
+cat ../cyd-tap-test/calib_cases.h >> "$work/drv.cpp"
 cat extra.h >> "$work/drv.cpp"
-echo 'int main(){ int a = runCyd(); int b = lvRun(); printf("\n%s\n", (a || b) ? "มีข้อไม่ผ่าน" : "ผ่านทุกข้อ"); return (a || b) ? 1 : 0; }' >> "$work/drv.cpp"
+echo 'int main(){ int a = runCyd(); int c = calibRun(); int b = lvRun(); printf("\n%s\n", (a || b || c) ? "มีข้อไม่ผ่าน" : "ผ่านทุกข้อ"); return (a || b || c) ? 1 : 0; }' >> "$work/drv.cpp"
 g++ -std=gnu++17 -I../screen-preview -I"$work" -DESP_ARDUINO_VERSION_MAJOR=3 -w -o "$work/t" "$work/drv.cpp"
 "$work/t" | grep -v "^ผ่าน:" || true
 "$work/t" >/dev/null

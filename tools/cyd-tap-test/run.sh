@@ -7,7 +7,16 @@ SK=../../firmware/Host-CYD28
 work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
 cp "$SK/Host-CYD28.ino" "$work/host.cpp"; cp "$SK"/*.h "$work/"
 sed '/^int main(/,$d' ../cyd-preview/driver.cpp > "$work/drv.cpp"
-cat cases.h >> "$work/drv.cpp"
+# cases.h เดิมมี main() ของตัวเอง ให้เปลี่ยนเป็น runCases() แล้วต่อชุดทดสอบคาลิเบรตและ main ใหม่
+python3 - "$work" <<'PY'
+import sys
+w=sys.argv[1]
+src=open('cases.h',encoding='utf-8').read()
+i=src.index('int main(){')
+open(w+'/cases_all.h','w',encoding='utf-8').write(src[:i]+src[i:].replace('int main(){','int runCases(){',1))
+PY
+cat "$work/cases_all.h" calib_cases.h >> "$work/drv.cpp"
+echo 'int main(){ int a = runCases(); int b = calibRun(); printf("\n%s\n", (a || b) ? "มีข้อไม่ผ่าน" : "ผ่านทุกข้อ"); return (a || b) ? 1 : 0; }' >> "$work/drv.cpp"
 rc=0
 for R in 1 0; do
   echo "================ TFT_ROTATION=$R ================"
