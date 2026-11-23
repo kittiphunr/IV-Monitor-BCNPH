@@ -54,7 +54,7 @@ LVGL หาไฟล์ `lv_conf.h` ที่ `Documents/Arduino/libraries/lv_co
 ค่าอื่นทั้งหมดใช้ค่าปริยายของ LVGL เอง
 
 **วิธีละเอียด:** คัดลอก `lv_conf_template.h` ของไลบรารีไปเป็น `lv_conf.h` แล้วแก้ `#if 0` บนสุดเป็น `#if 1`,
-`LV_COLOR_DEPTH` เป็น `16` และเปิด `LV_FONT_MONTSERRAT_12/16/20/28/48` เป็น `1`
+`LV_COLOR_DEPTH` เป็น `16` และเปิด `LV_FONT_MONTSERRAT_12/16/20/28/48` เป็น `1` และตั้ง `LV_USE_STDLIB_MALLOC` / `LV_USE_STDLIB_STRING` / `LV_USE_STDLIB_SPRINTF` เป็น `LV_STDLIB_CLIB` (กัน DRAM ล้นตอนลิงก์)
 ชื่อและค่าปริยายของตัวแปรอาจต่างตามเวอร์ชัน LVGL ให้ค้นชื่อในไฟล์เทมเพลตของเวอร์ชันที่ติดตั้ง
 
 ### 4. ตั้งค่าบอร์ดใน Arduino IDE
@@ -71,6 +71,7 @@ LVGL หาไฟล์ `lv_conf.h` ที่ `Documents/Arduino/libraries/lv_co
 |---|---|---|
 | `fatal error: ../../../../lv_conf.h: No such file or directory` | ยังไม่มีไฟล์ตั้งค่า LVGL ที่ตำแหน่งที่ LVGL หา | คัดลอก `lvgl_conf/lv_conf.h` ไปไว้ที่ `Documents/Arduino/libraries/lv_conf.h` (ข้างโฟลเดอร์ `lvgl`) |
 | `'VSPI_HOST' was not declared in this scope; did you mean 'SPI3_HOST'?` (ใน `TFT_eSPI_ESP32.c`) | TFT_eSPI 2.5.43 ยังใช้ชื่อเก่าที่ ESP32 Arduino core รุ่นใหม่ (เช่น 4.0.0) เอาออกแล้ว | ใช้ไฟล์ค่าตั้งจาก `tft_espi/` รุ่น 1.0.1 ขึ้นไป ซึ่งประกาศชื่อเดิมให้ชี้ไปที่ชื่อใหม่ (ไม่ต้องลด core ไม่ต้องแก้ไลบรารี) และต้อง **คัดลอกไปทับ** `Documents/Arduino/libraries/TFT_eSPI/User_Setup.h` จริง ๆ |
+| `section .dram0.bss will not fit in region dram0_0_seg` / `DRAM segment data does not fit` | LVGL สำรองกองหน่วยความจำ 64 KB ไว้ในพื้นที่คงที่ (`LV_STDLIB_BUILTIN` ค่าปริยาย) | ใช้ไฟล์ `lvgl_conf/lv_conf.h` รุ่นล่าสุด ซึ่งตั้ง `LV_USE_STDLIB_MALLOC` เป็น `LV_STDLIB_CLIB` ให้ใช้ heap ของระบบ (ถ้าใช้วิธีละเอียดกับเทมเพลต ให้แก้สามค่า `LV_USE_STDLIB_MALLOC/STRING/SPRINTF` เป็น `LV_STDLIB_CLIB`) |
 | `Multiple libraries were found for "SD.h"` | มีไลบรารี SD หลายชุดในเครื่อง | เป็นคำเตือน ไม่ใช่ข้อผิดพลาด ไม่ต้องแก้ |
 
 ถ้าข้อความผิดพลาดเรื่อง `VSPI_HOST` ยังขึ้นหลังทับไฟล์แล้ว แปลว่า TFT_eSPI ยังไม่ได้อ่านไฟล์ของเรา ตรวจว่า
