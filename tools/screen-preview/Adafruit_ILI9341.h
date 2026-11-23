@@ -7,4 +7,5 @@ public:
   Adafruit_ILI9341(SPIClass*, int8_t dc, int8_t cs = -1, int8_t rst = -1) { (void)dc; (void)cs; (void)rst; }
   void begin(uint32_t = 0) {}
   void invertDisplay(bool) {}
+  uint8_t readcommand8(uint8_t, uint8_t = 0) { return 0; }
 };

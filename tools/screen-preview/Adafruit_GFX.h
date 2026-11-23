@@ -22,6 +22,8 @@ public:
   void setTextWrap(bool){}
   void setCursor(int x,int y){ cx=x; cy=y; }
   void setRotation(uint8_t){}
+  int width() const { return 320; }
+  int height() const { return 240; }
   void print(const String& s){
     fprintf(g_ops,"TEXT %d %d %u %u %u %s\n", cx, cy, tsize, tcolor, tbg, s.c_str());
     cx += (int)s.length() * 6 * tsize;
