@@ -1,7 +1,7 @@
 /**
  * @file      CYD-ScreenTest.ino
  * @brief     เครื่องมือทดสอบจอของบอร์ด ESP32-2432S028 (CYD) หาว่าจอเป็นชิปอะไรและตั้งค่าแบบไหนถึงแสดงถูก
- * @version   S1.0.0
+ * @version   S1.1.0
  * @date      2026-11-23
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
@@ -17,15 +17,17 @@
  * ใช้เมื่อเฟิร์มแวร์ Host บนบอร์ด CYD แสดงผลเพี้ยน (สีซีด ภาพไม่เต็มจอ สีกลับด้าน)
  * สเก็ตช์นี้ทดลองสั่งจอสี่แบบสลับกัน ไดรเวอร์ ILI9341 / ST7789 อย่างละสองโหมดกลับสี
  * แล้ววาดแถบสี 8 สี แถบเทา กรอบขอบจอ และป้ายมุมทั้งสี่ เพื่อดูด้วยตาว่าแบบไหนถูก
+ * รุ่น S1.1.0 ลองทุกทิศทางการหมุน (rotation 0-3) ต่อทุกโหมดด้วย รวม 16 ชุด ใช้หาชุดที่ภาพเต็มจอและไม่กลับด้าน
  * พร้อมอ่านรหัสชิปจอส่งออกทาง Serial Monitor (115200) เพื่อส่งให้ผู้พัฒนาวิเคราะห์ต่อ
  *
  * วิธีใช้: อัปโหลด เปิด Serial Monitor 115200 กดปุ่ม BOOT (หรือพิมพ์อะไรก็ได้ใน Serial)
- * เพื่อเปลี่ยนโหมด ทีละโหมดดูว่า (1) สีเรียงถูกไหม ขาว เหลือง ฟ้า เขียว ม่วง แดง น้ำเงิน ดำ
+ * เพื่อเปลี่ยนชุด (16 ชุด = 4 โหมด x 4 ทิศทาง) ทีละชุดดูว่า (1) สีเรียงถูกไหม ขาว เหลือง ฟ้า เขียว ม่วง แดง น้ำเงิน ดำ
  * (2) กรอบขาวติดครบสี่ด้านและเห็นป้ายมุมทั้งสี่ไหม (3) สีสดไม่ซีด แล้วบอกเลขโหมดที่ถูกต้อง
  *
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | S1.1.0 | 2026-11-23 | ลองครบทุกทิศทางการหมุนจอ (0-3) ต่อทุกโหมด รวม 16 ชุด พิมพ์ชื่อชุดบนจอและทาง Serial |
  * | S1.0.0 | 2026-11-23 | สร้างเครื่องมือทดสอบจอสำหรับบอร์ด CYD |
  *
  * @warning  ยังไม่ได้ทดสอบบนฮาร์ดแวร์จริง ตรวจด้วยเครื่องมือจำลองบนเครื่อง PC เท่านั้น
@@ -40,7 +42,7 @@
 #include <Adafruit_ILI9341.h>
 #include <Adafruit_ST7789.h>
 
-#define APP_VERSION   "S1.0.0"
+#define APP_VERSION   "S1.1.0"
 
 #define PIN_SCLK      14
 #define PIN_MOSI      13
@@ -49,18 +51,17 @@
 #define PIN_DC        2
 #define PIN_BL        21
 #define PIN_BOOT      0
-#define TEST_ROTATION 1      // 1 = แนวนอน 320x240 (เหมือนเฟิร์มแวร์ Host) ลองเป็น 0 เพื่อดูแนวตั้งได้
 
 SPIClass spiTft(HSPI);
 Adafruit_ILI9341 ili(&spiTft, PIN_DC, PIN_CS, -1);     // ILI9341: DC ก่อน CS
 Adafruit_ST7789  st(&spiTft, PIN_CS, PIN_DC, -1);      // ST7789 : CS ก่อน DC
 
-const int MODE_COUNT = 4;
+const int MODE_COUNT = 16;       // 4 โหมดชิป/กลับสี x 4 ทิศทางการหมุน
 int mode = -1;
 bool bootWasDown = false;
 
 const char* modeName(int m) {
-  switch (m) {
+  switch (m & 3) {
     case 0:  return "0: ILI9341  invert OFF";
     case 1:  return "1: ILI9341  invert ON";
     case 2:  return "2: ST7789   invert ON (lib default)";
@@ -79,6 +80,8 @@ void printChipInfo() {
                 ili.readcommand8(0x0A), ili.readcommand8(0x0B), ili.readcommand8(0x0C), ili.readcommand8(0x0F));
   Serial.println("(ILI9341 แท้: ID4 = 00 93 41, RDPIXFMT = 55  ถ้าเป็น FF FF FF หรือ 00 00 00 ทั้งหมด แปลว่าอ่านค่าจากจอไม่ได้)");
 }
+
+int rotOf(int m) { return m >> 2; }   // ชุดที่ 0-3 = rotation 0, 4-7 = rotation 1, ...
 
 void drawPattern(Adafruit_GFX &g, const char* label) {
   const uint16_t bars[8] = { 0xFFFF, 0xFFE0, 0x07FF, 0x07E0, 0xF81F, 0xF800, 0x001F, 0x0000 };
@@ -103,25 +106,25 @@ void drawPattern(Adafruit_GFX &g, const char* label) {
   g.setTextColor(0xFFFF, 0x0000);
   g.setCursor(30, barH + h / 6 + 8);  g.print(label);
   char buf[40];
-  snprintf(buf, sizeof(buf), "size %d x %d   rotation %d", w, h, TEST_ROTATION);
+  snprintf(buf, sizeof(buf), "size %d x %d   rotation %d   set %d/16", w, h, rotOf(mode), mode + 1);
   g.setCursor(30, barH + h / 6 + 24); g.print(buf);
   g.setCursor(30, barH + h / 6 + 40); g.print("BOOT = next mode");
 }
 
 void applyMode(int m) {
   mode = m;
-  Serial.printf("\n==== MODE %s ====\n", modeName(m));
-  if (m <= 1) {
+  Serial.printf("\n==== SET %d/16  MODE %s  ROTATION %d ====\n", m + 1, modeName(m), rotOf(m));
+  if ((m & 3) <= 1) {
     ili.begin(40000000);
-    ili.setRotation(TEST_ROTATION);
-    ili.invertDisplay(m == 1);
+    ili.setRotation(rotOf(m));
+    ili.invertDisplay((m & 3) == 1);
     drawPattern(ili, modeName(m));
     Serial.printf("drawn %d x %d\n", ili.width(), ili.height());
   } else {
     st.init(240, 320);
     st.setSPISpeed(40000000);
-    st.setRotation(TEST_ROTATION);
-    st.invertDisplay(m == 2);
+    st.setRotation(rotOf(m));
+    st.invertDisplay((m & 3) == 2);
     drawPattern(st, modeName(m));
     Serial.printf("drawn %d x %d\n", st.width(), st.height());
   }
