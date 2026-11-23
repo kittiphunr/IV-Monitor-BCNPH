@@ -3,7 +3,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 # ทิศทางจอ: CYD_ROT=1 (ปริยาย) แนวนอน 320x240 · CYD_ROT=0 แนวตั้ง 240x320 (ใช้เทียบกับรุ่น 1.0.0)
-ROT="${CYD_ROT:-1}"
+ROT="${CYD_ROT:-1}"          # CYD_CTRL=9341 (ปริยาย) หรือ 7789 เลือกชิปจอ ใช้ตรวจว่าทั้งสองตัวเลือกคอมไพล์ผ่าน
 if [ $((ROT & 1)) -eq 1 ]; then W=320; H=240; else W=240; H=320; fi
 OUT="${1:-../../docs/screens-cyd}"
 SKETCH_DIR="${2:-../../firmware/Host-CYD28}"
@@ -15,7 +15,7 @@ cp "$SKETCH_DIR/$(basename "$SKETCH_DIR").ino" host.cpp
 # คัดลอกไฟล์ .h ทุกตัวของสเก็ตช์ ไม่ใช่แค่ web_dashboard.h
 # เพราะโค้ดวาดจอถูกแยกไปอยู่ HostScreen.h / StationScreen.h แล้ว
 for h in "$SKETCH_DIR"/*.h; do [ -e "$h" ] && cp "$h" "$(basename "$h")"; done
-g++ -std=gnu++17 -DTFT_ROTATION=$ROT -I../screen-preview -DESP_ARDUINO_VERSION_MAJOR=3 -Wall -Wno-unused-variable -Wno-format-truncation -o touchpreview driver.cpp
+g++ -std=gnu++17 -DTFT_ROTATION=$ROT -DTFT_CONTROLLER=${CYD_CTRL:-9341} -I../screen-preview -DESP_ARDUINO_VERSION_MAJOR=3 -Wall -Wno-unused-variable -Wno-format-truncation -o touchpreview driver.cpp
 ./touchpreview ops.txt
 python3 ../screen-preview/render.py ops.txt "$OUT" $W $H 3
 rm -f host.cpp web_dashboard.h HostScreen.h xpt2046_bitbang.h touchpreview ops.txt
