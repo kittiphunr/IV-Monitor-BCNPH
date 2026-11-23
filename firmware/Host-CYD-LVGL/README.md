@@ -46,19 +46,16 @@
 ค่าตรงกับ [OttoMeister/ESP32-2432S028R](https://github.com/OttoMeister/ESP32-2432S028R) (`platformio.ini`) การทับไฟล์
 กระทบทุกโปรเจ็กต์ที่ใช้ TFT_eSPI ในเครื่องเดียวกัน ไฟล์ไม่ประกาศ `TFT_BL` เพราะเฟิร์มแวร์คุมไฟหลังจอด้วย PWM เอง
 
-### 3. ค่าตั้ง LVGL (`lv_conf.h`)
-1. คัดลอก `Documents/Arduino/libraries/lvgl/lv_conf_template.h` ไปไว้ที่ `Documents/Arduino/libraries/lv_conf.h`
-   (ข้างโฟลเดอร์ `lvgl` ไม่ใช่ข้างใน)
-2. แก้ในไฟล์ที่คัดลอก:
+### 3. ค่าตั้ง LVGL (`lv_conf.h`) — ถ้าข้ามขั้นนี้จะขึ้น `fatal error: ../../../../lv_conf.h: No such file or directory`
+LVGL หาไฟล์ `lv_conf.h` ที่ `Documents/Arduino/libraries/lv_conf.h` (**ข้างโฟลเดอร์ `lvgl` ไม่ใช่ข้างใน**)
 
-| ค่า | ตั้งเป็น | เหตุผล |
-|---|---|---|
-| บรรทัด `#if 0` บนสุด (`Set this to "1" to enable content`) | `#if 1` | เปิดใช้ไฟล์ค่าตั้ง |
-| `LV_COLOR_DEPTH` | `16` | จอ RGB565 |
-| `LV_FONT_MONTSERRAT_12` / `_16` / `_20` / `_28` / `_48` | `1` | ฟอนต์ที่เฟิร์มแวร์ใช้ |
-| `LV_USE_TFT_ESPI` | `0` (ปริยาย) | เฟิร์มแวร์เขียนตัวส่งภาพเอง ไม่ใช้ตัวขับสำเร็จรูป |
+**วิธีง่าย (แนะนำ):** คัดลอกไฟล์สำเร็จรูป `lvgl_conf/lv_conf.h` ในโฟลเดอร์นี้ไปไว้ที่
+`Documents/Arduino/libraries/lv_conf.h` ไฟล์นี้ตั้งเฉพาะค่าที่ต้องใช้ (จอ RGB565 และฟอนต์ Montserrat 12/16/20/28/48)
+ค่าอื่นทั้งหมดใช้ค่าปริยายของ LVGL เอง
 
-ชื่อและค่าปริยายของตัวแปรในเทมเพลตอาจต่างตามเวอร์ชัน LVGL ให้ค้นชื่อในไฟล์เทมเพลตของเวอร์ชันที่ติดตั้ง
+**วิธีละเอียด:** คัดลอก `lv_conf_template.h` ของไลบรารีไปเป็น `lv_conf.h` แล้วแก้ `#if 0` บนสุดเป็น `#if 1`,
+`LV_COLOR_DEPTH` เป็น `16` และเปิด `LV_FONT_MONTSERRAT_12/16/20/28/48` เป็น `1`
+ชื่อและค่าปริยายของตัวแปรอาจต่างตามเวอร์ชัน LVGL ให้ค้นชื่อในไฟล์เทมเพลตของเวอร์ชันที่ติดตั้ง
 
 ### 4. ตั้งค่าบอร์ดใน Arduino IDE
 เหมือนสาย Host-CYD28: Board **ESP32 Dev Module**, Partition Scheme **Huge APP (3MB No OTA/1MB SPIFFS)**
