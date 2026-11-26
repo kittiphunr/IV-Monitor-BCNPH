@@ -24,6 +24,7 @@
 | `tools/touch-preview/` | เรนเดอร์ภาพหน้าจอของเฟิร์มแวร์ Host จอสัมผัส v4.9.0 บน PC |
 | `tools/cyd-preview/` | เรนเดอร์ภาพหน้าจอของเฟิร์มแวร์ Host บอร์ด CYD ทุกหน้า |
 | `tools/cyd-touch-test/` | ทดสอบไดรเวอร์ทัช XPT2046 แบบ bit-bang กับแบบจำลองชิป |
+| `tools/buzzer-pattern-test/` | ทดสอบจังหวะเสียงเตือนของ Station ทั้งบัซเซอร์ Passive และ Active |
 | `tools/lvgl-preview/` | เรนเดอร์ภาพหน้าจอของ Host-CYD-LVGL ผ่านตัวแทน LVGL (ไม่ใช่ของจริง) |
 | `tools/lvgl-tap-test/` | ทดสอบโซนแตะและเส้นทางคลิก LVGL ของ Host-CYD-LVGL |
 | `tools/host-preview/` | เรนเดอร์ภาพหน้าจอ TFT ของเฟิร์มแวร์ Host v4.8.0-TFT บน PC |
