@@ -74,5 +74,17 @@ static int bzRun() {
   }
   BCK(runAlert(ALERT_NONE).empty(), "Passive: ไม่มีสัญญาณเตือนต้องเงียบ");
 #endif
+#ifdef HAS_CALBEEP
+  // เสียงบี๊ปตอนคาลิเบรต (เฉพาะสาย Station-Stable): เปิดแล้วต้องปิดเองเมื่อครบเวลา ทั้ง Passive และ Active
+  g_bz.clear(); calBeepUntil = 0;
+  calBeep(2000, 100);
+  unsigned long c0 = g_millis;
+  while (g_millis - c0 < 300) { calServiceBeep(); g_millis += 5; }
+  auto cb = beepsOf();
+  BCK(cb.size() == 1 && cb[0].dur >= 95 && cb[0].dur <= 110, "เสียงบี๊ปคาลิเบรตเปิดราว 100 ms แล้วปิดเอง");
+#if !BUZZER_ACTIVE
+  BCK(cb.size() == 1 && cb[0].hz == 2000, "เสียงบี๊ปคาลิเบรต Passive ใช้โทน 2000 Hz เหมือนเดิม");
+#endif
+#endif
   return bzBad ? 1 : 0;
 }
