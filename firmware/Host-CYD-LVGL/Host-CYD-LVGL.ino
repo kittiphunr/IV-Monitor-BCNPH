@@ -105,7 +105,7 @@ esp_reset_reason_t bootResetReason = ESP_RST_UNKNOWN;
 #ifndef TFT_ROTATION            // (รับจาก Host-CYD28 v1.1.0) เพิ่ม: ครอบด้วย #ifndef เพื่อให้เครื่องมือตรวจกำหนดทิศทางจากภายนอกได้
 #define TFT_ROTATION        1   // (รับจาก Host-CYD28 v1.1.0) แก้: 1 = แนวนอน 320x240 (ปริยาย) · 3 = แนวนอนกลับด้าน · 0 = แนวตั้ง 240x320 · 2 = แนวตั้งกลับด้าน
 #endif
-#define TFT_INVERT          0   // 1 = เปิดโหมดกลับสี (ใช้เมื่อสีกลับด้าน) ปริยาย 0 = ปิด ใช้ได้ทั้ง ILI9341, ST7789 และ TFT_eSPI
+#define TFT_INVERT          1   // 1 = เปิดโหมดกลับสี (ใช้เมื่อสีกลับด้าน) ปริยาย 0 = ปิด ใช้ได้ทั้ง ILI9341, ST7789 และ TFT_eSPI
 
 // ---- ทัช XPT2046 (ขาแยกจากจอ ใช้ไลบรารี XPT2046_Touchscreen บนบัส VSPI) ----
 #define TOUCH_CLK_PIN       25
