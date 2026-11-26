@@ -49,6 +49,7 @@ public:
   void reserve(unsigned int n) { s.reserve(n); }
   const char* c_str() const { return s.c_str(); }
   int toInt() const { return atoi(s.c_str()); }
+  void trim() { size_t a = s.find_first_not_of(" \t\r\n"); if (a == std::string::npos) { s.clear(); return; } size_t b = s.find_last_not_of(" \t\r\n"); s = s.substr(a, b - a + 1); }
   String substring(unsigned int from, unsigned int to) const { return String(s.substr(from, to - from)); }
   String substring(unsigned int from) const { return String(s.substr(from)); }
   float toFloat() const { return (float)atof(s.c_str()); }
