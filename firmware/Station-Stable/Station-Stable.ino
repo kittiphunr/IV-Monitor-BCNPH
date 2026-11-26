@@ -1,8 +1,8 @@
 /**
  * @file      Station-Stable.ino
  * @brief     เฟิร์มแวร์เครื่องประจำเตียง สายเสถียร ใช้อัลกอริทึมตรวจจับและการคาลิเบรตแบบเดิม
- * @version   7.5.7
- * @date      2026-09-23
+ * @version   7.5.8
+ * @date      2026-11-26
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
  * @par Organization
@@ -11,7 +11,7 @@
  * อาจารย์ที่ปรึกษา ดร.กรรณิการ์ กาศสมบูรณ์
  *
  * @par Hardware
- * ESP32-S3 Super Mini + จอ TFT 1.47" (ST7789 SPI 172x320) + Passive Buzzer
+ * ESP32-S3 Super Mini + จอ TFT 1.47" (ST7789 SPI 172x320) + Passive Buzzer (หรือ Active Buzzer เมื่อตั้ง BUZZER_ACTIVE 1)
  * เซนเซอร์หยด TCRT5000 แบบสะท้อนแสง
  *
  * @par Description
@@ -22,6 +22,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 7.5.8 | 2026-11-26 | รองรับบัซเซอร์ Active เป็นตัวเลือกตอนคอมไพล์ (`BUZZER_ACTIVE 1`) ตามสายหลัก Station 7.11.0 ค่าปริยายยังเป็น Passive เหมือนเดิมทุกอย่าง |
  * | 7.5.7 | 2026-09-28 | ไฟสถานะการเชื่อมต่อดูสองทาง ขึ้น ONE-WAY เมื่อได้ยิน Host แต่ Host ไม่ได้ยินเตียง |
  * | 7.5.6 | 2026-09-23 | จำนวนหยดสะสมรอดการรีบูตและไฟดับแล้ว เพิ่มสุนัขเฝ้าบ้าน และแก้การนับเวลาที่พังเมื่อ millis() วนรอบ |
  * | 7.5.5 | 2026-09-23 | ย้ายโค้ดวาดจอออกไปไว้ที่ `StationScreen.h` ตรรกะไม่เปลี่ยนแม้แต่บรรทัดเดียว |
@@ -190,7 +191,7 @@
 esp_reset_reason_t bootResetReason = ESP_RST_UNKNOWN;
 
 
-#define APP_VERSION         "7.5.7"
+#define APP_VERSION         "7.5.8"
 
 #define TFT_CS              9
 #define TFT_DC              10
@@ -207,6 +208,25 @@ esp_reset_reason_t bootResetReason = ESP_RST_UNKNOWN;
 
 #define SENSOR_AO_PIN       4
 #define BUZZER_PIN          3
+
+// ---- ชนิดบัซเซอร์ ([7.5.8] เพิ่ม ตามสายหลัก Station 7.11.0) ----
+// 0 = Passive (ปริยาย) เฟิร์มแวร์สร้างความถี่เองด้วย tone() แยกชนิดสัญญาณเตือนด้วยโทนเสียงต่างกัน
+// 1 = Active  มีวงจรกำเนิดเสียงในตัว ความถี่คงที่ เฟิร์มแวร์แค่เปิด/ปิดขา จึงแยกชนิดสัญญาณเตือนด้วยจังหวะบี๊ปแทน
+//     ถ้าใช้รุ่น 5V หรือกินกระแสเกิน 20 mA ต้องมีทรานซิสเตอร์ NPN ขับ ห้ามต่อขา GPIO ตรง (ดู hardware/README.md)
+//     โมดูลบางตัวทริกที่ระดับต่ำ ให้ตั้ง BUZZER_ON_LEVEL เป็น LOW
+#ifndef BUZZER_ACTIVE
+#define BUZZER_ACTIVE       0
+#endif
+#ifndef BUZZER_ON_LEVEL
+#define BUZZER_ON_LEVEL     HIGH
+#endif
+#if BUZZER_ACTIVE
+  #define BUZZER_ON(freq)   digitalWrite(BUZZER_PIN, BUZZER_ON_LEVEL)             // ความถี่ถูกละเว้น (Active ความถี่คงที่)
+  #define BUZZER_OFF()      digitalWrite(BUZZER_PIN, (BUZZER_ON_LEVEL == HIGH) ? LOW : HIGH)
+#else
+  #define BUZZER_ON(freq)   tone(BUZZER_PIN, freq)
+  #define BUZZER_OFF()      noTone(BUZZER_PIN)
+#endif
 #define BTN_PIN             2
 #define RGB_LED_PIN         48
 
@@ -691,7 +711,7 @@ bool isNearEndPending(uint8_t code) {
 void acknowledgeNearEnd() {
   nearEndAckRequest = true;
   nearChimeRemaining = 0;
-  noTone(BUZZER_PIN);
+  BUZZER_OFF();
   beepNonBlocking(2600, 40);
 }
 
@@ -723,14 +743,17 @@ void setLedColor(uint8_t r, uint8_t g, uint8_t b) {
 }
 
 void beepNonBlocking(uint16_t freq, uint16_t durationMs) {
-  tone(BUZZER_PIN, freq);
+#if BUZZER_ACTIVE
+  if (durationMs < 30) durationMs = 30;      // [7.5.8] เพิ่ม: Active ต้องเปิดอย่างน้อยราว 30 ms จึงได้ยินชัด
+#endif
+  BUZZER_ON(freq);
   buzzerBeepUntil = millis() + durationMs;
 }
 
 void modalSafeBeep(uint16_t freq, uint16_t durationMs) {
-  tone(BUZZER_PIN, freq);
+  BUZZER_ON(freq);
   delay(durationMs);
-  noTone(BUZZER_PIN);
+  BUZZER_OFF();
   buzzerBeepUntil = 0;
 }
 
@@ -750,7 +773,7 @@ void playWelcomeMelody() {
 void handlePassiveBuzzerEngine(uint8_t code) {
   unsigned long now = millis();
   if (buzzerBeepUntil > 0 && now >= buzzerBeepUntil) {
-    noTone(BUZZER_PIN);
+    BUZZER_OFF();
     buzzerBeepUntil = 0;
   }
 
@@ -773,12 +796,34 @@ void handlePassiveBuzzerEngine(uint8_t code) {
   if (now < snoozeUntilTime) return;
   if (now < buzzerNextBeepTime) return;
 
+#if BUZZER_ACTIVE
+  // [7.5.8] เพิ่ม: Active ความถี่คงที่ จึงแยกชนิดสัญญาณด้วยจังหวะ (จำนวนครั้ง ความยาว และช่วงหยุดหลังชุด) เหมือนสายหลัก
+  //   สายพับ      : 3 ครั้ง ครั้งละ 150 ms หยุด 100 ms แล้วเงียบ 900 ms
+  //   เร็วเกิน    : 4 ครั้งถี่ ๆ ครั้งละ 60 ms หยุด 60 ms แล้วเงียบ 900 ms
+  //   ช้าเกิน     : 1 ครั้งยาว 350 ms แล้วเงียบ 1200 ms
+  //   ให้ครบแล้ว : 2 ครั้ง ครั้งละ 250 ms หยุด 200 ms แล้วเงียบ 1800 ms
+  // รูปแบบเหล่านี้ออกแบบเอง ไม่ใช่มาตรฐานเสียงเตือนทางการแพทย์ (เช่น IEC 60601-1-8)
+  static uint8_t burstLeft = 0, burstCode = 0;
+  uint8_t bursts; uint16_t onMs, gapMs, pauseMs;
+  switch (code) {
+    case ALERT_OCCLUSION: bursts = 3; onMs = 150; gapMs = 100; pauseMs = 900;  break;
+    case ALERT_TOO_FAST:  bursts = 4; onMs = 60;  gapMs = 60;  pauseMs = 900;  break;
+    case ALERT_TOO_SLOW:  bursts = 1; onMs = 350; gapMs = 0;   pauseMs = 1200; break;
+    case ALERT_COMPLETE:  bursts = 2; onMs = 250; gapMs = 200; pauseMs = 1800; break;
+    default: return;
+  }
+  if (burstCode != code || burstLeft == 0) { burstCode = code; burstLeft = bursts; }
+  beepNonBlocking(0, onMs);
+  burstLeft--;
+  buzzerNextBeepTime = now + onMs + (burstLeft > 0 ? gapMs : pauseMs);
+#else
   switch (code) {
     case ALERT_OCCLUSION: beepNonBlocking(1800, 150); buzzerNextBeepTime = now + 900;  break;
     case ALERT_TOO_FAST:  beepNonBlocking(2200, 80);  buzzerNextBeepTime = now + 700;  break;
     case ALERT_TOO_SLOW:  beepNonBlocking(1200, 120); buzzerNextBeepTime = now + 1200; break;
     case ALERT_COMPLETE:  beepNonBlocking(1500, 250); buzzerNextBeepTime = now + 1500; break;
   }
+#endif
 }
 
 void updateStatusLed(uint8_t code) {
@@ -1370,9 +1415,9 @@ bool calButtonPressed() { return digitalRead(BTN_PIN) == LOW; }
 // ลูปหลักไม่ได้ทำงานระหว่างอยู่ในหน้าคาลิเบรต จึงต้องมีตัวปิดเสียงของตัวเอง
 // (ใช้ beepNonBlocking ตรงนี้ไม่ได้ เพราะไม่มีใครเรียก noTone ให้)
 unsigned long calBeepUntil = 0;
-void calBeep(uint16_t freq, uint16_t ms) { tone(BUZZER_PIN, freq); calBeepUntil = millis() + ms; }
+void calBeep(uint16_t freq, uint16_t ms) { BUZZER_ON(freq); calBeepUntil = millis() + ms; }
 void calServiceBeep() {
-  if (calBeepUntil && millis() >= calBeepUntil) { noTone(BUZZER_PIN); calBeepUntil = 0; }
+  if (calBeepUntil && millis() >= calBeepUntil) { BUZZER_OFF(); calBeepUntil = 0; }
 }
 
 void calWaitRelease() {
@@ -1672,7 +1717,7 @@ void calVerify() {
 // ตัวคุมลำดับทั้งหมด (เรียกจากการกดปุ่มค้าง 3 วินาที)
 // ============================================================================
 void executeButtonCalibrationWizard() {
-  noTone(BUZZER_PIN);
+  BUZZER_OFF();
   buzzerBeepUntil = 0;
 
   int keepTrig = dropTriggerDelta, keepRel = dropReleaseDelta;
@@ -1695,7 +1740,7 @@ void executeButtonCalibrationWizard() {
     delay(1200);
   }
 
-  noTone(BUZZER_PIN);
+  BUZZER_OFF();
   calBeepUntil = 0;
   buzzerBeepUntil = 0;
 
@@ -1824,7 +1869,7 @@ void togglePause() {
     }
   } else {
     soundStop();
-    noTone(BUZZER_PIN);
+    BUZZER_OFF();
   }
   stateNeedsRedraw = true;
 }
@@ -2195,7 +2240,7 @@ void handleButton() {
         togglePause();                         // หยุดนับ เช่น ขณะเปลี่ยนถุง/แก้สายพับ
       } else {
         snoozeUntilTime = now + SNOOZE_MS;
-        noTone(BUZZER_PIN);
+        BUZZER_OFF();
         buzzerBeepUntil = 0;
         soundClick();
       }
@@ -2221,7 +2266,7 @@ void handleButton() {
 
     if (clicks >= 3) {
       soundClick();
-      noTone(BUZZER_PIN);
+      BUZZER_OFF();
       tempConfigStationId = currentStationId;
       configAutoSaveTimeout = now + 4000;
       currentState = STATE_CONFIG_ID;
@@ -2259,7 +2304,7 @@ void setup() {
   setenv("TZ", "ICT-7", 1);
   tzset();
 
-  pinMode(BUZZER_PIN, OUTPUT); noTone(BUZZER_PIN);
+  pinMode(BUZZER_PIN, OUTPUT); BUZZER_OFF();
   pinMode(TFT_BLK, OUTPUT); digitalWrite(TFT_BLK, HIGH);
   pinMode(BTN_PIN, INPUT_PULLUP);
   pinMode(SENSOR_AO_PIN, INPUT);
