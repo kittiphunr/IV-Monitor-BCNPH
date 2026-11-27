@@ -84,7 +84,7 @@ int main(int argc, char **argv) {
   handleCommand('i'); handleCommand('i'); handleCommand('b'); handleCommand('b');
   CHECK(invertOn == i1 && bgrOn == b1, "i/b สลับสองครั้งต้องกลับมาเดิม");
   for (int r = 0; r < 4; r++) { handleCommand('r'); checkBounds("หมุนจอ"); }
-  CHECK(rotation == 1, "หมุนครบ 4 ครั้งต้องกลับมาเดิม");
+  CHECK(rotation == 3, "หมุนครบ 4 ครั้งต้องกลับมาเดิม");
   handleCommand('h');
   // โหมดเดินเอง
   handleCommand('a'); CHECK(autoMode, "a เปิดโหมดเดินเอง");

@@ -1,7 +1,7 @@
 /**
  * @file      CYD-ColorTest.ino
  * @brief     เครื่องมือทดสอบสีจอบอร์ด CYD หน้าเดียว ไล่ครบทุกชุดค่า (ชิปจอ x กลับสี x ลำดับสี) หาค่าที่ถูกต้อง
- * @version   S1.0.1
+ * @version   S1.0.2
  * @date      2026-11-27
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
@@ -29,6 +29,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | S1.0.2 | 2026-11-27 | กดชุดถัดไปบน ST7789 วนทีละบิต (INV0/BGR0 -> INV1/BGR0 -> INV1/BGR1 -> INV0/BGR1) กดครั้งแรกจึงลองกลับสีทันที · ค่าเริ่มต้นเป็น BGR=0 และ ROT=3 ตามผลถ่ายภาพจากบอร์ดจริง (BGR=1 ทำให้แดง/น้ำเงินสลับ ROT=1 ภาพกลับหัว 180 องศา) |
  * | S1.0.1 | 2026-11-27 | เริ่มที่ ST7789 (START_PANEL 1) ตามผลบนบอร์ดจริงที่จอ ILI9341 ให้ภาพไม่เต็มจอและแดง/น้ำเงินสลับ ตั้ง 0 ถ้าบอร์ดเป็นจอ ILI9341 |
  * | S1.0.0 | 2026-11-27 | สร้างเครื่องมือทดสอบสีหน้าเดียว ไล่ชุดค่าได้ด้วยปุ่ม BOOT |
  *
@@ -40,7 +41,7 @@
 #include <Adafruit_ILI9341.h>
 #include <Adafruit_ST7789.h>
 
-#define APP_VERSION "S1.0.1"
+#define APP_VERSION "S1.0.2"
 
 // ขาของบอร์ด CYD (ตายตัวตามผังวงจร)
 #define PIN_SCK 14
@@ -59,8 +60,8 @@ Adafruit_ST7789 *st = nullptr;
 
 uint8_t panelType = START_PANEL;   // 0 = ILI9341, 1 = ST7789
 bool invertOn = false;
-bool bgrOn = true;
-uint8_t rotation = 1;
+bool bgrOn = false;      // ผลจากบอร์ดจริง: BGR=0 ให้ลำดับสีถูก
+uint8_t rotation = 3;    // ผลจากบอร์ดจริง: ROT=1 ภาพกลับหัวเมื่อถือพอร์ต USB ไว้ด้านขวา
 bool autoMode = false;
 uint32_t lastAuto = 0;
 
@@ -168,7 +169,7 @@ static void printState() {
 // ชุดถัดไป: ST7789 วน 4 ชุด (กลับสี x BGR) · ILI9341 วน 2 ชุด (กลับสีอย่างเดียว เพราะไลบรารีกำหนดลำดับสีเอง)
 static void nextSet() {
   if (panelType == 1) {
-    if (!bgrOn) { bgrOn = true; invertOn = !invertOn; } else bgrOn = false;
+    if (invertOn == bgrOn) invertOn = !invertOn; else bgrOn = !bgrOn;   // วนแบบเกรย์โค้ด: (0,0) -> (1,0) -> (1,1) -> (0,1) ทีละบิต
   } else {
     invertOn = !invertOn;
   }
