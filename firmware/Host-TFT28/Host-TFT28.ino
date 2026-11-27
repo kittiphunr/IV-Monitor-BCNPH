@@ -1,8 +1,8 @@
 /**
  * @file      Host-TFT28.ino
  * @brief     เฟิร์มแวร์เครื่องส่วนกลาง รุ่นจอสี TFT 2.8 นิ้ว
- * @version   4.9.1-TFT
- * @date      2026-09-23
+ * @version   4.10.0-TFT
+ * @date      2026-11-27
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
  * @par Organization
@@ -11,7 +11,7 @@
  * อาจารย์ที่ปรึกษา ดร.กรรณิการ์ กาศสมบูรณ์
  *
  * @par Hardware
- * ESP32-S3 Dev Module (N16R8) + จอสี TFT 2.8" (ST7789V SPI 240x320) + Passive Buzzer
+ * ESP32-S3 Dev Module (N16R8) + จอสี TFT 2.8" (ST7789V SPI 240x320) + ปุ่มเดียว (GPIO 4) + บัซเซอร์ Passive หรือ Active (ตั้ง BUZZER_ACTIVE 1)
  *
  * @par Description
  * ทำหน้าที่เหมือนรุ่นจอ OLED ทุกอย่าง ต่างกันที่การแสดงผลบนจอสีแนวนอน 320x240
@@ -21,6 +21,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 4.10.0-TFT | 2026-11-27 | **ปุ่มเดียว** แทนสองปุ่มเดิม (คลิก/ดับเบิลคลิก/ทริปเปิลคลิก/กดค้าง) และรองรับบัซเซอร์ Active เป็นตัวเลือกตอนคอมไพล์ (`BUZZER_ACTIVE 1`) ค่าปริยายยังเป็น Passive |
  * | 4.9.1-TFT | 2026-09-28 | Sync บอกเตียงด้วยว่า Host ได้ยินมันอยู่หรือไม่ (บิตว่างใน flags ขนาดโครงสร้างไม่เปลี่ยน) |
  * | 4.9.0-TFT | 2026-09-23 | เตียงที่หายไประหว่างให้น้ำเกลือมีเสียงเตือนแล้ว เพิ่มสุนัขเฝ้าบ้าน รายงานสาเหตุการรีบูต และปฏิเสธแพ็กเก็ตที่ค่าเป็นไปไม่ได้ |
  * | 4.8.1-TFT | 2026-09-23 | ย้ายโค้ดวาดจอออกไปไว้ที่ `HostScreen.h` ตรรกะไม่เปลี่ยนแม้แต่บรรทัดเดียว |
@@ -36,6 +37,14 @@
  *
  * @par บันทึกการเปลี่ยนแปลงโดยละเอียด
  * เก็บข้อความเดิมไว้ทั้งหมด เพราะเหตุผลเชิงเทคนิคในนั้นหาจากที่อื่นไม่ได้
+ *  เปลี่ยนใน V4.10.0-TFT: ปุ่มเดียวและบัซเซอร์ Active
+ *   - รวมปุ่ม PAGE (GPIO 5) เข้ากับปุ่ม POWER (GPIO 4) เหลือปุ่มเดียว ขา GPIO 5 ว่าง GPIO 4 ยังเป็นขาปลุกจาก deep sleep
+ *     เหตุการณ์สำคัญตอบสนองทันที: กดสั้นขณะมีเสียงเตือน = พักเสียง 2 นาที, ขณะมีเตือนใกล้หมด = รับทราบ
+ *     นอกนั้นนับคลิกภายใน 280 ms: คลิกเดียว = เลื่อนดูเตียงถัดไป (หรือปลุกจอ/ออกจากโหมดนาฬิกา)
+ *     ดับเบิลคลิก = โหมดนาฬิกา · ทริปเปิลคลิก = ปิด/เปิดจอ · กดค้าง 2 วินาที = ปิดเครื่อง (แถบความคืบหน้าเริ่มที่ 0.45 วินาที)
+ *   - BUZZER_ACTIVE (ปริยาย 0 = Passive เหมือนเดิม) 1 = Active เปิด/ปิดขาแทนการสร้างความถี่ รูปแบบจังหวะเตือนไม่เปลี่ยน
+ *     (Host มีเสียงเตือนวิกฤตแบบเดียว) ถ้าใช้ Active 5V หรือกินกระแสเกิน 20 mA ต้องมีทรานซิสเตอร์ NPN ขับ ห้ามต่อ GPIO ตรง
+ *
  *  เปลี่ยนใน V4.8.0-TFT: เปลี่ยนจอ OLED 1.3" ขาวดำ -> จอสี TFT 2.8" (ST7789V 240x320)
  *   - ใช้จอแนวนอน 320x240 ออกแบบหน้าจอใหม่แนวทาง "FOCUS"
  *     ครึ่งซ้าย = เตียงที่ต้องดูตอนนี้ (ตัวเลขใหญ่ อ่านได้จากระยะไกล)
@@ -107,7 +116,7 @@
 esp_reset_reason_t bootResetReason = ESP_RST_UNKNOWN;
 
 
-#define APP_VERSION         "4.9.1-TFT"
+#define APP_VERSION         "4.10.0-TFT"
 #define DEV_NAME            "กิตติพันธ์ รัตนคร"
 #define DEV_ROLE            "นักวิชาการคอมพิวเตอร์"
 #define DEV_INSTITUTION     "มหาวิทยาลัยมหาจุฬาลงกรณราชวิทยาลัย วิทยาเขตแพร่"
@@ -116,9 +125,21 @@ esp_reset_reason_t bootResetReason = ESP_RST_UNKNOWN;
 // กำหนดขาเชื่อมต่อฮาร์ดแวร์ฝั่ง Host
 // ----------------------------------------------------------------------------
 #define HOST_BAT_ADC_PIN    1   // ขาอ่านแบตเตอรี่ Host
-#define POWER_BTN_PIN       4   // ปุ่มเปิด-ปิดหน้าจอ / พักเสียงเตือน (Snooze) — ต้องเป็น RTC GPIO (0-21)
-#define PAGE_BTN_PIN        5   // ปุ่มเปลี่ยนหน้าจอ / ดับเบิ้ลคลิกเรียก Screensaver
-#define BUZZER_PIN          7   // ขาต่อลำโพง Passive Buzzer
+#define POWER_BTN_PIN       4   // ปุ่มเดียวของเครื่อง ([4.10.0-TFT] แก้) ทำหน้าที่ทั้งหมด และเป็นขาปลุกจาก deep sleep (ต้องเป็น RTC GPIO 0-21) เดิมคือปุ่มเปิด-ปิดหน้าจอ / พักเสียงเตือน (Snooze) — ต้องเป็น RTC GPIO (0-21)
+// [4.10.0-TFT] แก้: เอา PAGE_BTN_PIN (GPIO 5) ออก รวมเข้ากับปุ่มเดียวแล้ว
+#define BUZZER_PIN          7   // ขาต่อบัซเซอร์
+
+// ---- ชนิดบัซเซอร์ ([4.10.0-TFT] เพิ่ม) ----
+// 0 = Passive (ปริยาย) เฟิร์มแวร์สร้างความถี่เองด้วย tone()
+// 1 = Active  มีวงจรกำเนิดเสียงในตัว ความถี่คงที่ เฟิร์มแวร์แค่เปิด/ปิดขา (เปิดไม่ต่ำกว่า 30 ms)
+//     ถ้าใช้รุ่น 5V หรือกินกระแสเกิน 20 mA ต้องมีทรานซิสเตอร์ NPN ขับ ห้ามต่อขา GPIO ตรง (ดู firmware/Host-TFT28/README.md)
+//     โมดูลบางตัวทริกที่ระดับต่ำ ให้ตั้ง BUZZER_ON_LEVEL เป็น LOW
+#ifndef BUZZER_ACTIVE
+#define BUZZER_ACTIVE       0
+#endif
+#ifndef BUZZER_ON_LEVEL
+#define BUZZER_ON_LEVEL     HIGH
+#endif
 
 // ---- จอ TFT 2.8" ST7789V (SPI 14 ขา ไม่มีทัช) ----
 // ต่อสาย: VCC->3V3, GND->GND, SCL/SCK->TFT_SCLK, SDA/MOSI->TFT_MOSI,
@@ -596,24 +617,62 @@ int calculateBatteryPct(float volts) {
   return pct;
 }
 
+// ---- ตัวช่วยบัซเซอร์ ([4.10.0-TFT] เพิ่ม) ----
+// ทุกจุดที่เคยเรียก tone()/noTone() ตรง ๆ เรียกผ่านตัวช่วยนี้ เพื่อสลับ Passive/Active ที่เดียว
+unsigned long buzzerOffAt = 0;      // Active: เวลาที่ต้องปิดขา (0 = ไม่ได้รออยู่)
+
+void buzzStop() {
+#if BUZZER_ACTIVE
+  digitalWrite(BUZZER_PIN, (BUZZER_ON_LEVEL == HIGH) ? LOW : HIGH);
+  buzzerOffAt = 0;
+#else
+  noTone(BUZZER_PIN);
+#endif
+}
+
+void buzzBeep(unsigned int freq, unsigned long ms) {     // ไม่บล็อก
+#if BUZZER_ACTIVE
+  (void)freq;                                            // Active ความถี่คงที่ ละเว้นค่านี้
+  if (ms < 30) ms = 30;
+  digitalWrite(BUZZER_PIN, BUZZER_ON_LEVEL);
+  buzzerOffAt = millis() + ms;
+  if (buzzerOffAt == 0) buzzerOffAt = 1;
+#else
+  tone(BUZZER_PIN, freq, ms);
+#endif
+}
+
+void serviceBuzzer() {                                   // เรียกทุกรอบ loop() ให้ Active ปิดขาเมื่อครบเวลา
+#if BUZZER_ACTIVE
+  if (buzzerOffAt != 0 && (long)(millis() - buzzerOffAt) >= 0) buzzStop();
+#endif
+}
+
+void buzzBlocking(unsigned int freq, unsigned long ms, unsigned long gapMs) {   // ใช้ในเมโลดี้ที่หยุดรอเอง
+#if BUZZER_ACTIVE
+  (void)freq;
+  digitalWrite(BUZZER_PIN, BUZZER_ON_LEVEL);
+  delay(ms);
+  buzzStop();
+  delay(gapMs);
+#else
+  tone(BUZZER_PIN, freq, ms);
+  delay(ms + gapMs);
+#endif
+}
+
 void playWelcomeMelody() {
   int melody[] = { 523, 659, 784, 1046 };
   int durations[] = { 80, 80, 80, 200 };
-  for (int i = 0; i < 4; i++) {
-    tone(BUZZER_PIN, melody[i], durations[i]);
-    delay(durations[i] + 30);
-  }
-  noTone(BUZZER_PIN);
+  for (int i = 0; i < 4; i++) buzzBlocking(melody[i], durations[i], 30);
+  buzzStop();
 }
 
 void playShutdownMelody() {
   int melody[] = { 1046, 784, 659, 523 };
   int durations[] = { 80, 80, 80, 250 };
-  for (int i = 0; i < 4; i++) {
-    tone(BUZZER_PIN, melody[i], durations[i]);
-    delay(durations[i] + 30);
-  }
-  noTone(BUZZER_PIN);
+  for (int i = 0; i < 4; i++) buzzBlocking(melody[i], durations[i], 30);
+  buzzStop();
 }
 
 // ----------------------------------------------------------------------------
@@ -749,7 +808,7 @@ void handleNearEndChime() {
     }
   }
   if (nearChimeRemaining > 0 && now >= nearChimeNextBeep) {
-    tone(BUZZER_PIN, 2000, 70);
+    buzzBeep(2000, 70);
     nearChimeNextBeep = now + 220;
     nearChimeRemaining--;
   }
@@ -765,126 +824,111 @@ void handleBuzzerAlarm() {
 
   unsigned long now = millis();
   if (beepPhase == 0 && now - lastBuzzerAlarmTime >= 2500) {
-    tone(BUZZER_PIN, 1500, 100);
+    buzzBeep(1500, 100);
     lastBuzzerAlarmTime = now;
     beepPhase = 1;
   } else if (beepPhase == 1 && now - lastBuzzerAlarmTime >= 200) {
-    tone(BUZZER_PIN, 1500, 100);
+    buzzBeep(1500, 100);
     beepPhase = 0;
   }
 }
 
-void checkSmartphonePowerButton() {
+// ----------------------------------------------------------------------------
+// ปุ่มเดียว ([4.10.0-TFT] เพิ่ม รวมปุ่ม POWER และปุ่ม PAGE เดิม)
+//   กดสั้นขณะมีเสียงเตือน        = พักเสียง 2 นาที (ทันที ไม่รอนับคลิก)
+//   กดสั้นขณะมีเตือนใกล้หมด       = รับทราบ (ทันที)
+//   คลิกเดียว                   = เลื่อนดูเตียงถัดไป (ปลุกจอ / ออกจากโหมดนาฬิกาถ้าอยู่ในนั้น)
+//   ดับเบิลคลิก                  = โหมดนาฬิกา
+//   ทริปเปิลคลิก                 = ปิด/เปิดจอ
+//   กดค้างครบ 2 วินาที           = ปิดเครื่อง (แถบความคืบหน้าเริ่มที่ 0.45 วินาที ปล่อยก่อนครบ = ยกเลิก)
+// ----------------------------------------------------------------------------
+#define BTN_CLICK_MAX_MS     400     // กดนานกว่านี้ไม่ถือเป็นคลิก
+#define BTN_MULTI_WINDOW_MS  280     // รอคลิกถัดไปภายในเวลานี้
+#define BTN_PROGRESS_FROM_MS 450
+#define BTN_POWEROFF_MS      2000
+
+void redrawAfterButton() {
+  isPowerOffProgressActive = false;
+  uiMode = -1;
+  updateHostDisplay();
+}
+
+void checkMultifunctionButton() {
   static unsigned long btnPressStart = 0;
   static unsigned long lastProgressFrameTime = 0;
+  static unsigned long lastReleaseTime = 0;
   static bool isHolding = false;
+  static int clickCount = 0;
 
+  unsigned long now = millis();
   int btnState = digitalRead(POWER_BTN_PIN);
 
   if (btnState == LOW) {
-    if (!isHolding) {
-      btnPressStart = millis();
-      isHolding = true;
-    }
+    if (!isHolding) { btnPressStart = now; isHolding = true; }
+    unsigned long holdDuration = now - btnPressStart;
 
-    unsigned long holdDuration = millis() - btnPressStart;
-
-    if (holdDuration >= 450 && !displaySleeping) {
+    if (holdDuration >= BTN_PROGRESS_FROM_MS && !displaySleeping) {
       isPowerOffProgressActive = true;
-
-      if (millis() - lastProgressFrameTime >= 60) {
-        lastProgressFrameTime = millis();
-        int progressPct = map(holdDuration, 450, 2000, 0, 100);
-        drawPowerOffProgress(progressPct);
+      if (now - lastProgressFrameTime >= 60) {
+        lastProgressFrameTime = now;
+        drawPowerOffProgress(map(holdDuration, BTN_PROGRESS_FROM_MS, BTN_POWEROFF_MS, 0, 100));
       }
     }
-
-    if (holdDuration >= 2000) powerOffSystem();
+    if (holdDuration >= BTN_POWEROFF_MS) powerOffSystem();
   }
-  else {
-    if (isHolding) {
-      unsigned long totalHoldTime = millis() - btnPressStart;
-      lastUserActivityTime = millis();
-
-      if (totalHoldTime < 400 && globalAlarmTriggered && !isSnoozed()) {
-        // กดสั้นขณะมีเสียงเตือน = พักเสียง 2 นาที
-        globalSnoozeUntil = millis() + SNOOZE_MS;
-        noTone(BUZZER_PIN);
-        tone(BUZZER_PIN, 2200, 40);
-        if (displaySleeping) setDisplaySleep(false);
-        screensaverActive = false;
-        isPowerOffProgressActive = false;
-        uiMode = -1;
-        updateHostDisplay();
-      } else if (totalHoldTime < 400 && anyNearEndPending()) {
-        // กดสั้นขณะมีเตือนใกล้หมดที่ยังไม่รับทราบ = รับทราบทุกเตียง
-        acknowledgeAllNearEnd();
-        tone(BUZZER_PIN, 2600, 40);
-        if (displaySleeping) setDisplaySleep(false);
-        screensaverActive = false;
-        isPowerOffProgressActive = false;
-        uiMode = -1;
-        updateHostDisplay();
-      } else if (screensaverActive) {
-        screensaverActive = false;
-        isPowerOffProgressActive = false;
-        uiMode = -1;
-        updateHostDisplay();
-      } else if (totalHoldTime < 400) {
-        setDisplaySleep(!displaySleeping);
-        tone(BUZZER_PIN, 1800, 25);
-        if (!displaySleeping) {
-          isPowerOffProgressActive = false;
-          updateHostDisplay();
-        }
-      }
-      else if (isPowerOffProgressActive && !displaySleeping) {
-        isPowerOffProgressActive = false;
-        uiMode = -1;
-        updateHostDisplay();
-      }
-      isPowerOffProgressActive = false;
-      isHolding = false;
-      btnPressStart = 0;
-    }
-  }
-}
-
-void checkPageButton() {
-  static bool isPageHolding = false;
-  static int clickCount = 0;
-  static unsigned long lastReleaseTime = 0;
-
-  int reading = digitalRead(PAGE_BTN_PIN);
-  unsigned long now = millis();
-
-  if (reading == LOW) {
-    if (!isPageHolding) { isPageHolding = true; }
-  } else {
-    if (isPageHolding) {
-      isPageHolding = false;
-      clickCount++;
-      lastReleaseTime = now;
-    }
-  }
-
-  if (clickCount > 0 && (now - lastReleaseTime > 280)) {
+  else if (isHolding) {
+    unsigned long totalHoldTime = now - btnPressStart;
+    isHolding = false;
+    btnPressStart = 0;
     lastUserActivityTime = now;
-    if (displaySleeping) setDisplaySleep(false);
-    if (screensaverActive) {
-      screensaverActive = false;              // ปลุกจอก่อน
-    } else if (clickCount >= 2) {
-      screensaverActive = true;               // ดับเบิลคลิก = โหมดนาฬิกา
+
+    if (isPowerOffProgressActive) {                 // กดค้างแล้วปล่อยก่อนครบ = ยกเลิกการปิดเครื่อง
+      redrawAfterButton();
+      clickCount = 0;
+    } else if (totalHoldTime < BTN_CLICK_MAX_MS) {
+      if (globalAlarmTriggered && !isSnoozed()) {   // เหตุวิกฤต: พักเสียงทันที
+        globalSnoozeUntil = now + SNOOZE_MS;
+        buzzStop();
+        buzzBeep(2200, 40);
+        if (displaySleeping) setDisplaySleep(false);
+        screensaverActive = false;
+        clickCount = 0;
+        redrawAfterButton();
+      } else if (anyNearEndPending()) {             // เตือนใกล้หมดที่ยังไม่รับทราบ: รับทราบทันที
+        acknowledgeAllNearEnd();
+        buzzBeep(2600, 40);
+        if (displaySleeping) setDisplaySleep(false);
+        screensaverActive = false;
+        clickCount = 0;
+        redrawAfterButton();
+      } else {
+        clickCount++;                               // รอดูว่าจะมีคลิกถัดไปหรือไม่
+        lastReleaseTime = now;
+      }
+    }
+  }
+
+  // ตัดสินจำนวนคลิกเมื่อไม่มีคลิกถัดไปภายในหน้าต่างเวลา
+  if (clickCount > 0 && !isHolding && (now - lastReleaseTime > BTN_MULTI_WINDOW_MS)) {
+    lastUserActivityTime = now;
+    if (displaySleeping) {
+      setDisplaySleep(false);                       // จอดับอยู่: คลิกกี่ครั้งก็แค่ปลุกจอ
+    } else if (screensaverActive) {
+      screensaverActive = false;                    // โหมดนาฬิกา: คลิกอะไรก็ออก
+    } else if (clickCount >= 3) {
+      setDisplaySleep(true);                        // ทริปเปิลคลิก = ปิดจอ
+      buzzBeep(1800, 25);
+    } else if (clickCount == 2) {
+      screensaverActive = true;                     // ดับเบิลคลิก = โหมดนาฬิกา
     } else {
-      // คลิกเดียว = เลื่อนไปดูเตียงถัดไปเอง (กลับเป็นอัตโนมัติเมื่อครบเวลาหรือมีเหตุใหม่)
+      // คลิกเดียว = เลื่อนไปดูเตียงถัดไปเอง (กลับเป็นอัตโนมัติเมื่อครบเวลา)
       int base = (manualFocusBed >= 0) ? manualFocusBed : currentFocusBed();
       manualFocusBed = (base + 1) % activeStationCount;
       manualFocusUntil = now + MANUAL_FOCUS_HOLD_MS;
-      tone(BUZZER_PIN, 2400, 15);
+      buzzBeep(2400, 15);
     }
-    uiMode = -1;
-    updateHostDisplay();
     clickCount = 0;
+    if (!displaySleeping) { uiMode = -1; updateHostDisplay(); }
   }
 }
 
@@ -1519,9 +1563,8 @@ void setup() {
   analogSetAttenuation(ADC_11db);
   pinMode(HOST_BAT_ADC_PIN, INPUT);
 
-  pinMode(PAGE_BTN_PIN, INPUT_PULLUP);
   pinMode(BUZZER_PIN, OUTPUT);
-  digitalWrite(BUZZER_PIN, LOW);
+  buzzStop();                      // [4.10.0-TFT] แก้: ปิดขาตามระดับที่ถูกต้องของบัซเซอร์ (Active ทริกต่ำใช้ระดับสูง)
 
 #if TFT_BLK >= 0
   pinMode(TFT_BLK, OUTPUT);
@@ -1617,8 +1660,8 @@ void loop() {
   feedWatchdog();   // [4.9.0-TFT] เพิ่ม: บอกสุนัขเฝ้าบ้านว่ายังเดินอยู่
   server.handleClient();
 
-  checkSmartphonePowerButton();
-  checkPageButton();
+  checkMultifunctionButton();       // [4.10.0-TFT] แก้: ปุ่มเดียวแทนสองปุ่มเดิม
+  serviceBuzzer();                  // [4.10.0-TFT] เพิ่ม: Active ปิดขาเมื่อครบเวลาบี๊ป
   handleBuzzerAlarm();
 
   unsigned long currentMillis = millis();
