@@ -63,9 +63,11 @@ int main(int argc, char **argv) {
   g_path = argc > 1 ? argv[1] : "/tmp/cyd_colortest_ops.txt";
   g_ops = fopen(g_path.c_str(), "w");
   setup();
-  CHECK(panelType == 0 && ili != nullptr && st == nullptr, "เริ่มที่ ILI9341");
+  CHECK(panelType == START_PANEL && (START_PANEL ? st != nullptr : ili != nullptr), "ต้องเริ่มที่ชิปตาม START_PANEL");
+  if (START_PANEL) { handleCommand('p'); CHECK(panelType == 0 && ili != nullptr && st == nullptr, "p ต้องสลับกลับเป็น ILI9341"); }
   fprintf(g_ops, "MARK ili9341_set0\n");
   checkBounds("ILI9341 ชุดแรก");
+  if (panelType != 0) { handleCommand('p'); }
   // ILI9341: สองชุด (กลับสี) แล้ววนกลับ
   const bool inv0 = invertOn;
   handleCommand('n'); CHECK(invertOn != inv0, "n ต้องสลับกลับสีบน ILI9341");

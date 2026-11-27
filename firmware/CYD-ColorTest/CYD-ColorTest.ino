@@ -1,7 +1,7 @@
 /**
  * @file      CYD-ColorTest.ino
  * @brief     เครื่องมือทดสอบสีจอบอร์ด CYD หน้าเดียว ไล่ครบทุกชุดค่า (ชิปจอ x กลับสี x ลำดับสี) หาค่าที่ถูกต้อง
- * @version   S1.0.0
+ * @version   S1.0.1
  * @date      2026-11-27
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
@@ -29,6 +29,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | S1.0.1 | 2026-11-27 | เริ่มที่ ST7789 (START_PANEL 1) ตามผลบนบอร์ดจริงที่จอ ILI9341 ให้ภาพไม่เต็มจอและแดง/น้ำเงินสลับ ตั้ง 0 ถ้าบอร์ดเป็นจอ ILI9341 |
  * | S1.0.0 | 2026-11-27 | สร้างเครื่องมือทดสอบสีหน้าเดียว ไล่ชุดค่าได้ด้วยปุ่ม BOOT |
  *
  * @warning  ยังไม่ได้ทดสอบบนฮาร์ดแวร์จริง ตรวจด้วยเครื่องมือจำลองบนเครื่อง PC เท่านั้น
@@ -39,7 +40,7 @@
 #include <Adafruit_ILI9341.h>
 #include <Adafruit_ST7789.h>
 
-#define APP_VERSION "S1.0.0"
+#define APP_VERSION "S1.0.1"
 
 // ขาของบอร์ด CYD (ตายตัวตามผังวงจร)
 #define PIN_SCK 14
@@ -50,12 +51,13 @@
 #define PIN_BL 21
 #define PIN_BOOT 0
 #define SPI_HZ 40000000UL
+#define START_PANEL 1        // ชิปจอที่ใช้ตอนเปิดเครื่อง: 1 = ST7789 (บอร์ด USB สองช่อง) · 0 = ILI9341 (USB ช่องเดียว) สลับขณะรันได้ด้วย BOOT ค้าง
 
 SPIClass spiTft(HSPI);
 Adafruit_ILI9341 *ili = nullptr;
 Adafruit_ST7789 *st = nullptr;
 
-uint8_t panelType = 0;       // 0 = ILI9341, 1 = ST7789
+uint8_t panelType = START_PANEL;   // 0 = ILI9341, 1 = ST7789
 bool invertOn = false;
 bool bgrOn = true;
 uint8_t rotation = 1;
