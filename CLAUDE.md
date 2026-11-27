@@ -53,6 +53,11 @@ firmware/
 (ผังแนวนอนเพิ่มใหม่ ใช้ `#if UI_LANDSCAPE`) และตรรกะใน `.ino` เหมือนกันทุกบรรทัดนอกจากส่วนผังขา ไดรเวอร์ และผังหน้าจอ จึง **แก้บั๊กฝั่ง Touch24 เมื่อไร ต้องพิจารณาแก้ฝั่ง CYD ด้วยทุกครั้ง**
 ยังไม่มีเครื่องมือซิงก์อัตโนมัติแบบ Fallout
 
+**อยู่ระหว่างเขียน `Host-CYD28` ใหม่ทั้งหมด (v2.0.0 แบ่งสี่ด่าน ดู `firmware/Host-CYD28/README.md`) บนแบรนช์งาน**
+ด่านที่ 1 เสร็จแล้ว ข้อความข้างบนเกี่ยวกับการแตกจาก Touch24 ใช้กับรุ่น 1.x เท่านั้น
+ระหว่างนี้ `tools/cyd-preview` และ `tools/cyd-tap-test` ใช้ไม่ได้กับสเก็ตช์ใหม่ จะเขียนใหม่ในด่านที่ 3
+และ `tools/lvgl-*` ยังอ้างอิง `Host-CYD-LVGL` ซึ่งไม่ถูกแตะ
+
 `Host-CYD-LVGL` แตกจาก `Host-CYD28` ที่ v1.4.0 ตรรกะใน `.ino` และ `web_dashboard.h` เหมือนกัน (ต่างที่ส่วนจอ ทัช และ SD)
 จึง **แก้บั๊กฝั่งตรรกะเมื่อไร ต้องพิจารณาแก้ทั้งสามสาย** (Touch24, CYD28, CYD-LVGL) โค้ด LVGL ตรวจกับตัวแทนบน PC เท่านั้น ยังไม่เคยคอมไพล์กับ LVGL จริง
 
@@ -162,7 +167,7 @@ bash tools/rate-test/run.sh             # สูตรคำนวณอัต�
 bash tools/oled-check/run.sh            # คอมไพล์ Host รุ่นจอ OLED
 bash tools/touch-preview/run.sh         # คอมไพล์และเรนเดอร์ Host รุ่นจอสัมผัส
 bash tools/cyd-preview/run.sh           # คอมไพล์และเรนเดอร์ Host รุ่นบอร์ด CYD
-bash tools/cyd-touch-test/run.sh        # ไดรเวอร์ทัช bit-bang ของบอร์ด CYD
+bash tools/cyd-board-test/run.sh        # ฐานบอร์ด Host-CYD28 รุ่นเขียนใหม่: คาลิเบรต ไดรเวอร์ทัช ตัวติดตามนิ้ว
 bash tools/cyd-tap-test/run.sh          # โซนแตะตรงปุ่มทุกหน้าของ Host CYD ทั้งสองแนว
 bash tools/buzzer-pattern-test/run.sh   # จังหวะเสียงเตือน Station ทั้ง Passive (เหมือนรุ่นก่อน) และ Active
 bash tools/tft28-button-test/run.sh     # ปุ่มเดียวและบัซเซอร์ (Passive/Active) ของ Host-TFT28
