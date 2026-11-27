@@ -273,13 +273,18 @@ void setup() {
   buzz.enabled = sysSet.buzzerOn;
   touchChip.begin();
   activeBeds = loadBeds(beds);
+  splashTick();
   const bool linkOk = linkBegin(true);   // เปิดจุดเชื่อมต่อ Wi-Fi ของ Host ด้วย (หน้าเว็บ)
+  splashTick();
   Serial.println("Host-CYD28 " APP_VERSION " (stage 4+: NO DROP to stations)");
   printSettings();
   Serial.println(linkOk ? "ESP-NOW ready" : "ESP-NOW INIT FAILED");
   clockBegin();
-  sdLogBegin();
+  splashTick();
+  sdLogBegin();                          // เริ่มการ์ด SD ช้าได้ถึงราววินาที จึงขยับแถบโหลดก่อนและหลัง
+  splashTick();
   webBegin();
+  splashTick();
   Serial.println("AP " CYD_AP_SSID " http://192.168.4.1/");
   logEvent(0, EV_BOOT);
   syncSched.requestAll(activeBeds);
