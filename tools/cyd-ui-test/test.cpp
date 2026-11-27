@@ -409,6 +409,27 @@ static std::vector<RR> rrectsSince(long from) {
 }
 static long opsEnd() { fflush(g_ops); return ftell(g_ops); }
 
+
+// [2.4.0-CYD] ตัวกันวาดซ้ำ: ข้อมูลไม่เปลี่ยน = ไม่มีคำสั่งวาดเลย ข้อมูลเปลี่ยน = วาดเฉพาะส่วนที่เปลี่ยน และภาพต้องเหมือนวาดเต็มจอทุกพิกเซล
+static void testNoRedundantDraws() {
+  struct Case { Screen scr; const char *name; };
+  const Case cases[] = {{SCR_HOME, "HOME"}, {SCR_BED, "BED"}, {SCR_TREND, "TREND"}, {SCR_SYSTEM, "SYSTEM"}};
+  for (const Case &c : cases) {
+    scenario();
+    ui = UiState(); ui.scr = c.scr; ui.bed = 0;
+    drawNow();
+    const long m0 = opsEnd();
+    ui.lastRefresh = 0; uiRefresh(g_ms + 600);                       // ครึ่งวินาทีถัดมา ข้อมูลเท่าเดิม
+    CHECK(opsEnd() == m0, c.name);
+    beds[0].flowRateHr += 7.0f;                                       // ข้อมูลเปลี่ยน
+    if (c.scr == SCR_SYSTEM) sysSet.brightness = (uint8_t)(sysSet.brightness > 20 ? sysSet.brightness - 10 : 30);
+    ui.lastRefresh = 0; uiRefresh(g_ms + 1200);
+    const long m1 = opsEnd();
+    if (c.scr == SCR_HOME || c.scr == SCR_BED || c.scr == SCR_SYSTEM) CHECK(m1 > m0, c.name);
+    CHECK(m1 - m0 < 4000, c.name);                                    // ส่วนที่เปลี่ยนเท่านั้น ไม่ใช่ทั้งจอ
+  }
+}
+
 static void testSplash() {
   splashDraw();
   mark("splash");
@@ -613,6 +634,7 @@ int main(int argc, char **argv) {
   testSystemAndSilence();
   printf("ทดสอบค่าสุดขั้ว\n");
   testExtremeValues();
+  testNoRedundantDraws();
   testSplash();
   testTrendScreen();
   fclose(g_ops);

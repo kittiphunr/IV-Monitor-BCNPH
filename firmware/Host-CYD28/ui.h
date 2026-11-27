@@ -1,7 +1,7 @@
 /**
  * @file      ui.h
  * @brief     หน้าจอ Host (HOME / BED / BED SET / NUMPAD / SYSTEM) และการแตะ แนวนอน 320x240
- * @version   2.2.0-CYD
+ * @version   2.4.0-CYD
  * @date      2026-11-27
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
@@ -19,6 +19,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 2.4.0-CYD | 2026-11-27 | ตัวกันวาดซ้ำ (ลายเซ็นต่อช่อง) หน้า HOME/BED/TREND/SYSTEM วาดเฉพาะส่วนที่ค่าเปลี่ยน ลดทราฟฟิกบัส SPI และอาการกะพริบ · หน้า SYSTEM แสดงสถานะ SD แบบ OK/RETRY/NO |
  * | 2.2.0-CYD | 2026-11-27 | หน้า TREND (กราฟอัตราไหลรายนาที 30/60/240 นาที เส้นเป้าหมาย แถบเตือน ช่วงไม่มีข้อมูล และสรุปค่าเฉลี่ย/สูงสุด/ต่ำสุด/ปริมาตร) เปิดจากปุ่ม GRAPH ในหน้า BED |
  * | 2.1.0-CYD | 2026-11-27 | หน้า BED แสดงชื่อผู้ป่วยต่อท้ายเลขเตียงเมื่อเป็น ASCII ล้วน (ชื่อภาษาไทยแสดงบนเว็บ เพราะฟอนต์ของจอเป็น ASCII) หน้า SYSTEM แสดงชื่อ Wi-Fi ที่ตั้งไว้จริง |
  * | 2.0.3-CYD | 2026-11-27 | แก้ค่า/เริ่มถุงใหม่/รับทราบ/พักเสียงผ่านฟังก์ชันกลางของไฟล์หลักเพื่อลงประวัติ หน้า SYSTEM แสดงจุดเชื่อมต่อ Wi-Fi SD และนาฬิกา |
@@ -103,6 +104,24 @@ static void uiBtn(uint8_t id, const char *label, int x, int y, int w, int h, uin
   txtc(x, y + (h - 8 * size) / 2, w, size, fg, fill, label);
 }
 
+// [2.4.0-CYD] เพิ่ม: ตัวกันวาดซ้ำ จอ SPI วาดทุก 500 มิลลิวินาทีแม้ข้อมูลไม่เปลี่ยนจะเปลืองบัสและกะพริบ
+// เก็บลายเซ็น (แฮช) ของสิ่งที่วาดไว้ต่อช่อง วาดใหม่เฉพาะเมื่อลายเซ็นเปลี่ยน วาดเต็มจอ (full) ล้างลายเซ็นทั้งหมดเพราะ fillScreen ลบภาพไปแล้ว
+// ใช้ได้เฉพาะของที่วาดทับพื้นนิ่ง ปุ่มที่ถมสีพื้นใหม่ทุกครั้งแล้วเขียนข้อความทับต้องกันทั้งก้อน ไม่ใช่เฉพาะข้อความ
+static uint32_t uiSig[16];
+static uint16_t uiSigValid = 0;
+static void uiSigReset() { uiSigValid = 0; }
+static bool uiDirty(uint8_t slot, uint32_t sig) {
+  const uint16_t bit = (uint16_t)(1u << slot);
+  if ((uiSigValid & bit) && uiSig[slot] == sig) return false;
+  uiSig[slot] = sig; uiSigValid |= bit;
+  return true;
+}
+static uint32_t sigInt(uint32_t h, uint32_t v) { for (int i = 0; i < 4; i++) { h ^= (v >> (8 * i)) & 0xFF; h *= 16777619u; } return h; }
+static uint32_t sigStr(uint32_t h, const char *s) { while (*s) { h ^= (uint8_t)*s++; h *= 16777619u; } return sigInt(h, 0x9E3779B9u); }
+static void txtOnce(uint8_t slot, int x, int y, int size, uint16_t fg, uint16_t bg, const char *s) {
+  if (uiDirty(slot, sigStr(sigInt(2166136261u, ((uint32_t)fg << 16) | bg), s))) txt(x, y, size, fg, bg, s);
+}
+
 static void topBar(const char *title) {
   tft.fillRect(0, 0, tft.width(), 24, C_PANEL);
   txt(6, 4, 2, C_WHITE, C_PANEL, title);
@@ -126,6 +145,13 @@ static void progressBar(int x, int y, int w, int h, const Bed &b) {
   tft.drawRect(x, y, w, h, C_GRAY);
   tft.fillRect(x + 1, y + 1, fillW, h - 2, bedStateColor(b, millis()));
   tft.fillRect(x + 1 + fillW, y + 1, (w - 2) - fillW, h - 2, C_BLACK);
+}
+
+static void progressBarOnce(uint8_t slot, int x, int y, int w, int h, const Bed &b) {
+  float f = b.cfg.planVolumeMl > 0 ? bedVolumeMl(b) / b.cfg.planVolumeMl : 0;
+  if (f < 0) f = 0;
+  if (f > 1) f = 1;
+  if (uiDirty(slot, sigInt(sigInt(2166136261u, (uint32_t)((w - 2) * f)), bedStateColor(b, millis())))) progressBar(x, y, w, h, b);
 }
 
 // เตียงที่ควรโชว์ใหญ่ที่หน้า HOME: เตียงที่มีเหตุวิกฤตก่อน แล้วใกล้หมด แล้วเตียงแรกที่ออนไลน์
@@ -153,6 +179,7 @@ static void drawHome(bool full) {
   const uint32_t now = millis();
   if (full) {
     zoneClear();
+    uiSigReset();
     tft.fillScreen(C_BLACK);
     topBar("SMART IV ALERT");
     for (int i = 0; i < activeBeds; i++) uiZone(Z_BED_ROW + i, 182, 28 + i * 19, 134, 18);
@@ -161,40 +188,49 @@ static void drawHome(bool full) {
   }
   const int f = focusBed(now);
   const Bed &b = beds[f];
-  char s[40];
+  char sBed[16], sState[16], sRate[16], sTgt[24], sVol[40], sLeft[24];
   const uint16_t col = bedStateColor(b, now);
-  tft.drawRoundRect(4, 28, 172, 150, 6, col);
-  snprintf(s, sizeof(s), "BED %d  ", f + 1);
-  txt(12, 36, 2, C_WHITE, C_BLACK, s);
-  snprintf(s, sizeof(s), "%-8s", bedStateText(b, now));
-  txt(12, 56, 2, col, C_BLACK, s);
-  snprintf(s, sizeof(s), "%4.0f", (double)b.flowRateHr);
-  txt(12, 80, 4, C_WHITE, C_BLACK, s);
-  txt(116, 104, 1, C_GRAY, C_BLACK, "mL/h");
-  snprintf(s, sizeof(s), "TARGET %-5.0f", (double)b.cfg.targetRateHr);
-  txt(12, 118, 1, C_GRAY, C_BLACK, s);
-  snprintf(s, sizeof(s), "VOL %.0f/%.0f mL   ", (double)dispVol(b), (double)b.cfg.planVolumeMl);
-  txt(12, 130, 1, C_GRAY, C_BLACK, s);
-  progressBar(12, 144, 156, 10, b);
+  snprintf(sBed, sizeof(sBed), "BED %d  ", f + 1);
+  snprintf(sState, sizeof(sState), "%-8s", bedStateText(b, now));
+  snprintf(sRate, sizeof(sRate), "%4.0f", (double)b.flowRateHr);
+  snprintf(sTgt, sizeof(sTgt), "TARGET %-5.0f", (double)b.cfg.targetRateHr);
+  snprintf(sVol, sizeof(sVol), "VOL %.0f/%.0f mL   ", (double)dispVol(b), (double)b.cfg.planVolumeMl);
   char left[12]; fmtLeft(b, left, sizeof(left));
-  snprintf(s, sizeof(s), "LEFT %-7s", left);
-  txt(12, 160, 1, C_WHITE, C_BLACK, s);
+  snprintf(sLeft, sizeof(sLeft), "LEFT %-7s", left);
+  uint32_t h = sigInt(2166136261u, ((uint32_t)f << 16) | col);                                      // ลายเซ็นของการ์ดเตียงเด่นทั้งใบ
+  h = sigStr(h, sBed); h = sigStr(h, sState); h = sigStr(h, sRate); h = sigStr(h, sTgt); h = sigStr(h, sVol); h = sigStr(h, sLeft);
+  h = sigInt(h, (uint32_t)(dispVol(b) * 4.0f));                                                      // แถบความคืบหน้าขยับละเอียดกว่าตัวเลข
+  if (uiDirty(0, h)) {
+    tft.drawRoundRect(4, 28, 172, 150, 6, col);
+    txt(12, 36, 2, C_WHITE, C_BLACK, sBed);
+    txt(12, 56, 2, col, C_BLACK, sState);
+    txt(12, 80, 4, C_WHITE, C_BLACK, sRate);
+    txt(116, 104, 1, C_GRAY, C_BLACK, "mL/h");
+    txt(12, 118, 1, C_GRAY, C_BLACK, sTgt);
+    txt(12, 130, 1, C_GRAY, C_BLACK, sVol);
+    progressBar(12, 144, 156, 10, b);
+    txt(12, 160, 1, C_WHITE, C_BLACK, sLeft);
+  }
   for (int i = 0; i < activeBeds; i++) {
     const Bed &r = beds[i];
     const uint16_t c = bedStateColor(r, now);
+    char s[40];
     snprintf(s, sizeof(s), "%d %-8s %5.0f ", i + 1, bedStateText(r, now), (double)r.flowRateHr);
+    if (!uiDirty((uint8_t)(1 + i), sigStr(sigInt(2166136261u, ((uint32_t)c << 1) | (i == f ? 1u : 0u)), s))) continue;
     tft.drawRoundRect(182, 28 + i * 19, 134, 18, 3, i == f ? c : C_DARK);
     txt(188, 33 + i * 19, 1, c, C_BLACK, s);
   }
-  // แถบเสียงเตือน / ปุ่มพัก (วาดทับทุกรอบเพราะข้อความเปลี่ยน)
+  // แถบเสียงเตือน / ปุ่มพัก (วาดใหม่เมื่อข้อความหรือสีเปลี่ยน)
   const uint8_t code = worstAlarm(now);
   uint16_t fill = C_PANEL; const char *label = "ALL CLEAR"; uint16_t fg = C_GREEN;
   char sn[24];
   if (code != ALERT_NONE && !snoozed(now)) { fill = C_BTNRED; label = "TAP TO SILENCE"; fg = C_WHITE; }
   else if (code != ALERT_NONE) { fill = C_DARK; label = snoozeText(now, sn, sizeof(sn)); fg = C_AMBER; }
-  tft.fillRoundRect(108, 186, 208, 48, 6, fill);
-  tft.drawRoundRect(108, 186, 208, 48, 6, C_GRAY);
-  txtc(108, 202, 208, 2, fg, fill, label);
+  if (uiDirty(9, sigStr(sigInt(2166136261u, ((uint32_t)fill << 16) | fg), label))) {
+    tft.fillRoundRect(108, 186, 208, 48, 6, fill);
+    tft.drawRoundRect(108, 186, 208, 48, 6, C_GRAY);
+    txtc(108, 202, 208, 2, fg, fill, label);
+  }
 }
 
 // ---- หน้า BED ------------------------------------------------------------------------------
@@ -204,6 +240,7 @@ static void drawBed(bool full) {
   char s[48];
   if (full) {
     zoneClear();
+    uiSigReset();
     tft.fillScreen(C_BLACK);
     if (beds[ui.bed].name[0] && nameIsAscii(beds[ui.bed].name)) snprintf(s, sizeof(s), "BED %d %s", ui.bed + 1, beds[ui.bed].name);
     else snprintf(s, sizeof(s), "BED %d", ui.bed + 1);
@@ -216,6 +253,7 @@ static void drawBed(bool full) {
     uiZone(Z_ACK, 260, 190, 56, 46);
   }
   if (ui.confirmBag) {
+    if (!uiDirty(15, 1)) return;                         // กล่องยืนยันวาดครั้งเดียว ไม่ต้องวาดซ้ำทุกครึ่งวินาที
     zoneClear();
     tft.fillRoundRect(30, 60, 260, 120, 8, C_PANEL);
     tft.drawRoundRect(30, 60, 260, 120, 8, C_AMBER);
@@ -227,29 +265,31 @@ static void drawBed(bool full) {
   }
   const uint16_t col = bedStateColor(b, now);
   snprintf(s, sizeof(s), "%-8s", bedStateText(b, now));
-  txt(200, 4, 2, col, C_PANEL, s);
+  txtOnce(0, 200, 4, 2, col, C_PANEL, s);
   snprintf(s, sizeof(s), "%4.0f", (double)b.flowRateHr);
-  txt(10, 34, 4, C_WHITE, C_BLACK, s);
-  txt(112, 58, 1, C_GRAY, C_BLACK, "mL/h");
+  txtOnce(1, 10, 34, 4, C_WHITE, C_BLACK, s);
+  txtOnce(2, 112, 58, 1, C_GRAY, C_BLACK, "mL/h");
   snprintf(s, sizeof(s), "TARGET %-5.0f mL/h", (double)b.cfg.targetRateHr);
-  txt(170, 36, 1, C_GRAY, C_BLACK, s);
+  txtOnce(3, 170, 36, 1, C_GRAY, C_BLACK, s);
   snprintf(s, sizeof(s), "PLAN   %-5.0f mL", (double)b.cfg.planVolumeMl);
-  txt(170, 48, 1, C_GRAY, C_BLACK, s);
+  txtOnce(4, 170, 48, 1, C_GRAY, C_BLACK, s);
   snprintf(s, sizeof(s), "DROP   %-3d  NEAR %d%%  ", (int)b.cfg.dropFactor, (int)b.cfg.nearEndPct);
-  txt(170, 60, 1, C_GRAY, C_BLACK, s);
-  progressBar(10, 82, 300, 14, b);
+  txtOnce(5, 170, 60, 1, C_GRAY, C_BLACK, s);
+  progressBarOnce(6, 10, 82, 300, 14, b);
   snprintf(s, sizeof(s), "VOL %.0f/%.0f mL        ", (double)dispVol(b), (double)b.cfg.planVolumeMl);   // ยาวสุด 23 ตัว x 12 px = 276 px
   s[25] = 0;
-  txt(10, 104, 2, C_WHITE, C_BLACK, s);
+  txtOnce(7, 10, 104, 2, C_WHITE, C_BLACK, s);
   char left[12]; fmtLeft(b, left, sizeof(left));
   snprintf(s, sizeof(s), "LEFT   %-8s", left);
-  txt(10, 128, 2, C_WHITE, C_BLACK, s);
+  txtOnce(8, 10, 128, 2, C_WHITE, C_BLACK, s);
   snprintf(s, sizeof(s), "LINK %3d%%  RSSI %4d  BAT %.1fV%s  ", (int)b.linkPct, (int)b.rssi, (double)b.batteryV, b.idConflict ? " ID!" : "");
-  txt(10, 160, 1, b.linkPct < LINK_WEAK_PCT ? C_AMBER : C_GRAY, C_BLACK, s);
+  txtOnce(9, 10, 160, 1, b.linkPct < LINK_WEAK_PCT ? C_AMBER : C_GRAY, C_BLACK, s);
   const bool ackable = (b.alert == ALERT_NEAR_END && !b.nearEndAck);
-  tft.fillRoundRect(260, 190, 56, 46, 6, ackable ? C_AMBER : C_DARK);
-  tft.drawRoundRect(260, 190, 56, 46, 6, C_GRAY);
-  txtc(260, 206, 56, 2, ackable ? C_BLACK : C_GRAY, ackable ? C_AMBER : C_DARK, "ACK");
+  if (uiDirty(10, ackable ? 1u : 2u)) {
+    tft.fillRoundRect(260, 190, 56, 46, 6, ackable ? C_AMBER : C_DARK);
+    tft.drawRoundRect(260, 190, 56, 46, 6, C_GRAY);
+    txtc(260, 206, 56, 2, ackable ? C_BLACK : C_GRAY, ackable ? C_AMBER : C_DARK, "ACK");
+  }
 }
 
 // ---- หน้า TREND ------------------------------------------------------------------------------
@@ -306,6 +346,7 @@ static void drawTrend(bool full) {
   char s[64];
   if (full) {
     zoneClear();
+    uiSigReset();
     tft.fillScreen(C_BLACK);
     snprintf(s, sizeof(s), "BED %d TREND", ui.bed + 1);
     topBar(s);
@@ -314,7 +355,7 @@ static void drawTrend(bool full) {
     ui.trendDrawnTotal = 0xFFFFFFFFu;
   }
   snprintf(s, sizeof(s), "%d MIN", range);
-  txt(228, 6, 2, C_AMBER, C_PANEL, s);                                        // "240 MIN" กว้าง 84 พิกเซล ชิดขวาไม่ล้น
+  txtOnce(0, 228, 6, 2, C_AMBER, C_PANEL, s);                                 // "240 MIN" กว้าง 84 พิกเซล ชิดขวาไม่ล้น
   if (ui.trendDrawnTotal != r.totalMinutes || full) {                         // วาดกราฟใหม่เมื่อมีตัวอย่างใหม่เท่านั้น (ไม่กะพริบ)
     ui.trendDrawnTotal = r.totalMinutes;
     drawTrendChart(r, range);
@@ -323,13 +364,13 @@ static void drawTrend(bool full) {
   char t[40];
   snprintf(t, sizeof(t), "AVG %.0f  MIN %u  MAX %u", (double)sm.avgRate, (unsigned)sm.minRate, (unsigned)sm.maxRate);
   snprintf(s, sizeof(s), "%-31.31s", t);                                       // ข้อความฝั่งซ้ายยาวไม่เกิน 31 ตัว (ไม่ชนคอลัมน์คำอธิบายที่ x=200)
-  txt(8, 150, 1, C_WHITE, C_BLACK, s);
+  txtOnce(1, 8, 150, 1, C_WHITE, C_BLACK, s);
   snprintf(t, sizeof(t), "GIVEN %.0f mL  IN-RANGE %d%%", (double)sm.totalMl, sm.withinPct);
   snprintf(s, sizeof(s), "%-31.31s", t);
-  txt(8, 162, 1, C_WHITE, C_BLACK, s);
+  txtOnce(2, 8, 162, 1, C_WHITE, C_BLACK, s);
   snprintf(t, sizeof(t), "ALERTS %d  NO DATA %d MIN", sm.alertEpisodes, sm.gapMinutes);
   snprintf(s, sizeof(s), "%-31.31s", t);
-  txt(8, 174, 1, sm.alertEpisodes ? C_AMBER : C_GRAY, C_BLACK, s);
+  txtOnce(3, 8, 174, 1, sm.alertEpisodes ? C_AMBER : C_GRAY, C_BLACK, s);
   if (full) {                                                                  // คำอธิบายสี (คงที่ จึงวาดครั้งเดียว)
     txt(200, 150, 1, C_GREEN, C_BLACK, "GREEN rate");
     txt(200, 162, 1, C_CYAN, C_BLACK, "CYAN target");
@@ -401,6 +442,7 @@ static void drawSystem(bool full) {
   char s[40];
   if (full) {
     zoneClear();
+    uiSigReset();
     tft.fillScreen(C_BLACK);
     topBar("SYSTEM");
     txt(8, 42, 2, C_WHITE, C_BLACK, "BEDS");
@@ -414,21 +456,20 @@ static void drawSystem(bool full) {
     uiBtn(Z_CAL, "CALIBRATE", 4, 156, 154, 32, C_PANEL, C_WHITE, 2);
     uiBtn(Z_BACK, "BACK", 162, 156, 154, 32, C_PANEL);
   }
-  snprintf(s, sizeof(s), "%d", (int)activeBeds);
-  txtc(218, 42, 56, 2, C_WHITE, C_BLACK, s);
+  snprintf(s, sizeof(s), "%-4d", (int)activeBeds);                              // เติมช่องว่างท้ายแทนการลบก่อนวาด ไม่กะพริบ
+  if (uiDirty(0, sigStr(2166136261u, s))) { txtc(218, 42, 56, 2, C_WHITE, C_BLACK, "    "); txtc(218, 42, 56, 2, C_WHITE, C_BLACK, s); }
   snprintf(s, sizeof(s), "%d%%", (int)sysSet.brightness);
-  txtc(218, 82, 56, 2, C_WHITE, C_BLACK, "     ");
-  txtc(218, 82, 56, 2, C_WHITE, C_BLACK, s);
-  uiBtn(Z_BUZZ_TOGGLE, sysSet.buzzerOn ? "ON" : "OFF", 176, 112, 72, 36, sysSet.buzzerOn ? C_OKGREEN : C_BTNRED, C_WHITE, 2);
+  if (uiDirty(1, sigStr(2166136261u, s))) { txtc(218, 82, 56, 2, C_WHITE, C_BLACK, "     "); txtc(218, 82, 56, 2, C_WHITE, C_BLACK, s); }
+  if (uiDirty(2, sysSet.buzzerOn ? 1u : 2u)) uiBtn(Z_BUZZ_TOGGLE, sysSet.buzzerOn ? "ON" : "OFF", 176, 112, 72, 36, sysSet.buzzerOn ? C_OKGREEN : C_BTNRED, C_WHITE, 2);
   snprintf(s, sizeof(s), "CH %u  RX DROP %lu  BAD %lu  WRONG %lu   ", (unsigned)linkChannel(), (unsigned long)rxDropped, (unsigned long)badPackets, (unsigned long)rxWrongLen);
-  txt(8, 196, 1, C_GRAY, C_BLACK, s);
+  txtOnce(3, 8, 196, 1, C_GRAY, C_BLACK, s);
   const uint32_t up = millis() / 1000;
   snprintf(s, sizeof(s), "v%s  UP %lu:%02lu:%02lu  PANEL %d  ", APP_VERSION, (unsigned long)(up / 3600), (unsigned long)((up / 60) % 60), (unsigned long)(up % 60), (int)CYD_PANEL);
-  txt(8, 208, 1, C_GRAY, C_BLACK, s);
-  snprintf(s, sizeof(s), "WIFI %s  %s  SD %s  CLK %s  ", netCfg.ssid, "192.168.4.1", sdOk ? "OK" : "NO", clockSynced ? "SET" : "NOT SET");
+  txtOnce(4, 8, 208, 1, C_GRAY, C_BLACK, s);
+  snprintf(s, sizeof(s), "WIFI %s  %s  SD %s  CLK %s  ", netCfg.ssid, "192.168.4.1", sdStatusText(), clockSynced ? "SET" : "NOT SET");
   s[52] = 0;
-  txt(8, 220, 1, C_GRAY, C_BLACK, s);
-  txt(8, 231, 1, C_GRAY, C_BLACK, "ESP-NOW PROTOCOL V3 - NOT A CERTIFIED ALARM SYSTEM");
+  txtOnce(5, 8, 220, 1, C_GRAY, C_BLACK, s);
+  if (full) txt(8, 231, 1, C_GRAY, C_BLACK, "ESP-NOW PROTOCOL V3 - NOT A CERTIFIED ALARM SYSTEM");   // ข้อความคงที่ วาดตอนเต็มจอครั้งเดียว
 }
 
 static void uiRequestFull() { ui.needFull = true; }

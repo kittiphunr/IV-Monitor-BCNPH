@@ -50,6 +50,7 @@ class FS {
   bool mkdir(const String& path) { (void)path; return false; }
   bool remove(const char* path) { (void)path; return false; }
   bool remove(const String& path) { (void)path; return false; }
+  bool rename(const char* a, const char* b) { (void)a; (void)b; return false; }
 };
 
 }  // namespace fs

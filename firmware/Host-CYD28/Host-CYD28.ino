@@ -1,7 +1,7 @@
 /**
  * @file      Host-CYD28.ino
  * @brief     Host บอร์ด CYD (ESP32-2432S028) เขียนใหม่ ด่านที่ 4 (ครบทุกด่าน): เว็บแดชบอร์ด นาฬิกา SD ประวัติเหตุการณ์
- * @version   2.3.2-CYD
+ * @version   2.4.0-CYD
  * @date      2026-11-27
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
@@ -26,6 +26,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 2.4.0-CYD | 2026-11-27 | ประสิทธิภาพจอและการบันทึก SD: จอวาดเฉพาะส่วนที่เปลี่ยน · เหตุการณ์ลง SD เป็นก้อนไม่บล็อกลูป · หมุนไฟล์เมื่อใหญ่เกิน · ต่อการ์ดใหม่เมื่อหลุด |
  * | 2.3.2-CYD | 2026-11-27 | หน้าเปิดเครื่อง: แถบโหลดสไตล์ macOS ใต้โลโก้แทนสไตล์ Windows XP (แก้เฉพาะ splash.h) |
  * | 2.3.1-CYD | 2026-11-27 | หน้าเว็บผ่านตัวตรวจ W3C Nu Html Checker และ axe-core WCAG 2.1 AA (แก้เฉพาะ web_dashboard.h) |
  * | 2.3.0-CYD | 2026-11-27 | ปุ่มพิมพ์รายงาน/บันทึก PDF บนหน้าเว็บ (ฝั่งเบราว์เซอร์ล้วน แก้เฉพาะ web_dashboard.h) |
@@ -66,7 +67,7 @@
 #include "net_config.h"
 #include "trend.h"
 
-#define APP_VERSION "2.3.2-CYD"
+#define APP_VERSION "2.4.0-CYD"
 
 enum AppMode : uint8_t { MODE_UI = 0, MODE_DIAG };
 
@@ -351,6 +352,7 @@ void loop() {
     if (trendClose(trend, beds, activeBeds, now, closed)) sdLogTrend(closed, activeBeds, clockEpoch(), trend.minuteStartMs / 60000, clockTzMin);
     trendObserve(trend, beds, activeBeds, now);
   }
+  sdLogService(now);                                                    // เขียนคิวเหตุการณ์ลงการ์ดเป็นก้อน และต่อการ์ดใหม่ถ้าหลุด
   if ((uint32_t)(now - lastLinkTickMs) >= LINK_WINDOW_MS) { lastLinkTickMs = now; bedsLinkTick(beds, MAX_BEDS); }
   const int s = syncSched.next(now, activeBeds);
   if (s >= 0) linkSendSync(bedBuildSync(beds[s], s, linkChannel(), clockEpoch(), now));

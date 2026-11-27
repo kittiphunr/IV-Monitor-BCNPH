@@ -95,6 +95,7 @@ class FS {
   bool mkdir(const String &p) { return mkdir(p.c_str()); }
   bool remove(const char *p) { return g_mem.files.erase(p) > 0; }
   bool remove(const String &p) { return remove(p.c_str()); }
+  bool rename(const char *a, const char *b) { auto it = g_mem.files.find(a); if (!g_mem.cardPresent || it == g_mem.files.end()) return false; g_mem.files[b] = it->second; g_mem.files.erase(a); return true; }
 };
 }  // namespace fs
 

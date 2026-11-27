@@ -83,7 +83,7 @@ static void reset() {
   activeBeds = 5; snoozeUntil = 0; syncSched = SyncScheduler(); events = EventLog(); g_sentCount = 0;
   netCfg = netDefaults(); netReset(); restartPending = false; g_prefBlobs().clear();
   trend = TrendState(); clockTzMin = 0;
-  fs::g_mem = fs::MemFS(); fs::g_shortNames = false; sdOk = false; sdFails = 0;
+  fs::g_mem = fs::MemFS(); fs::g_shortNames = false; sdOk = false; sdWasOk = false; sdFails = 0; sdEvN = 0; sdEvLost = 0;
   beds[0].cfg.targetRateHr = 60; beds[0].cfg.planVolumeMl = 500; beds[0].cfg.resetSeq = 9;
 }
 static bool nextSyncIs(int bed) { return syncSched.isPending(bed); }     // มีคำขอส่งด่วนของเตียงนี้ค้างอยู่ (รอบปกติไม่นับ)
@@ -466,8 +466,32 @@ static void testSdCard() {
   fs::g_mem.cardPresent = true;
   CHECK(sdLogBegin() && sdOk, "มีการ์ดต้องเริ่มได้");
   CHECK(fs::g_mem.files["/events.csv"] == "epoch,upSec,bed,event,detail\n" && fs::g_mem.dirs.count("/trend"), "สร้างไฟล์เหตุการณ์พร้อมหัวคอลัมน์ และโฟลเดอร์ /trend");
+  g_ms = 5000;
+  const int opensBefore = fs::g_mem.opens;
   sdLogEvent({5000, 1789000000, 2, EV_ALERT, ALERT_OCCLUSION});
+  CHECK(fs::g_mem.opens == opensBefore && fs::g_mem.files["/events.csv"].find("OCCLUSION") == std::string::npos, "เหตุการณ์เข้าคิว ยังไม่แตะการ์ด (ไม่หน่วงลูป)");
+  sdLogService(g_ms + SD_EV_FLUSH_MS - 1);
+  CHECK(fs::g_mem.opens == opensBefore, "ยังไม่ถึงเวลาเขียน ต้องไม่เปิดไฟล์");
+  sdLogService(g_ms + SD_EV_FLUSH_MS);
   CHECK(fs::g_mem.files["/events.csv"].find("1789000000,5,2,ALERT,OCCLUSION\n") != std::string::npos, "บันทึกเหตุการณ์ลงการ์ด");
+  CHECK(fs::g_mem.opens == opensBefore + 1 && sdEvN == 0, "เขียนครบด้วยการเปิดไฟล์ครั้งเดียว และคิวว่าง");
+  // เหตุการณ์ถี่ (เตียงขาดสัญญาณพร้อมกันหลายเตียง) ต้องรวมเป็นก้อนเดียว
+  for (int i = 0; i < 8; i++) sdLogEvent({6000u + i, 1789000010, (uint8_t)(i + 1), EV_ALERT, ALERT_LOST_LINK});
+  const int opensBurst = fs::g_mem.opens;
+  sdLogService(g_ms + 5000);
+  CHECK(fs::g_mem.opens == opensBurst + 1, "แปดเหตุการณ์ติดกันต้องเปิดไฟล์ครั้งเดียว");
+  { auto ls = splitLines(fs::g_mem.files["/events.csv"]); CHECK(ls.size() == 1 + 1 + 8 && ls.back().find(",8,ALERT,LOST_LINK") != std::string::npos, "ทุกเหตุการณ์ครบและเรียงตามเวลา"); }
+  // คิวเต็มต้องเขียนทันที ไม่ทิ้งเหตุการณ์
+  const size_t beforeLines = splitLines(fs::g_mem.files["/events.csv"]).size();
+  for (int i = 0; i < SD_EVQ_CAP + 4; i++) sdLogEvent({7000u + i, 1789000020, 1, EV_ONLINE, 0});
+  sdLogService(g_ms + 20000);
+  CHECK(splitLines(fs::g_mem.files["/events.csv"]).size() == beforeLines + SD_EVQ_CAP + 4 && sdEvLost == 0, "คิวเต็มแล้วเขียนทันที ไม่มีเหตุการณ์หาย");
+  // events.csv โตเกินกำหนด: หมุนเป็น events.old.csv แล้วเริ่มไฟล์ใหม่พร้อมหัวคอลัมน์
+  fs::g_mem.files["/events.csv"] = std::string(SD_EVENTS_MAX_BYTES + 10, 'x');
+  sdLogEvent({9000, 1789000030, 3, EV_NEWBAG, 0}); sdLogService(g_ms + 40000);
+  CHECK(fs::g_mem.files["/events.old.csv"].size() == SD_EVENTS_MAX_BYTES + 10 && fs::g_mem.files["/events.csv"].find("epoch,upSec") == 0 && fs::g_mem.files["/events.csv"].find("NEWBAG") != std::string::npos, "ไฟล์เหตุการณ์ใหญ่เกินต้องหมุนเป็น .old และเริ่มไฟล์ใหม่");
+  fs::g_mem.files.erase("/events.old.csv");
+  fs::g_mem.files["/events.csv"] = "epoch,upSec,bed,event,detail\n1789000000,5,2,ALERT,OCCLUSION\n";
   const int opens0 = fs::g_mem.opens; sdLogBegin();
   CHECK(fs::g_mem.files["/events.csv"].find("epoch,upSec") == 0 && fs::g_mem.files["/events.csv"].find("epoch,upSec", 1) == std::string::npos, "เริ่มซ้ำต้องไม่เขียนหัวคอลัมน์ซ้ำ (ไม่ทับไฟล์เดิม)");
   (void)opens0;
@@ -527,6 +551,22 @@ static void testSdCard() {
   sdLogTrend(sm, 3, 1789000000, 3, 0); CHECK(!sdOk, "ล้มเหลวติดกัน 3 ครั้งต้องเลิกใช้การ์ด");
   const int op2 = fs::g_mem.opens; sdLogEvent({1, 0, 0, EV_BOOT, 0});
   CHECK(fs::g_mem.opens == op2, "เลิกใช้แล้วต้องไม่แตะการ์ดอีก");
+  // หลุดแล้วต่อใหม่: ลองทุก SD_RETRY_MS เท่านั้น (ไม่หน่วงลูป) และกลับมาเขียนต่อได้เมื่อการ์ดกลับมา
+  CHECK(sdWasOk && std::string(sdStatusText()) == "RETRY", "เคยใช้ได้แต่หลุด ต้องแสดงสถานะ RETRY");
+  sdLastRetryMs = 100000;
+  const int op3 = fs::g_mem.opens;
+  sdLogService(100000 + SD_RETRY_MS - 1);
+  CHECK(!sdOk && fs::g_mem.opens == op3, "ยังไม่ถึงเวลาลองต่อ ต้องไม่แตะการ์ด");
+  fs::g_mem.failWrites = false;
+  sdLogService(100000 + SD_RETRY_MS);
+  CHECK(sdOk && std::string(sdStatusText()) == "OK", "การ์ดกลับมาแล้วต้องต่อใหม่ได้เอง");
+  g_ms = 200000; sdLogEvent({200000, 1789000099, 1, EV_ONLINE, 0}); sdLogService(g_ms + SD_EV_FLUSH_MS);
+  CHECK(fs::g_mem.files["/events.csv"].find("1789000099,200,1,ONLINE") != std::string::npos, "ต่อใหม่แล้วกลับมาบันทึกเหตุการณ์ได้");
+  // ไม่เคยมีการ์ด: ห้ามลองต่อ (กันหน่วงลูปทุกนาทีบนเครื่องที่ไม่ใส่การ์ด)
+  fs::g_mem = fs::MemFS(); fs::g_mem.cardPresent = false; sdOk = false; sdWasOk = false; sdLogBegin();
+  const int op4 = fs::g_mem.opens; sdLastRetryMs = 0; sdLogService(10 * SD_RETRY_MS);
+  CHECK(!sdOk && fs::g_mem.opens == op4 && std::string(sdStatusText()) == "NO", "ไม่เคยมีการ์ดต้องไม่ลองต่อ และแสดงสถานะ NO");
+  fs::g_mem.cardPresent = true;
   // ล้มเหลวสลับสำเร็จ ต้องรีเซ็ตตัวนับ (ไม่สะสมข้ามเวลา)
   fs::g_mem = fs::MemFS(); sdOk = false; sdFails = 0; sdLogBegin();
   fs::g_mem.failWrites = true; sdLogTrend(sm, 3, 1789000000, 1, 0); sdLogTrend(sm, 3, 1789000000, 2, 0);
