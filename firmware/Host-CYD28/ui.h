@@ -1,7 +1,7 @@
 /**
  * @file      ui.h
  * @brief     หน้าจอ Host (HOME / BED / BED SET / NUMPAD / SYSTEM) และการแตะ แนวนอน 320x240
- * @version   2.0.3-CYD
+ * @version   2.2.0-CYD
  * @date      2026-11-27
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
@@ -19,6 +19,8 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 2.2.0-CYD | 2026-11-27 | หน้า TREND (กราฟอัตราไหลรายนาที 30/60/240 นาที เส้นเป้าหมาย แถบเตือน ช่วงไม่มีข้อมูล และสรุปค่าเฉลี่ย/สูงสุด/ต่ำสุด/ปริมาตร) เปิดจากปุ่ม GRAPH ในหน้า BED |
+ * | 2.1.0-CYD | 2026-11-27 | หน้า BED แสดงชื่อผู้ป่วยต่อท้ายเลขเตียงเมื่อเป็น ASCII ล้วน (ชื่อภาษาไทยแสดงบนเว็บ เพราะฟอนต์ของจอเป็น ASCII) หน้า SYSTEM แสดงชื่อ Wi-Fi ที่ตั้งไว้จริง |
  * | 2.0.3-CYD | 2026-11-27 | แก้ค่า/เริ่มถุงใหม่/รับทราบ/พักเสียงผ่านฟังก์ชันกลางของไฟล์หลักเพื่อลงประวัติ หน้า SYSTEM แสดงจุดเชื่อมต่อ Wi-Fi SD และนาฬิกา |
  * | 2.0.2-CYD | 2026-11-27 | เขียนใหม่ด่านที่ 3 ไม่นำโค้ดรุ่น 1.x มาปรับ |
  *
@@ -38,7 +40,7 @@
 #error "หน้าจอ v2.0 ออกแบบสำหรับแนวนอนเท่านั้น: ตั้ง CYD_ROTATION เป็น 1 หรือ 3"
 #endif
 
-enum Screen : uint8_t { SCR_HOME = 0, SCR_BED, SCR_SET, SCR_NUMPAD, SCR_SYSTEM };
+enum Screen : uint8_t { SCR_HOME = 0, SCR_BED, SCR_SET, SCR_NUMPAD, SCR_SYSTEM, SCR_TREND };
 
 enum ZoneId : uint8_t {
   Z_NONE = 0,
@@ -47,7 +49,8 @@ enum ZoneId : uint8_t {
   Z_F_RATE = 30, Z_F_PLAN, Z_F_DF, Z_F_NEAR, Z_SAVE, Z_CANCEL,
   Z_KEY = 40,                          // 40..49 = ปุ่มเลข 0..9
   Z_KEY_DOT = 50, Z_KEY_DEL, Z_KEY_OK,
-  Z_BEDS_DEC = 60, Z_BEDS_INC, Z_BRI_DEC, Z_BRI_INC, Z_BUZZ_TOGGLE, Z_BUZZ_TEST, Z_CAL
+  Z_BEDS_DEC = 60, Z_BEDS_INC, Z_BRI_DEC, Z_BRI_INC, Z_BUZZ_TOGGLE, Z_BUZZ_TEST, Z_CAL,
+  Z_GRAPH = 70, Z_RANGE, Z_BACKBED
 };
 
 struct Zone { int16_t x, y, w, h; uint8_t id; };
@@ -63,6 +66,8 @@ struct UiState {
   char     buf[8] = "";
   bool     needFull = true;
   uint32_t lastRefresh = 0;
+  uint8_t  trendRangeIdx = 1;          // 0 = 30 นาที 1 = 60 นาที 2 = 240 นาที
+  uint32_t trendDrawnTotal = 0xFFFFFFFFu;   // จำนวนตัวอย่างทั้งหมดของวงแหวนตอนวาดกราฟล่าสุด (วาดใหม่เมื่อมีตัวอย่างใหม่)
 };
 
 static UiState ui;
@@ -200,12 +205,15 @@ static void drawBed(bool full) {
   if (full) {
     zoneClear();
     tft.fillScreen(C_BLACK);
-    snprintf(s, sizeof(s), "BED %d", ui.bed + 1);
+    if (beds[ui.bed].name[0] && nameIsAscii(beds[ui.bed].name)) snprintf(s, sizeof(s), "BED %d %s", ui.bed + 1, beds[ui.bed].name);
+    else snprintf(s, sizeof(s), "BED %d", ui.bed + 1);
+    s[15] = 0;                                         // ชื่อตัวหนังสือขนาด 2 กว้าง 12 พิกเซล เหลือที่ให้ป้ายสถานะด้านขวา (เริ่มที่ x=200)
     topBar(s);
-    uiBtn(Z_BACK, "BACK", 4, 190, 72, 46, C_PANEL);
-    uiBtn(Z_SETBTN, "SET", 82, 190, 72, 46, C_PANEL);
-    uiBtn(Z_NEWBAG, "NEW BAG", 160, 190, 96, 46, C_PANEL, C_WHITE, 1);
-    uiZone(Z_ACK, 262, 190, 54, 46);
+    uiBtn(Z_BACK, "BACK", 4, 190, 52, 46, C_PANEL, C_WHITE, 1);
+    uiBtn(Z_SETBTN, "SET", 60, 190, 52, 46, C_PANEL, C_WHITE, 2);
+    uiBtn(Z_GRAPH, "GRAPH", 116, 190, 60, 46, C_PANEL, C_WHITE, 1);
+    uiBtn(Z_NEWBAG, "NEW BAG", 180, 190, 76, 46, C_PANEL, C_WHITE, 1);
+    uiZone(Z_ACK, 260, 190, 56, 46);
   }
   if (ui.confirmBag) {
     zoneClear();
@@ -239,9 +247,94 @@ static void drawBed(bool full) {
   snprintf(s, sizeof(s), "LINK %3d%%  RSSI %4d  BAT %.1fV%s  ", (int)b.linkPct, (int)b.rssi, (double)b.batteryV, b.idConflict ? " ID!" : "");
   txt(10, 160, 1, b.linkPct < LINK_WEAK_PCT ? C_AMBER : C_GRAY, C_BLACK, s);
   const bool ackable = (b.alert == ALERT_NEAR_END && !b.nearEndAck);
-  tft.fillRoundRect(262, 190, 54, 46, 6, ackable ? C_AMBER : C_DARK);
-  tft.drawRoundRect(262, 190, 54, 46, 6, C_GRAY);
-  txtc(262, 206, 54, 2, ackable ? C_BLACK : C_GRAY, ackable ? C_AMBER : C_DARK, "ACK");
+  tft.fillRoundRect(260, 190, 56, 46, 6, ackable ? C_AMBER : C_DARK);
+  tft.drawRoundRect(260, 190, 56, 46, 6, C_GRAY);
+  txtc(260, 206, 56, 2, ackable ? C_BLACK : C_GRAY, ackable ? C_AMBER : C_DARK, "ACK");
+}
+
+// ---- หน้า TREND ------------------------------------------------------------------------------
+constexpr int TR_X = 8, TR_Y = 30, TR_W = 304, TR_H = 112;                  // กรอบกราฟ
+static const int TREND_RANGES[3] = {30, 60, 240};
+
+// พิกัดของตัวอย่างที่เก่า ago นาที ในหน้าต่างกว้าง range นาที (ใหม่สุดอยู่ขวาสุด) และของค่า v บนแกนตั้ง 0..vmax (ฟังก์ชันล้วน ทดสอบได้)
+static int trendX(int ago, int range) { return TR_X + 1 + ((range - 1 - ago) * (TR_W - 3)) / (range > 1 ? range - 1 : 1); }
+static int trendY(float v, float vmax) {
+  if (!(vmax > 0)) vmax = 1;
+  if (v < 0) v = 0;
+  if (v > vmax) v = vmax;
+  return TR_Y + TR_H - 2 - (int)((v / vmax) * (TR_H - 4) + 0.5f);
+}
+
+static void drawTrendChart(const TrendRing &r, int range) {
+  tft.fillRect(TR_X, TR_Y, TR_W, TR_H, C_BLACK);
+  tft.drawRect(TR_X, TR_Y, TR_W, TR_H, C_GRAY);
+  const int n = range > r.count ? r.count : range;
+  float vmax = 10;
+  for (int i = 0; i < n; i++) { const TrendSample &x = r.newest(i); if (x.flags & TS_VALID) { if (x.rate > vmax) vmax = x.rate; if (x.target > vmax) vmax = x.target; } }
+  vmax *= 1.15f;
+  for (int g = 1; g <= 3; g++) tft.drawFastHLine(TR_X + 1, TR_Y + (TR_H * g) / 4, TR_W - 2, C_DARK);   // เส้นกริดสามเส้น
+  int prevX = -1, prevY = -1, prevTX = -1, prevTY = -1;
+  for (int i = n - 1; i >= 0; i--) {                                         // เก่า -> ใหม่
+    const TrendSample &x = r.newest(i);
+    const int px = trendX(i, range);
+    if (!(x.flags & TS_VALID)) {                                              // ช่วงไม่มีข้อมูล: แถบเทาที่ฐาน ไม่ลากเส้น (ไม่ใช่ศูนย์)
+      tft.drawFastVLine(px, TR_Y + TR_H - 6, 4, C_GRAY);
+      prevX = -1; prevTX = -1;
+      continue;
+    }
+    if (x.target > 0) {                                                       // เส้นเป้าหมาย (เปลี่ยนตามที่ตั้งไว้ ณ ตอนนั้น)
+      const int ty = trendY((float)x.target, vmax);
+      if (prevTX >= 0) tft.drawLine(prevTX, prevTY, px, ty, C_CYAN);
+      prevTX = px; prevTY = ty;
+    } else prevTX = -1;
+    if (trendAlertCritical(x.alert)) tft.drawFastVLine(px, TR_Y + 2, TR_H - 4, C_BTNRED);   // เหตุวิกฤต: เส้นแดงตลอดแนวตั้ง
+    else if (x.alert == ALERT_NEAR_END) tft.drawFastVLine(px, TR_Y + TR_H - 10, 8, C_AMBER);
+    const int py = trendY((float)x.rate, vmax);
+    const uint16_t col = (x.flags & TS_RUNNING) ? C_GREEN : C_CYAN;          // กำลังนับ = เขียว หยุดชั่วคราว = ฟ้า
+    if (prevX >= 0) tft.drawLine(prevX, prevY, px, py, col); else tft.drawPixel(px, py, col);
+    prevX = px; prevY = py;
+  }
+  char s[24];
+  snprintf(s, sizeof(s), "%.0f", (double)vmax);
+  txt(TR_X + 3, TR_Y + 3, 1, C_GRAY, C_BLACK, s);
+  if (n == 0) txtc(TR_X, TR_Y + TR_H / 2 - 4, TR_W, 1, C_GRAY, C_BLACK, "NO DATA YET (1 SAMPLE PER MINUTE)");
+}
+
+static void drawTrend(bool full) {
+  const int range = TREND_RANGES[ui.trendRangeIdx % 3];
+  const TrendRing &r = trend.ring[ui.bed];
+  char s[64];
+  if (full) {
+    zoneClear();
+    tft.fillScreen(C_BLACK);
+    snprintf(s, sizeof(s), "BED %d TREND", ui.bed + 1);
+    topBar(s);
+    uiBtn(Z_BACKBED, "BACK", 4, 190, 96, 46, C_PANEL);
+    uiBtn(Z_RANGE, "RANGE", 108, 190, 96, 46, C_PANEL);
+    ui.trendDrawnTotal = 0xFFFFFFFFu;
+  }
+  snprintf(s, sizeof(s), "%d MIN", range);
+  txt(228, 6, 2, C_AMBER, C_PANEL, s);                                        // "240 MIN" กว้าง 84 พิกเซล ชิดขวาไม่ล้น
+  if (ui.trendDrawnTotal != r.totalMinutes || full) {                         // วาดกราฟใหม่เมื่อมีตัวอย่างใหม่เท่านั้น (ไม่กะพริบ)
+    ui.trendDrawnTotal = r.totalMinutes;
+    drawTrendChart(r, range);
+  }
+  const TrendSummary sm = trendSummarize(r, range, beds[ui.bed].cfg.dropFactor);
+  char t[40];
+  snprintf(t, sizeof(t), "AVG %.0f  MIN %u  MAX %u", (double)sm.avgRate, (unsigned)sm.minRate, (unsigned)sm.maxRate);
+  snprintf(s, sizeof(s), "%-31.31s", t);                                       // ข้อความฝั่งซ้ายยาวไม่เกิน 31 ตัว (ไม่ชนคอลัมน์คำอธิบายที่ x=200)
+  txt(8, 150, 1, C_WHITE, C_BLACK, s);
+  snprintf(t, sizeof(t), "GIVEN %.0f mL  IN-RANGE %d%%", (double)sm.totalMl, sm.withinPct);
+  snprintf(s, sizeof(s), "%-31.31s", t);
+  txt(8, 162, 1, C_WHITE, C_BLACK, s);
+  snprintf(t, sizeof(t), "ALERTS %d  NO DATA %d MIN", sm.alertEpisodes, sm.gapMinutes);
+  snprintf(s, sizeof(s), "%-31.31s", t);
+  txt(8, 174, 1, sm.alertEpisodes ? C_AMBER : C_GRAY, C_BLACK, s);
+  if (full) {                                                                  // คำอธิบายสี (คงที่ จึงวาดครั้งเดียว)
+    txt(200, 150, 1, C_GREEN, C_BLACK, "GREEN rate");
+    txt(200, 162, 1, C_CYAN, C_BLACK, "CYAN target");
+    txt(200, 174, 1, C_BTNRED, C_BLACK, "RED alert");
+  }
 }
 
 // ---- หน้า BED SET ---------------------------------------------------------------------------
@@ -332,7 +425,7 @@ static void drawSystem(bool full) {
   const uint32_t up = millis() / 1000;
   snprintf(s, sizeof(s), "v%s  UP %lu:%02lu:%02lu  PANEL %d  ", APP_VERSION, (unsigned long)(up / 3600), (unsigned long)((up / 60) % 60), (unsigned long)(up % 60), (int)CYD_PANEL);
   txt(8, 208, 1, C_GRAY, C_BLACK, s);
-  snprintf(s, sizeof(s), "WIFI %s  %s  SD %s  CLK %s  ", CYD_AP_SSID, "192.168.4.1", sdOk ? "OK" : "NO", clockSynced ? "SET" : "NOT SET");
+  snprintf(s, sizeof(s), "WIFI %s  %s  SD %s  CLK %s  ", netCfg.ssid, "192.168.4.1", sdOk ? "OK" : "NO", clockSynced ? "SET" : "NOT SET");
   s[52] = 0;
   txt(8, 220, 1, C_GRAY, C_BLACK, s);
   txt(8, 231, 1, C_GRAY, C_BLACK, "ESP-NOW PROTOCOL V3 - NOT A CERTIFIED ALARM SYSTEM");
@@ -350,6 +443,7 @@ static void uiDraw(bool full) {
     case SCR_SET:    if (full) drawSet(); break;
     case SCR_NUMPAD: if (full) drawNumpad(); break;
     case SCR_SYSTEM: drawSystem(full); break;
+    case SCR_TREND:  drawTrend(full); break;
   }
 }
 
@@ -396,6 +490,9 @@ static void uiTap(int x, int y, uint32_t now) {
       }
       uiDraw(false); break;
     case Z_SETBTN:  ui.edit = beds[ui.bed].cfg; uiGo(SCR_SET); break;
+    case Z_GRAPH:   uiGo(SCR_TREND); break;
+    case Z_BACKBED: uiGo(SCR_BED); break;
+    case Z_RANGE:   ui.trendRangeIdx = (uint8_t)((ui.trendRangeIdx + 1) % 3); ui.needFull = true; break;
     case Z_NEWBAG:  ui.confirmBag = true; uiDraw(false); break;
     case Z_NO:      ui.confirmBag = false; ui.needFull = true; break;
     case Z_YES:

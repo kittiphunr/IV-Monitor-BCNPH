@@ -4,10 +4,13 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <algorithm>
+#include <vector>
 #include <map>
 #include "Arduino.h"
 #include "WebServer.h"
 #include "protocol.h"
+#include "scenario.h"
 #include <WiFi.h>
 #include <esp_now.h>
 #include <esp_wifi.h>
@@ -22,7 +25,8 @@ void delay(unsigned long ms) { g_ms += ms; }
 void delayMicroseconds(unsigned long) {}
 void pinMode(int, int) {}
 void digitalWrite(int, int) {}
-int digitalRead(int) { return 1; }
+static unsigned long g_bootUntil = 0;                       // ปุ่ม BOOT (GPIO0) ถูกกดอยู่จนถึงเวลานี้
+int digitalRead(int p) { return (p == 0 && g_ms < g_bootUntil) ? 0 : 1; }
 bool ledcAttach(int, int, int) { return true; }
 void ledcWrite(int, int) {}
 void ledcSetup(int, int, int) {}
@@ -77,6 +81,9 @@ static void runMs(int ms) { for (int e = 0; e < ms; e += 50) { g_ms += 50; servi
 static void reset() {
   for (int i = 0; i < MAX_BEDS; i++) { beds[i] = Bed(); wasOnline[i] = false; }
   activeBeds = 5; snoozeUntil = 0; syncSched = SyncScheduler(); events = EventLog(); g_sentCount = 0;
+  netCfg = netDefaults(); netReset(); restartPending = false; g_prefBlobs().clear();
+  trend = TrendState(); clockTzMin = 0;
+  fs::g_mem = fs::MemFS(); fs::g_shortNames = false; sdOk = false; sdFails = 0;
   beds[0].cfg.targetRateHr = 60; beds[0].cfg.planVolumeMl = 500; beds[0].cfg.resetSeq = 9;
 }
 static bool nextSyncIs(int bed) { return syncSched.isPending(bed); }     // มีคำขอส่งด่วนของเตียงนี้ค้างอยู่ (รอบปกติไม่นับ)
@@ -244,6 +251,303 @@ static void testNoDropEndToEnd() {
   CHECK(sawEvent, "ต้องลงประวัติ ALERT NO_SIGNAL");
 }
 
+
+// ---- ชื่อผู้ป่วย ----
+static void testNames() {
+  reset();
+  CHECK(webCall(HTTP_POST, "/api/name", {{"bed", "1"}, {"name", "A"}}) == 401, "ตั้งชื่อต้องล็อกอิน");
+  CHECK(beds[0].name[0] == 0 && events.size() == 0, "ล็อกอินไม่ผ่านต้องไม่เปลี่ยนอะไร");
+  CHECK(webCall(HTTP_POST, "/api/name", {{"bed", "1"}, {"name", "Somchai K."}}, U, P) == 200 && strcmp(beds[0].name, "Somchai K.") == 0, "ตั้งชื่อ ASCII");
+  CHECK(events.size() == 1 && events.newest(0).type == EV_CONFIG && events.newest(0).bed == 1, "ลงประวัติ CONFIG");
+  CHECK(webCall(HTTP_POST, "/api/name", {{"bed", "2"}, {"name", "  นายสมชาย ใจดี  "}}, U, P) == 200 && strcmp(beds[1].name, "นายสมชาย ใจดี") == 0, "ชื่อไทย (ตัดช่องว่างหัวท้าย)");
+  CHECK(nameIsAscii(beds[0].name) && !nameIsAscii(beds[1].name), "ตรวจ ASCII สำหรับจอ");
+  CHECK(webCall(HTTP_POST, "/api/name", {{"bed", "3"}, {"name", "a\"b\\c<script>x</script>&'"}}, U, P) == 200, "อักขระพิเศษต้องเก็บได้ (ปลอดภัยเพราะเว็บใช้ textContent และ JSON หลีกให้)");
+  CHECK(webCall(HTTP_POST, "/api/name", {{"bed", "1"}, {"name", ""}}, U, P) == 200 && beds[0].name[0] == 0, "ชื่อว่าง = ล้างชื่อ");
+  CHECK(webCall(HTTP_POST, "/api/name", {{"bed", "1"}}, U, P) == 400, "ไม่ส่งฟิลด์ name ต้อง 400 (ไม่ใช่ล้างชื่อ)");
+  CHECK(webCall(HTTP_POST, "/api/name", {{"name", "x"}}, U, P) == 400 && webCall(HTTP_POST, "/api/name", {{"bed", "9"}, {"name", "x"}}, U, P) == 400, "เลขเตียงผิด");
+  const std::string thai10 = std::string("กขคงจฉชซฌญกขคงจฉชซฌญ") + "ก", thai11 = thai10 + "ฎ";    // ชื่อเก็บเป็น thai10 = 21 ตัว (63 ไบต์) thai11 = 22 ตัว (66 ไบต์)
+  CHECK(thai10.size() == 63 && webCall(HTTP_POST, "/api/name", {{"bed", "4"}, {"name", thai10}}, U, P) == 200, "ไทย 21 ตัว = 63 ไบต์ ใช้ได้ (ขอบ)");
+  CHECK(thai11.size() == 66 && webCall(HTTP_POST, "/api/name", {{"bed", "4"}, {"name", thai11}}, U, P) == 400 && strcmp(beds[3].name, thai10.c_str()) == 0, "ไทย 22 ตัว = 66 ไบต์ ต้องปฏิเสธและไม่แตะชื่อเดิม");
+  CHECK(webCall(HTTP_POST, "/api/name", {{"bed", "5"}, {"name", std::string(63, 'x')}}, U, P) == 200, "ยาว 63 ไบต์พอดี");
+  CHECK(webCall(HTTP_POST, "/api/name", {{"bed", "5"}, {"name", std::string(64, 'x')}}, U, P) == 400, "ยาว 64 ไบต์ต้องปฏิเสธ");
+  // UTF-8 ผิดรูป และอักขระควบคุม ต้องปฏิเสธทั้งหมด (ไม่งั้น JSON ของเว็บพัง)
+  const char *bad[] = {"\xC0\x80", "\xC1\xBF", "\xE0\x80\x80", "\xED\xA0\x80", "\xF4\x90\x80\x80", "\xF5\x80\x80\x80", "\xFF", "\x80", "\xE0\xB8", "ab\xC3", "a\nb", "a\tb", "a\x01" "b", "a\x7F" "b", "a\rb", "\xF0\x80\x80\x80"};
+  for (const char *b : bad) {
+    CHECK(webCall(HTTP_POST, "/api/name", {{"bed", "5"}, {"name", b}}, U, P) == 400, "UTF-8 ผิดรูป/อักขระควบคุมต้องปฏิเสธ");
+  }
+  CHECK(strcmp(beds[4].name, std::string(63, 'x').c_str()) == 0, "ค่าที่ถูกปฏิเสธต้องไม่ทำให้ชื่อเดิมเปลี่ยน");
+  CHECK(utf8Validate("สวัสดี") == 18 && utf8Validate("😀") == 4 && utf8Validate("\xF4\x8F\xBF\xBF") == 4 && utf8Validate("\xEF\xBF\xBF") == 3, "UTF-8 ที่ถูกต้อง (รวมขอบ U+10FFFF และ U+FFFF)");
+  // JSON ของ state ต้องถูกต้องแม้ชื่อมีอักขระพิเศษและภาษาไทย (python ตรวจ json.loads ใน run.sh)
+  webCall(HTTP_GET, "/api/state"); dump("/tmp/cyd_web_state_names.json", g_web.body);
+  CHECK(g_web.body.find("\"name\":\"นายสมชาย ใจดี\"") != std::string::npos, "state ต้องมีชื่อไทยตรงตัว");
+  CHECK(g_web.body.find("<script>") == std::string::npos || g_web.body.find("\\\"") != std::string::npos, "ข้อความพิเศษถูกหลีกใน JSON");
+  // จดจำข้ามการรีบูต
+  saveNames(beds);
+  Bed copy[MAX_BEDS];
+  loadNames(copy);
+  CHECK(strcmp(copy[1].name, "นายสมชาย ใจดี") == 0 && strcmp(copy[3].name, thai10.c_str()) == 0 && copy[0].name[0] == 0, "ชื่อต้องโหลดกลับได้หลังรีบูต");
+  // ข้อมูลใน NVS เสียเป็นรายเตียง: ล้างเฉพาะเตียงที่เสีย ไม่ทิ้งทั้งชุด
+  StoredNames sn; memset(&sn, 0, sizeof(sn)); sn.magic = NAMES_MAGIC;
+  strcpy(sn.name[0], "good"); memcpy(sn.name[1], "\xC0\x80" "zz", 5); strcpy(sn.name[2], "also ok");
+  memset(sn.name[3], 'x', BED_NAME_MAX + 1);                    // ไม่มีตัวจบสตริง
+  Preferences pr; pr.begin("names", false); pr.putBytes("all", &sn, sizeof(sn)); pr.end();
+  Bed loaded[MAX_BEDS]; loadNames(loaded);
+  CHECK(strcmp(loaded[0].name, "good") == 0 && loaded[1].name[0] == 0 && strcmp(loaded[2].name, "also ok") == 0, "ชื่อเสียต้องถูกล้างเฉพาะเตียงนั้น");
+  CHECK(strlen(loaded[3].name) == BED_NAME_MAX, "ชื่อไม่มีตัวจบสตริงต้องถูกตัดอย่างปลอดภัย");
+  sn.magic = 0xDEADBEEF; pr.begin("names", false); pr.putBytes("all", &sn, sizeof(sn)); pr.end();
+  Bed none[MAX_BEDS]; loadNames(none);
+  CHECK(none[0].name[0] == 0 && none[2].name[0] == 0, "เลขยืนยันผิดต้องไม่ใช้ข้อมูลนั้นเลย");
+  CHECK(static_cast<size_t>(sizeof(Bed::name)) == BED_NAME_MAX + 1, "ขนาดช่องชื่อใน Bed ต้องตรงกับ BED_NAME_MAX");
+}
+
+// ---- ตั้งค่า Wi-Fi และบัญชีเว็บ ----
+static void testWifiSettings() {
+  reset();
+  CHECK(webCall(HTTP_GET, "/api/wifi") == 200 && g_web.type == "application/json", "อ่านข้อมูล Wi-Fi ได้โดยไม่ล็อกอิน");
+  CHECK(g_web.body.find(CYD_AP_SSID) != std::string::npos, "ต้องบอกชื่อ Wi-Fi");
+  CHECK(g_web.body.find(CYD_AP_PASS) == std::string::npos && g_web.body.find(CYD_WEB_PASS) == std::string::npos, "ห้ามส่งรหัสผ่านออกไปทางเว็บเด็ดขาด");
+  CHECK(g_web.body.find("\"defaultWifiPass\":true") != std::string::npos && g_web.body.find("\"defaultWebPass\":true") != std::string::npos, "ต้องเตือนว่ายังใช้รหัสปริยาย");
+  dump("/tmp/cyd_web_wifi.json", g_web.body);
+  Args good = {{"ssid", "Ward 5 IV"}, {"pass", "newpass123"}, {"webuser", "nurse01"}, {"webpass", "s3cret!x"}};
+  CHECK(webCall(HTTP_POST, "/api/wifi", good) == 401 && !restartPending, "ตั้งค่า Wi-Fi ต้องล็อกอิน");
+  CHECK(webCall(HTTP_POST, "/api/wifi", good, U, "wrong") == 401, "รหัสผิดต้อง 401");
+  struct Bad { const char *k, *v; } bads[] = {
+    {"ssid", "has\"quote"}, {"ssid", " lead"}, {"ssid", "trail "}, {"ssid", "ไทย"}, {"ssid", "semi;colon"}, {"ssid", "012345678901234567890123456789012"},
+    {"pass", "short7!"}, {"pass", "ไม่ใช่ascii1"}, {"pass", "tab\tpass123"}, {"pass", "0123456789012345678901234567890123456789012345678901234567890123456789"},
+    {"webuser", "ab"}, {"webuser", "has space"}, {"webuser", "name:colon"}, {"webuser", "12345678901234567"},
+    {"webpass", "12345"}, {"webpass", "has space1"}, {"webpass", "ไทยไทยไทยไทย"}, {"webpass", "123456789012345678901234567890123"}};
+  for (auto &b : bads) {
+    Args a = {{b.k, b.v}};
+    CHECK(webCall(HTTP_POST, "/api/wifi", a, U, P) == 400, "ค่า Wi-Fi/บัญชีที่ผิดกฎต้อง 400");
+  }
+  CHECK(!restartPending, "ค่าผิดทั้งหมดต้องไม่ทำให้รีสตาร์ท");
+  CHECK(netLoad().ssid[0] == CYD_AP_SSID[0] && strcmp(netLoad().ssid, CYD_AP_SSID) == 0, "ค่าผิดต้องไม่ถูกบันทึก");
+  CHECK(webCall(HTTP_POST, "/api/wifi", {{"ssid", "OK name"}, {"pass", "short"}}, U, P) == 400 && strcmp(netLoad().ssid, CYD_AP_SSID) == 0, "ใช้ทั้งชุดหรือไม่ใช้เลย: ฟิลด์แรกถูก ฟิลด์ที่สองผิด ต้องไม่บันทึกฟิลด์แรก");
+  CHECK(webCall(HTTP_POST, "/api/wifi", {}, U, P) == 400 && g_web.body == "no fields", "ไม่มีฟิลด์เลยต้อง 400");
+  // สำเร็จ
+  g_ms += 1000;
+  const uint32_t t0 = g_ms;
+  CHECK(webCall(HTTP_POST, "/api/wifi", good, U, P) == 200 && g_web.body.find("restart") != std::string::npos, "ค่าถูกต้องต้องบันทึกสำเร็จ");
+  CHECK(restartPending && restartAtMs - t0 >= 2000 && restartAtMs - t0 <= 3000, "ต้องรีสตาร์ทหลังตอบเบราว์เซอร์ ไม่ใช่ทันที (ราว 2.5 วินาที)");
+  const NetConfig saved = netLoad();
+  CHECK(strcmp(saved.ssid, "Ward 5 IV") == 0 && strcmp(saved.wifiPass, "newpass123") == 0 && strcmp(saved.webUser, "nurse01") == 0 && strcmp(saved.webPass, "s3cret!x") == 0, "ต้องเก็บใน NVS ครบ");
+  // ก่อนรีสตาร์ท ค่าใช้งานยังเป็นของเดิม (ค่าใหม่มีผลหลังรีสตาร์ท) หลังรีสตาร์ทต้องใช้ค่าใหม่
+  CHECK(webCall(HTTP_POST, "/api/bed", {{"bed", "1"}, {"rate", "10"}}, U, P) == 200, "ก่อนรีสตาร์ทบัญชีเดิมยังใช้ได้");
+  netCfg = netLoad();                                                   // จำลองการรีบูต
+  CHECK(webCall(HTTP_POST, "/api/bed", {{"bed", "1"}, {"rate", "11"}}, U, P) == 401, "หลังรีสตาร์ทบัญชีเดิมต้องใช้ไม่ได้");
+  CHECK(webCall(HTTP_POST, "/api/bed", {{"bed", "1"}, {"rate", "11"}}, "nurse01", "s3cret!x") == 200 && beds[0].cfg.targetRateHr == 11, "บัญชีใหม่ใช้ได้");
+  webCall(HTTP_GET, "/api/wifi");
+  CHECK(g_web.body.find("Ward 5 IV") != std::string::npos && g_web.body.find("\"defaultWifiPass\":false") != std::string::npos && g_web.body.find("\"defaultWebPass\":false") != std::string::npos, "เปลี่ยนแล้วต้องเลิกเตือนรหัสปริยาย");
+  CHECK(g_web.body.find("newpass123") == std::string::npos && g_web.body.find("s3cret!x") == std::string::npos, "ห้ามส่งรหัสใหม่ออกไปทางเว็บ");
+  // เปลี่ยนเฉพาะบางฟิลด์ ที่เหลือคงเดิม
+  restartPending = false;
+  CHECK(webCall(HTTP_POST, "/api/wifi", {{"webpass", "another9"}}, "nurse01", "s3cret!x") == 200, "เปลี่ยนเฉพาะรหัสเว็บ");
+  const NetConfig part = netLoad();
+  CHECK(strcmp(part.ssid, "Ward 5 IV") == 0 && strcmp(part.wifiPass, "newpass123") == 0 && strcmp(part.webPass, "another9") == 0, "ฟิลด์ที่ไม่ส่งต้องคงเดิม");
+  // คืนค่าปริยายทาง Serial
+  restartPending = false;
+  handleLine((char *)"wifireset");
+  CHECK(restartPending && strcmp(netLoad().ssid, CYD_AP_SSID) == 0 && strcmp(netLoad().webPass, CYD_WEB_PASS) == 0, "wifireset ต้องคืนค่าปริยายและรีสตาร์ท");
+  // ตรวจค่าที่อ่านจาก NVS: ข้อมูลเสียต้องตกกลับเป็นค่าปริยาย
+  StoredNet bad; memset(&bad, 0, sizeof(bad)); bad.magic = NET_MAGIC; bad.cfg = netDefaults(); strcpy(bad.cfg.wifiPass, "x");   // รหัสสั้นเกินกฎ
+  Preferences pr; pr.begin("net", false); pr.putBytes("cfg", &bad, sizeof(bad)); pr.end();
+  CHECK(strcmp(netLoad().wifiPass, CYD_AP_PASS) == 0, "ค่าใน NVS ที่ผิดกฎต้องไม่ถูกใช้ (กลับเป็นค่าปริยาย)");
+  bad.magic = 0; bad.cfg = netDefaults(); strcpy(bad.cfg.ssid, "Evil"); pr.begin("net", false); pr.putBytes("cfg", &bad, sizeof(bad)); pr.end();
+  CHECK(strcmp(netLoad().ssid, CYD_AP_SSID) == 0, "เลขยืนยันผิดต้องไม่ใช้ข้อมูล");
+  CHECK(netValidSsid("a") && netValidSsid("My Ward-5_x.y") && !netValidSsid("") && !netValidSsid(nullptr), "ขอบของชื่อ Wi-Fi");
+  CHECK(netValidWifiPass("12345678") && !netValidWifiPass("1234567") && netValidWifiPass("pass word!") , "ขอบของรหัส Wi-Fi (มีช่องว่างได้)");
+  CHECK(netValidWebUser("abc") && !netValidWebUser("ab") && netValidWebPass("123456") && !netValidWebPass("12345 6"), "ขอบของบัญชีเว็บ");
+}
+
+// ---- กด BOOT ค้างตอนเปิดเครื่อง = คืนค่าปริยาย ----
+static void testBootReset() {
+  reset();
+  NetConfig custom = netDefaults(); strcpy(custom.ssid, "Custom"); strcpy(custom.webPass, "custompw1"); netSave(custom); netCfg = netLoad();
+  g_ms = 400000; g_bootUntil = 0;
+  bootWifiResetCheck();
+  CHECK(strcmp(netCfg.ssid, "Custom") == 0, "ไม่กด BOOT ต้องไม่รีเซ็ต");
+  g_ms = 410000; g_bootUntil = g_ms + 800;                                // กดสั้น 0.8 วินาที แล้วปล่อย
+  bootWifiResetCheck();
+  CHECK(strcmp(netCfg.ssid, "Custom") == 0 && strcmp(netLoad().webPass, "custompw1") == 0, "กดไม่ถึง 2 วินาทีต้องไม่รีเซ็ต");
+  g_ms = 420000; g_bootUntil = g_ms + 6000;                               // กดค้าง
+  bootWifiResetCheck();
+  CHECK(strcmp(netCfg.ssid, CYD_AP_SSID) == 0 && strcmp(netCfg.webPass, CYD_WEB_PASS) == 0, "กดค้างตอนเปิดเครื่องต้องคืนค่าปริยาย");
+  CHECK(strcmp(netLoad().ssid, CYD_AP_SSID) == 0, "ต้องล้างค่าที่เก็บไว้ด้วย");
+  CHECK(g_ms >= 420000 + 6000, "ต้องรอปล่อยปุ่มก่อนเริ่มระบบต่อ (กันกดค้างแล้วเข้าโหมดอื่นโดยไม่ตั้งใจ)");
+  CHECK(events.size() >= 1 && events.newest(0).type == EV_CONFIG, "ต้องลงประวัติ");
+}
+
+
+// ---- กราฟแนวโน้ม รายงานย้อนหลัง และไฟล์บน SD ----
+static double jnum(const std::string &body, const char *key) {
+  const std::string k = std::string("\"") + key + "\":";
+  const size_t p = body.find(k);
+  return p == std::string::npos ? -999999 : atof(body.c_str() + p + k.size());
+}
+static std::vector<std::string> splitLines(const std::string &s) {
+  std::vector<std::string> out; size_t p = 0;
+  while (p < s.size()) { size_t q = s.find('\n', p); if (q == std::string::npos) q = s.size(); out.push_back(s.substr(p, q - p)); p = q + 1; }
+  return out;
+}
+static void playStandard() {
+  beds[0].cfg.targetRateHr = 60;
+  uint32_t drops = 0; double acc = 0; uint32_t now = g_ms;
+  int n; const Seg *segs = standardScenario(n);
+  runScenario(trend, beds, 0, segs, n, now, acc, drops);
+  g_ms = now;
+}
+
+static void testTrendEndpoints() {
+  reset();
+  CHECK(webCall(HTTP_GET, "/api/trend", {{"bed", "1"}}) == 200, "ยังไม่มีข้อมูลต้องตอบได้ (ไม่ใช่ error)");
+  CHECK(jnum(g_web.body, "count") == 0 && g_web.body.find("\"r\":[]") != std::string::npos, "ไม่มีข้อมูล = อาร์เรย์ว่าง");
+  CHECK(webCall(HTTP_GET, "/api/report", {{"bed", "1"}}) == 200 && jnum(g_web.body, "minutes") == 0 && jnum(g_web.body, "totalMl") == 0, "รายงานว่างต้องเป็นศูนย์ ไม่หารศูนย์");
+  playStandard();
+  CHECK(trend.ring[0].count == 80, "ได้ 80 ตัวอย่าง");
+  CHECK(webCall(HTTP_GET, "/api/trend", {{"bed", "1"}, {"mins", "80"}}) == 200 && g_web.type == "application/json", "กราฟดึงได้โดยไม่ต้องล็อกอิน");
+  CHECK(jnum(g_web.body, "count") == 80 && jnum(g_web.body, "bed") == 1 && jnum(g_web.body, "mins") == 80, "จำนวนและเลขเตียง");
+  dump("/tmp/cyd_web_trend.json", g_web.body);
+  CHECK(webCall(HTTP_GET, "/api/trend", {{"bed", "1"}}) == 200 && jnum(g_web.body, "mins") == 60 && jnum(g_web.body, "count") == 60, "ไม่ส่ง mins = 60 นาที");
+  CHECK(webCall(HTTP_GET, "/api/trend", {{"bed", "1"}, {"mins", "240"}}) == 200 && jnum(g_web.body, "count") == 80, "ขอมากกว่าที่มีได้เท่าที่มี");
+  const char *badMins[] = {"0", "241", "-5", "abc", "1e2", "10.5", "0x10", " ", "99999"};
+  for (const char *m : badMins) {
+    CHECK(webCall(HTTP_GET, "/api/trend", {{"bed", "1"}, {"mins", m}}) == 400, "จำนวนนาทีที่ผิดต้อง 400");
+    CHECK(webCall(HTTP_GET, "/api/report", {{"bed", "1"}, {"mins", m}}) == 400, "รายงาน: จำนวนนาทีผิดต้อง 400");
+  }
+  for (const char *b : {"", "0", "6", "x", "1.5", "-1"}) CHECK(webCall(HTTP_GET, "/api/trend", {{"bed", b}}) == 400 && webCall(HTTP_GET, "/api/report", {{"bed", b}}) == 400, "เลขเตียงผิดต้อง 400");
+  CHECK(webCall(HTTP_GET, "/api/trend") == 400, "ไม่ส่งเตียงต้อง 400");
+  // รายงาน: ค่าตรงกับสถานการณ์ที่รู้คำตอบ
+  CHECK(webCall(HTTP_GET, "/api/report", {{"bed", "1"}, {"mins", "80"}}) == 200, "รายงาน 80 นาที");
+  dump("/tmp/cyd_web_report.json", g_web.body);
+  CHECK(jnum(g_web.body, "minutes") == 80 && jnum(g_web.body, "valid") == 71 && jnum(g_web.body, "gap") == 9 && jnum(g_web.body, "running") == 61, "จำนวนนาที");
+  CHECK(fabs(jnum(g_web.body, "avgRate") - 4260.0 / 61) < 0.2 && jnum(g_web.body, "minRate") == 60 && jnum(g_web.body, "maxRate") == 90, "อัตราเฉลี่ย/ต่ำสุด/สูงสุด");
+  CHECK(fabs(jnum(g_web.body, "totalMl") - 70.0) < 0.3 && jnum(g_web.body, "withinPct") == 67 && jnum(g_web.body, "episodes") == 1, "ปริมาตร % ในช่วง จำนวนครั้งเตือน");
+  CHECK(g_web.body.find("\"TOO_FAST\":10") != std::string::npos && g_web.body.find("\"NEAR_END\":10") != std::string::npos && g_web.body.find("\"OCCLUSION\"") == std::string::npos, "นาทีของแต่ละเตือน (ไม่แสดงรหัสที่ไม่เคยเกิด)");
+  // เตียงอื่นไม่ปน
+  CHECK(webCall(HTTP_GET, "/api/report", {{"bed", "2"}, {"mins", "80"}}) == 200 && jnum(g_web.body, "valid") == 0 && jnum(g_web.body, "minutes") == 0, "เตียง 2 ไม่มีตัวอย่างเลย (สถานการณ์ทดสอบเก็บเฉพาะเตียง 1) ต้องไม่ปนกับเตียง 1");
+  // ดาวน์โหลด CSV รายนาทีจากหน่วยความจำ
+  CHECK(webCall(HTTP_GET, "/api/trend.csv", {{"bed", "1"}}) == 401, "ดาวน์โหลด CSV ต้องล็อกอิน");
+  clockSynced = false;
+  CHECK(webCall(HTTP_GET, "/api/trend.csv", {{"bed", "1"}}, U, P) == 200 && g_web.type == "text/csv", "ล็อกอินแล้วดาวน์โหลดได้");
+  CHECK(g_web.headers["Content-Disposition"].find("bed1-trend.csv") != std::string::npos && g_web.contentLength == CONTENT_LENGTH_UNKNOWN, "ต้องมีชื่อไฟล์ และส่งแบบไม่ทราบความยาว (chunked)");
+  auto lines = splitLines(g_web.body);
+  CHECK(lines.size() == 1 + 71 && lines[0] + "\n" == TREND_CSV_HEADER, "หัวคอลัมน์ + เฉพาะนาทีที่มีข้อมูล (71 บรรทัด)");
+  bool fieldsOk = true; uint32_t prevUp = 0; bool ordered = true;
+  for (size_t i = 1; i < lines.size(); i++) {
+    int commas = 0; for (char ch : lines[i]) if (ch == ',') commas++;
+    if (commas != 10) fieldsOk = false;
+    unsigned long ep, up; int bed;
+    if (sscanf(lines[i].c_str(), "%lu,%lu,%d", &ep, &up, &bed) != 3 || bed != 1 || ep != 0) fieldsOk = false;     // ยังไม่ตั้งนาฬิกา epoch ต้องเป็น 0
+    if (up < prevUp) ordered = false;
+    prevUp = up;
+  }
+  CHECK(fieldsOk && ordered, "ทุกบรรทัด 11 ฟิลด์ เตียง 1 epoch=0 (ยังไม่ตั้งนาฬิกา) และเรียงเก่า -> ใหม่");
+  CHECK(g_web.chunks >= 2, "ข้อมูลเกิน 1 KB ต้องส่งเป็นหลายก้อน");
+  // ตั้งนาฬิกาแล้ว epoch ต้องเดินห่างกันนาทีละ 60 วินาที
+  clockSet(1789000000);
+  CHECK(webCall(HTTP_GET, "/api/trend.csv", {{"bed", "1"}, {"mins", "10"}}, U, P) == 200, "ตั้งนาฬิกาแล้วดาวน์โหลด");
+  lines = splitLines(g_web.body);
+  unsigned long e1 = 0, e2 = 0;
+  CHECK(lines.size() == 11, "10 นาทีล่าสุด = 10 บรรทัด + หัว");
+  sscanf(lines[1].c_str(), "%lu", &e1); sscanf(lines[2].c_str(), "%lu", &e2);
+  CHECK(e1 >= 1700000000 && e2 - e1 == 60, "epoch ต้องจริงและห่างกัน 60 วินาที");
+  CHECK(webCall(HTTP_GET, "/api/trend.csv", {{"bed", "1"}, {"mins", "0"}}, U, P) == 400, "CSV: จำนวนนาทีผิดต้อง 400");
+  clockSynced = false;
+  // JSON ของกราฟกรณีเลวร้ายสุด: 240 นาที ต้องไม่ล้นบัฟเฟอร์
+  reset();
+  TrendRing &r = trend.ring[0];
+  for (int i = 0; i < TREND_MINUTES; i++) { TrendSample x = {}; x.flags = TS_VALID | TS_RUNNING; x.rate = 3000; x.target = 3000; x.alert = ALERT_LOST_LINK; r.add(x); }
+  CHECK(webCall(HTTP_GET, "/api/trend", {{"bed", "1"}, {"mins", "240"}}) == 200 && jnum(g_web.body, "count") == 240, "240 นาทีเลวร้ายสุดต้องไม่ล้น");
+  printf("  กราฟ 240 นาทีเลวร้ายสุด %zu ไบต์ จากบัฟเฟอร์ %zu · หน่วยความจำวงแหวนทั้งแปดเตียง %zu ไบต์\n", g_web.body.size(), sizeof(webBuf), sizeof(TrendState));
+}
+
+static void testSdCard() {
+  reset();
+  fs::g_mem.cardPresent = true;
+  CHECK(sdLogBegin() && sdOk, "มีการ์ดต้องเริ่มได้");
+  CHECK(fs::g_mem.files["/events.csv"] == "epoch,upSec,bed,event,detail\n" && fs::g_mem.dirs.count("/trend"), "สร้างไฟล์เหตุการณ์พร้อมหัวคอลัมน์ และโฟลเดอร์ /trend");
+  sdLogEvent({5000, 1789000000, 2, EV_ALERT, ALERT_OCCLUSION});
+  CHECK(fs::g_mem.files["/events.csv"].find("1789000000,5,2,ALERT,OCCLUSION\n") != std::string::npos, "บันทึกเหตุการณ์ลงการ์ด");
+  const int opens0 = fs::g_mem.opens; sdLogBegin();
+  CHECK(fs::g_mem.files["/events.csv"].find("epoch,upSec") == 0 && fs::g_mem.files["/events.csv"].find("epoch,upSec", 1) == std::string::npos, "เริ่มซ้ำต้องไม่เขียนหัวคอลัมน์ซ้ำ (ไม่ทับไฟล์เดิม)");
+  (void)opens0;
+  // ไฟล์แนวโน้มรายวัน
+  TrendSample sm[MAX_BEDS] = {};
+  for (int i = 0; i < 3; i++) { sm[i].flags = TS_VALID | TS_RUNNING; sm[i].rate = (uint16_t)(60 + i); sm[i].target = 60; }
+  sm[1].flags = 0;                                                        // เตียง 2 ไม่มีข้อมูล ห้ามเขียนแถว
+  sdLogTrend(sm, 3, 1789000000, 100, 420);
+  const std::string f1 = fs::g_mem.files["/trend/20260910.csv"];
+  CHECK(f1.find(TREND_CSV_HEADER) == 0, "ไฟล์ใหม่มีหัวคอลัมน์");
+  auto l1 = splitLines(f1);
+  CHECK(l1.size() == 1 + 2 && l1[1].find("1789000000,100,1,60,") == 0 && l1[2].find("1789000000,100,3,62,") == 0, "เขียนเฉพาะเตียงที่มีข้อมูล (เตียง 1 และ 3)");
+  sdLogTrend(sm, 3, 1789000060, 101, 420);
+  CHECK(splitLines(fs::g_mem.files["/trend/20260910.csv"]).size() == 1 + 4, "นาทีถัดไปต่อท้าย ไม่เขียนหัวซ้ำ");
+  sdLogTrend(sm, 3, 1789000000, 102, -60);
+  CHECK(fs::g_mem.files.count("/trend/20260909.csv") == 1, "เขตเวลาต่างกันได้ไฟล์คนละวัน (เที่ยงคืนท้องถิ่น)");
+  sdLogTrend(sm, 3, 0, 5, 420);
+  CHECK(fs::g_mem.files.count("/trend/unsync.csv") == 1, "ยังไม่ได้ตั้งนาฬิกา = unsync.csv");
+  // รายชื่อวัน (ทั้งชื่อเต็มพาธและชื่อสั้น)
+  fs::g_mem.files["/trend/notes.csv"] = "x"; fs::g_mem.files["/trend/2026112.csv"] = "x"; fs::g_mem.files["/trend/20261127.txt"] = "x"; fs::g_mem.files["/trend/2026111a.csv"] = "x";
+  for (int mode = 0; mode < 2; mode++) {
+    fs::g_shortNames = mode == 1;
+    char days[40][9];
+    const int nd = sdListDays(days, 40);
+    std::vector<std::string> got; for (int i = 0; i < nd; i++) got.push_back(days[i]);
+    std::sort(got.begin(), got.end());
+    CHECK(got == std::vector<std::string>({"20260909", "20260910", "unsync"}), "รายชื่อวัน: เฉพาะไฟล์ที่ชื่อถูกรูปแบบ (ทั้งสองรูปแบบชื่อไฟล์ของ core)");
+  }
+  { char days[2][9]; CHECK(sdListDays(days, 2) <= 2, "ไม่เกินความจุอาร์เรย์"); }
+  // API: /api/sd
+  fs::g_shortNames = false;
+  CHECK(webCall(HTTP_GET, "/api/sd") == 200 && g_web.body.find("\"ok\":true") != std::string::npos && g_web.body.find("20260909") != std::string::npos, "รายการไฟล์บน SD");
+  dump("/tmp/cyd_web_sd.json", g_web.body);
+  // ดาวน์โหลดจาก SD
+  CHECK(webCall(HTTP_GET, "/api/sdfile", {{"file", "events"}}) == 401, "ดาวน์โหลดจาก SD ต้องล็อกอิน");
+  CHECK(webCall(HTTP_GET, "/api/sdfile", {{"file", "events"}}, U, P) == 200 && g_web.body.find("ALERT,OCCLUSION") != std::string::npos && g_web.streamed == 1, "ดาวน์โหลด events.csv");
+  CHECK(webCall(HTTP_GET, "/api/sdfile", {{"file", "trend"}, {"day", "20260910"}}, U, P) == 200 && g_web.body == fs::g_mem.files["/trend/20260910.csv"], "ดาวน์โหลดไฟล์รายวันตรงเนื้อหา");
+  CHECK(webCall(HTTP_GET, "/api/sdfile", {{"file", "trend"}, {"day", "unsync"}}, U, P) == 200, "ดาวน์โหลด unsync");
+  CHECK(webCall(HTTP_GET, "/api/sdfile", {{"file", "trend"}, {"day", "20990101"}}, U, P) == 404, "ไม่มีไฟล์ต้อง 404");
+  const char *badDays[] = {"../events", "..", "2026-09-10", "", "202609100", "2026091", "20260910/../..", "unsync/..", "%2e%2e", "2026091a", "/etc/passwd", "20260910.csv"};
+  for (const char *d : badDays) CHECK(webCall(HTTP_GET, "/api/sdfile", {{"file", "trend"}, {"day", d}}, U, P) == 400, "ชื่อวันที่ผิดรูปแบบ/พยายามออกนอกโฟลเดอร์ต้อง 400");
+  for (const char *f : {"", "other", "../events", "events.csv", "/events.csv", "EVENTS"}) CHECK(webCall(HTTP_GET, "/api/sdfile", {{"file", f}}, U, P) == 400, "ชนิดไฟล์ที่ไม่รู้จักต้อง 400 (ไม่เคยใช้ข้อความจากผู้ใช้เป็นพาธ)");
+  CHECK(g_web.streamed == 0, "คำขอที่ถูกปฏิเสธต้องไม่ส่งไฟล์ใดๆ");
+  // ไม่มีการ์ด
+  fs::g_mem.cardPresent = false; sdOk = false;
+  CHECK(webCall(HTTP_GET, "/api/sdfile", {{"file", "events"}}, U, P) == 503, "ไม่มีการ์ดต้อง 503");
+  CHECK(webCall(HTTP_GET, "/api/sd") == 200 && g_web.body.find("\"ok\":false") != std::string::npos && g_web.body.find("\"days\":[]") != std::string::npos, "ไม่มีการ์ดบอกว่าไม่พร้อม");
+  CHECK(!sdLogBegin() && !sdOk, "ไม่มีการ์ดต้องเริ่มไม่ได้ และไม่ล้ม");
+  const int op = fs::g_mem.opens; sdLogEvent({1, 0, 0, EV_BOOT, 0}); sdLogTrend(sm, 3, 1789000000, 1, 0);
+  CHECK(fs::g_mem.opens == op, "ไม่มีการ์ดต้องไม่พยายามเปิดไฟล์เลย (ไม่หน่วงลูป)");
+  // การ์ดเต็ม/ถอดกลางทาง: เขียนล้มเหลวติดกัน 3 ครั้งแล้วเลิกใช้การ์ดเงียบๆ
+  fs::g_mem = fs::MemFS(); sdOk = false; sdFails = 0;
+  CHECK(sdLogBegin(), "เริ่มการ์ดอีกครั้ง");
+  fs::g_mem.failWrites = true;
+  sdLogTrend(sm, 3, 1789000000, 1, 0); CHECK(sdOk, "ล้มเหลวครั้งที่ 1 ยังไม่เลิกใช้");
+  sdLogTrend(sm, 3, 1789000000, 2, 0); CHECK(sdOk, "ล้มเหลวครั้งที่ 2 ยังไม่เลิกใช้");
+  sdLogTrend(sm, 3, 1789000000, 3, 0); CHECK(!sdOk, "ล้มเหลวติดกัน 3 ครั้งต้องเลิกใช้การ์ด");
+  const int op2 = fs::g_mem.opens; sdLogEvent({1, 0, 0, EV_BOOT, 0});
+  CHECK(fs::g_mem.opens == op2, "เลิกใช้แล้วต้องไม่แตะการ์ดอีก");
+  // ล้มเหลวสลับสำเร็จ ต้องรีเซ็ตตัวนับ (ไม่สะสมข้ามเวลา)
+  fs::g_mem = fs::MemFS(); sdOk = false; sdFails = 0; sdLogBegin();
+  fs::g_mem.failWrites = true; sdLogTrend(sm, 3, 1789000000, 1, 0); sdLogTrend(sm, 3, 1789000000, 2, 0);
+  fs::g_mem.failWrites = false; sdLogTrend(sm, 3, 1789000000, 3, 0);
+  fs::g_mem.failWrites = true; sdLogTrend(sm, 3, 1789000000, 4, 0); sdLogTrend(sm, 3, 1789000000, 5, 0);
+  CHECK(sdOk, "ล้มเหลวสองครั้งสลับสำเร็จหนึ่งครั้ง ต้องยังใช้การ์ดได้ (นับเฉพาะที่ติดกัน)");
+}
+
+static void testTimeZoneParam() {
+  reset();
+  clockSynced = false;
+  CHECK(webCall(HTTP_POST, "/api/time", {{"epoch", "1789000000"}, {"tz", "420"}}) == 200 && clockTzMin == 420, "ส่งเขตเวลาไทย 420 นาที");
+  CHECK(webCall(HTTP_POST, "/api/time", {{"epoch", "1789000100"}, {"tz", "420"}}, U, P) == 200 && clockTzMin == 420, "ตั้งซ้ำต้องล็อกอิน");
+  const char *badTz[] = {"841", "-841", "abc", "1e2", "5.5", "0x10", "99999"};
+  for (const char *z : badTz) CHECK(webCall(HTTP_POST, "/api/time", {{"epoch", "1789000200"}, {"tz", z}}, U, P) == 400 && clockTzMin == 420, "เขตเวลาที่เป็นไปไม่ได้ต้อง 400 และไม่เปลี่ยนค่าเดิม");
+  CHECK(webCall(HTTP_POST, "/api/time", {{"epoch", "1789000300"}}, U, P) == 200 && clockTzMin == 420, "ไม่ส่ง tz = คงค่าเดิม");
+  CHECK(webCall(HTTP_POST, "/api/time", {{"epoch", "1789000400"}, {"tz", "-840"}}, U, P) == 200 && clockTzMin == -840, "ขอบเขตลบ");
+  CHECK(webCall(HTTP_POST, "/api/time", {{"epoch", "1789000500"}, {"tz", "840"}}, U, P) == 200 && clockTzMin == 840, "ขอบเขตบวก");
+  clockSynced = false; clockTzMin = 0;
+}
+
 static void testRingAndCsv() {
   EventLog log;
   for (int i = 0; i < 60; i++) log.add(1000u * i, 0, (uint8_t)(1 + i % 5), EV_ALERT, ALERT_TOO_FAST);
@@ -275,6 +579,7 @@ static void testStateJsonWorstCase() {
     bedIngest(beds[i], mk(i + 1, 1, 4000000000u, 2999, 400), -99, MAC, g_ms);
     beds[i].batteryV = 5.99f; beds[i].linkPct = 100; beds[i].idConflict = true; beds[i].alert = ALERT_OCCLUSION;
   }
+  for (int i = 0; i < 8; i++) { memset(beds[i].name, '"', BED_NAME_MAX); beds[i].name[BED_NAME_MAX] = 0; }   // ชื่อเลวร้ายสุด: ทุกตัวต้องถูกหลีก (2 เท่า)
   beds[3].flowRateHr = NAN; beds[4].batteryV = INFINITY;   // ค่าที่ไม่ควรเกิดแต่ต้องไม่ทำ JSON พัง
   CHECK(webCall(HTTP_GET, "/api/state") == 200, "สภาพเลวร้ายสุด: state ต้องไม่ล้นบัฟเฟอร์");
   CHECK(g_web.body.find("nan") == std::string::npos && g_web.body.find("inf") == std::string::npos, "ห้ามมี nan/inf ใน JSON");
@@ -293,6 +598,7 @@ static void testNumbers() {
 static void makeShowcase() {
   reset();
   clockSynced = true; clockSet(1789000000);
+  strcpy(beds[0].name, "นายสมชาย ใจดี"); strcpy(beds[1].name, "Ms. Malee R."); strcpy(beds[3].name, "ป้ายัน เตียงริมหน้าต่าง");
   beds[0].cfg = {60, 500, 20, 80, 3};  bedIngest(beds[0], mk(1, 1, 3100, 60, 400), -48, MAC, g_ms); beds[0].linkPct = 100;
   beds[1].cfg = {100, 1000, 20, 80, 0}; bedIngest(beds[1], mk(2, 1, 9000, 142, 380), -61, MAC, g_ms); beds[1].alert = ALERT_TOO_FAST; beds[1].linkPct = 90;
   beds[3].cfg = {80, 500, 20, 80, 0};  bedIngest(beds[3], mk(4, 1, 8200, 80, 700), -70, MAC, g_ms); beds[3].alert = ALERT_NEAR_END; beds[3].linkPct = 50;
@@ -301,6 +607,19 @@ static void makeShowcase() {
   logEvent(4, EV_ALERT, ALERT_NEAR_END); logEvent(1, EV_CONFIG); logEvent(0, EV_SILENCE);
   webCall(HTTP_GET, "/api/state"); dump("/tmp/cyd_web_state_show.json", g_web.body);
   webCall(HTTP_GET, "/api/events"); dump("/tmp/cyd_web_events_show.json", g_web.body);
+  { // แนวโน้มจริงจากสถานการณ์มาตรฐานใส่เตียง 1 สำหรับภาพหน้าเว็บ (เปิดการ์ดเตียง 1 ให้เห็นกราฟและรายงาน)
+    TrendState save = trend; trend = TrendState();
+    uint32_t drops = 0, now = g_ms; double acc = 0; int n; const Seg *segs = standardScenario(n);
+    Bed tmp[MAX_BEDS]; tmp[0].cfg.targetRateHr = 60;
+    runScenario(trend, tmp, 0, segs, n, now, acc, drops);
+    webCall(HTTP_GET, "/api/trend", {{"bed", "1"}, {"mins", "80"}}); dump("/tmp/cyd_web_trend_show.json", g_web.body);
+    webCall(HTTP_GET, "/api/report", {{"bed", "1"}, {"mins", "80"}}); dump("/tmp/cyd_web_report_show.json", g_web.body);
+    trend = save;
+  }
+  fs::g_mem.cardPresent = true; sdOk = false; sdLogBegin();
+  { TrendSample one[1] = {}; one[0].flags = TS_VALID; sdLogTrend(one, 1, 1789000000, 1, 420); sdLogTrend(one, 1, 1788913600, 1, 420); }
+  webCall(HTTP_GET, "/api/sd"); dump("/tmp/cyd_web_sd_show.json", g_web.body);
+  webCall(HTTP_GET, "/api/wifi"); dump("/tmp/cyd_web_wifi_show.json", g_web.body);
   webCall(HTTP_GET, "/"); dump("/tmp/cyd_web_page.html", g_web.body);
   clockSynced = false;
 }
@@ -317,6 +636,12 @@ int main() {
   testClock();
   testEventsFlow();
   testNoDropEndToEnd();
+  testNames();
+  testWifiSettings();
+  testBootReset();
+  testTrendEndpoints();
+  testSdCard();
+  testTimeZoneParam();
   testRingAndCsv();
   testStateJsonWorstCase();
   testNumbers();

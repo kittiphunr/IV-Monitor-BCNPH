@@ -1,7 +1,7 @@
 /**
  * @file      espnow_link.h
  * @brief     ESP-NOW: รับแพ็กเก็ตจาก Station เข้าคิว และส่ง Sync แบบกระจาย
- * @version   2.0.3-CYD
+ * @version   2.1.0-CYD
  * @date      2026-11-27
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
@@ -15,6 +15,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 2.1.0-CYD | 2026-11-27 | linkBegin รับชื่อ/รหัสจุดเชื่อมต่อจากค่าที่ผู้ใช้ตั้ง (NVS) แทนค่าคงที่ |
  * | 2.0.3-CYD | 2026-11-27 | linkBegin(withAp) เปิดจุดเชื่อมต่อ Wi-Fi ของตัวเองบนช่องเดียวกับ ESP-NOW เพื่อให้หน้าเว็บใช้งานได้ |
  * | 2.0.1-CYD | 2026-11-27 | เขียนใหม่ด่านที่ 2 (แกนเครือข่าย) ไม่นำโค้ดรุ่น 1.x มาปรับ |
  *
@@ -75,11 +76,11 @@ static bool rxPop(RxPacket &out) {
 }
 
 // withAp = true: เปิดจุดเชื่อมต่อ Wi-Fi ของ Host (ใช้กับหน้าเว็บ) ช่องของจุดเชื่อมต่อเป็นตัวกำหนดช่อง ESP-NOW
-static bool linkBegin(bool withAp = false) {
+static bool linkBegin(bool withAp = false, const char *apSsid = CYD_AP_SSID, const char *apPass = CYD_AP_PASS) {
   WiFi.mode(withAp ? WIFI_AP_STA : WIFI_STA);
   WiFi.disconnect();
   WiFi.setSleep(false);
-  if (withAp) WiFi.softAP(CYD_AP_SSID, CYD_AP_PASS, CYD_ESPNOW_CHANNEL, 0, 4);
+  if (withAp) WiFi.softAP(apSsid, apPass, CYD_ESPNOW_CHANNEL, 0, 4);
   esp_wifi_set_channel(CYD_ESPNOW_CHANNEL, WIFI_SECOND_CHAN_NONE);
   if (esp_now_init() != ESP_OK) return false;
   esp_now_register_recv_cb(esp_now_recv_cb_t(onEspNowRecv));

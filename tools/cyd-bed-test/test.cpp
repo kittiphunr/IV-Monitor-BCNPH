@@ -3,6 +3,7 @@
 #include <cmath>
 #include <limits>
 #include "bed_model.h"
+#include "scenario.h"
 
 static int fails = 0;
 #define CHECK(c, msg) do { if (!(c)) { printf("ล้มเหลว: %s (บรรทัด %d)\n", msg, __LINE__); fails++; } } while (0)
@@ -226,9 +227,100 @@ static void testNoDropCapability() {
   CHECK(bedBuildSync(n, 0, 1, 0, u).alertCode == 0, "มีหยดแล้วต้องเลิกส่งรหัส 6");
 }
 
+
+static void testTrend() {
+  // ---- สถานการณ์มาตรฐาน 80 นาที ----
+  TrendState t;
+  Bed beds[MAX_BEDS];
+  beds[0].cfg.targetRateHr = 60;
+  uint32_t now = 1000, drops = 0; double acc = 0;
+  int n; const Seg *segs = standardScenario(n);
+  const int closes = runScenario(t, beds, 0, segs, n, now, acc, drops);
+  CHECK(closes == 80 && t.ring[0].count == 80, "ต้องปิดนาทีได้ 80 ครั้งและมี 80 ตัวอย่าง");
+  const TrendSummary s = trendSummarize(t.ring[0], 80, 20);
+  CHECK(s.minutes == 80 && s.gapMinutes == 9 && s.validMinutes == 71, "นาทีที่ Station เงียบ: 9 นาทีไม่มีข้อมูล (นาทีแรกของช่วงเงียบยังมีข้อมูล 8 วินาทีสุดท้ายก่อนออฟไลน์)");
+  CHECK(s.runningMinutes == 61, "นาทีที่กำลังนับ = 71 - หยุดชั่วคราว 10");
+  CHECK(fabsf(s.avgRate - 4260.0f / 61) < 0.5f && s.minRate == 60 && s.maxRate == 90, "อัตราเฉลี่ย ต่ำสุด สูงสุด (เฉลี่ยเฉพาะนาทีที่กำลังนับ ไม่เอาช่วงหยุดมาถ่วงเป็นศูนย์)");
+  CHECK(fabsf(s.totalMl - 70.0f) < 0.3f, "ปริมาตรที่ให้ = หยดรวม / drop factor (ประมาณ 70 mL)");
+  CHECK(s.withinPct == 67 && fabsf(s.devPct - 1000.0f / 61) < 0.5f, "อยู่ใน ±10% ของเป้า 67% และคลาดเฉลี่ย 16.4%");
+  CHECK(s.alertEpisodes == 1 && s.alertMinutes[ALERT_TOO_FAST] == 10 && s.alertMinutes[ALERT_NEAR_END] == 10, "เตือนเร็วเกิน 1 ครั้ง 10 นาที และใกล้หมด 10 นาที (ใกล้หมดไม่นับเป็นเหตุวิกฤต)");
+  // ช่วงเงียบต้องเป็น "ไม่มีข้อมูล" ไม่ใช่ศูนย์
+  int gapSamples = 0, zeroValid = 0;
+  for (int i = 0; i < t.ring[0].count; i++) { const TrendSample &x = t.ring[0].newest(i); if (!(x.flags & TS_VALID)) gapSamples++; else if (x.rate == 0 && (x.flags & TS_RUNNING)) zeroValid++; }
+  CHECK(gapSamples == 9 && zeroValid == 0, "ช่วงเงียบไม่ใช่อัตราไหลศูนย์ และไม่มีนาทีที่กำลังนับแล้วอัตราเป็นศูนย์");
+  // ช่วงสั้นกว่าที่มี และยาวกว่าที่มี
+  const TrendSummary last10 = trendSummarize(t.ring[0], 10, 20);
+  CHECK(last10.minutes == 10 && last10.avgRate == 60 && last10.alertMinutes[ALERT_NEAR_END] == 10, "สรุป 10 นาทีล่าสุด");
+  CHECK(trendSummarize(t.ring[0], 240, 20).minutes == 80, "ขอมากกว่าที่มีต้องได้เท่าที่มี");
+  // ตัวอย่างล่าสุดต้องเป็นเป้า 60 และมีลิงก์
+  CHECK(t.ring[0].newest(0).target == 60 && t.ring[0].newest(0).link == 100, "ตัวอย่างต้องเก็บเป้าหมายและลิงก์");
+
+  // ---- วงแหวน: ล้นแล้วต้องทิ้งของเก่าสุด เรียงใหม่สุดก่อน ----
+  TrendRing r;
+  for (int i = 0; i < 300; i++) { TrendSample x = {}; x.flags = TS_VALID | TS_RUNNING; x.rate = (uint16_t)i; r.add(x); }
+  CHECK(r.count == TREND_MINUTES && r.totalMinutes == 300 && r.newest(0).rate == 299 && r.newest(TREND_MINUTES - 1).rate == 60, "วงแหวนล้นต้องเก็บ 240 ตัวอย่างล่าสุด");
+
+  // ---- ตัวนับหยดรีเซ็ต (เริ่มถุงใหม่) กลางนาที ต้องไม่ทำให้ปริมาตรติดลบหรือพุ่ง ----
+  TrendState t2; Bed b2[MAX_BEDS]; b2[0].cfg.targetRateHr = 60;
+  uint32_t n2 = 5000; const uint8_t mac[6] = {1, 2, 3, 4, 5, 6};
+  struct_message m = {}; m.stationId = 1; m.isRunning = 1; m.flowRateHr = 60; m.msSinceLastDrop = 100; m.batteryVolts = 4;
+  m.totalDrops = 1000; bedIngest(b2[0], m, -50, mac, n2); trendObserve(t2, b2, 1, n2);
+  n2 += 1000; m.totalDrops = 1040; bedIngest(b2[0], m, -50, mac, n2); trendObserve(t2, b2, 1, n2);   // +40
+  n2 += 1000; m.totalDrops = 10; bedIngest(b2[0], m, -50, mac, n2); trendObserve(t2, b2, 1, n2);      // รีเซ็ต: นับ 10 ใหม่
+  CHECK(t2.acc[0].dropsAdded == 50, "ตัวนับรีเซ็ตต้องนับหยดใหม่จากศูนย์ ไม่ลบไม่ข้าม (40 + 10)");
+  CHECK(fabsf(t2.acc[0].volAdded - 50.0f / 20) < 0.01f, "ปริมาตรที่เพิ่มคิดตาม drop factor");
+
+  // ---- เปลี่ยนเป้าหมายระหว่างถุง: ตัวอย่างเก็บเป้า ณ ตอนนั้น ----
+  TrendState t3; Bed b3[MAX_BEDS]; b3[0].cfg.targetRateHr = 50; uint32_t n3 = 0, d3 = 0; double a3 = 0;
+  const Seg a[] = {{5, true, true, 50, ALERT_NONE}};
+  runScenario(t3, b3, 0, a, 1, n3, a3, d3);
+  b3[0].cfg.targetRateHr = 80;
+  const Seg bb[] = {{5, true, true, 80, ALERT_NONE}};
+  runScenario(t3, b3, 0, bb, 1, n3, a3, d3);
+  CHECK(t3.ring[0].newest(9).target == 50 && t3.ring[0].newest(0).target == 80, "เป้าหมายแต่ละนาทีต้องเป็นค่า ณ ตอนนั้น");
+  const TrendSummary s3 = trendSummarize(t3.ring[0], 10, 20);
+  CHECK(s3.withinPct >= 95, "เปลี่ยนเป้าแล้วอัตราตามเป้าใหม่ ต้องยังนับว่าอยู่ในช่วง (ไม่เทียบกับเป้าเก่า)");
+
+  // ---- หลายเตียงไม่ปนกัน และเตียงที่ไม่เคยได้ยินได้แต่ 'ไม่มีข้อมูล' ----
+  TrendState t4; Bed b4[MAX_BEDS]; b4[0].cfg.targetRateHr = 60; b4[1].cfg.targetRateHr = 100; uint32_t n4 = 0, d4 = 0; double a4 = 0;
+  const Seg only0[] = {{3, true, true, 60, ALERT_NONE}};
+  runScenario(t4, b4, 0, only0, 1, n4, a4, d4, nullptr, 2);
+  CHECK(t4.ring[0].count == 3 && t4.ring[1].count == 3, "ทุกเตียงที่เปิดใช้ได้ตัวอย่างทุกนาที");
+  CHECK((t4.ring[0].newest(0).flags & TS_VALID) && !(t4.ring[1].newest(0).flags & TS_VALID), "เตียงที่ไม่เคยได้ยินต้องเป็นไม่มีข้อมูล");
+  CHECK(t4.ring[1].newest(0).target == 100, "เตียงที่เงียบก็เก็บเป้าหมายไว้");
+
+  // ---- ค่าสุดขั้วและสรุปว่าง ----
+  TrendRing empty;
+  const TrendSummary se = trendSummarize(empty, 60, 20);
+  CHECK(se.minutes == 0 && se.avgRate == 0 && se.totalMl == 0 && se.withinPct == 0, "วงแหวนว่างต้องสรุปเป็นศูนย์ ไม่หารศูนย์");
+  CHECK(trendClamp16(-5) == 0 && trendClamp16(1e9f) == 65535 && trendClamp16(59.6f) == 60, "ตัดค่าเข้าช่วง 16 บิต");
+  TrendRing allGap; for (int i = 0; i < 20; i++) { TrendSample x = {}; allGap.add(x); }
+  const TrendSummary sg = trendSummarize(allGap, 20, 20);
+  CHECK(sg.gapMinutes == 20 && sg.validMinutes == 0 && sg.avgRate == 0 && sg.alertEpisodes == 0, "ไม่มีข้อมูลเลยต้องไม่คิดเป็นอัตราไหลศูนย์");
+  // เหตุเตือนต่อเนื่องหลายนาทีนับเป็นหนึ่งครั้ง แต่คั่นด้วยช่วงปกติหรือช่วงเงียบนับเป็นครั้งใหม่
+  TrendRing ep;
+  const uint8_t pat[] = {0, 5, 5, 5, 0, 5, 5, 99 /*เงียบ*/, 5, 3, 3};
+  for (uint8_t a2 : pat) { TrendSample x = {}; if (a2 != 99) { x.flags = TS_VALID | TS_RUNNING; x.rate = 60; x.target = 60; x.alert = a2; } ep.add(x); }
+  const TrendSummary sp = trendSummarize(ep, 11, 20);
+  CHECK(sp.alertEpisodes == 3, "เตือน 5 ต่อเนื่องนับหนึ่งครั้ง คั่นด้วยปกติหรือช่วงเงียบนับครั้งใหม่ (3 ครั้ง)");
+  CHECK(sp.alertMinutes[ALERT_OCCLUSION] == 6 && sp.alertMinutes[ALERT_NEAR_END] == 2, "นาทีของแต่ละรหัส");
+
+  // ---- บรรทัด CSV และชื่อวัน ----
+  char line[96];
+  TrendSample cs = {}; cs.flags = TS_VALID | TS_RUNNING; cs.rate = 61; cs.target = 60; cs.volMl = 120; cs.drops = 20; cs.alert = ALERT_TOO_FAST; cs.link = 90; cs.rssi = -61;
+  CHECK(trendCsvLine(line, sizeof(line), 1789000000, 12345, 3, cs) > 0 && strcmp(line, "1789000000,12345,3,61,60,120,20,TOO_FAST,90,-61,1\n") == 0, "รูปแบบบรรทัด CSV");
+  CHECK(trendCsvLine(line, 10, 1789000000, 1, 1, cs) == 0, "บัฟเฟอร์เล็กต้องคืน 0");
+  char day[9];
+  const struct { uint32_t e; int tz; const char *want; } days[] = {
+    {1789000000, 420, "20260910"}, {1789000000, 0, "20260910"}, {1789000000, -60, "20260909"}, {1789072000, 420, "20260911"},
+    {1600000000, 0, "20200913"}, {4100000000u, 0, "20991203"}, {1709164800, 0, "20240229"}, {1709164799, 0, "20240228"}, {1709251199, 0, "20240229"}, {1709251200, 0, "20240301"}};
+  for (auto &d : days) { trendDayName(d.e, d.tz, day); CHECK(strcmp(day, d.want) == 0, "ชื่อวัน (รวมปีอธิกสุรทิน 29 ก.พ. และรอยต่อเที่ยงคืน)"); }
+  CHECK(trendAlertCritical(ALERT_TOO_FAST) && trendAlertCritical(ALERT_NO_SIGNAL) && trendAlertCritical(ALERT_LOST_LINK) && !trendAlertCritical(ALERT_NEAR_END) && !trendAlertCritical(ALERT_NONE), "รหัสที่ถือเป็นเหตุวิกฤตในรายงาน");
+}
+
 int main() {
   testOnlineAndWrap(); testLostLink(); testOcclusion(); testRateDeviation(); testVolumeAlerts();
-  testNoSignal(); testNoDropCapability(); testNewBagAndSync(); testPlausibility(); testLinkAndConflict(); testScheduler();
+  testNoSignal(); testTrend(); testNoDropCapability(); testNewBagAndSync(); testPlausibility(); testLinkAndConflict(); testScheduler();
   if (fails) { printf("รวมล้มเหลว %d รายการ\n", fails); return 1; }
   printf("ผ่านทั้งหมด\n");
   return 0;
