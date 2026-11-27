@@ -1,7 +1,7 @@
 /**
  * @file      Host-CYD28.ino
- * @brief     Host บอร์ด CYD (ESP32-2432S028) เขียนใหม่ ด่านที่ 2: แกนเครือข่าย ESP-NOW Protocol v3
- * @version   2.0.1-CYD
+ * @brief     Host บอร์ด CYD (ESP32-2432S028) เขียนใหม่ ด่านที่ 3: หน้าจอสัมผัสและเสียงเตือน (ต่อจากแกนเครือข่ายด่านที่ 2)
+ * @version   2.0.2-CYD
  * @date      2026-11-27
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
@@ -26,6 +26,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 2.0.2-CYD | 2026-11-27 | เขียนใหม่ด่านที่ 3 ไม่นำโค้ดรุ่น 1.x มาปรับ: หน้า HOME/BED/BED SET/NUMPAD/SYSTEM แนวนอน, โซนแตะตารางเดียวกับที่วาด, บัซเซอร์ Active (เตือน/เสียงกด/ใกล้หมด), ปุ่มพักเสียง 2 นาที, ยืนยันก่อนเริ่มถุงใหม่ |
  * | 2.0.1-CYD | 2026-11-27 | เขียนใหม่ด่านที่ 2 ไม่นำโค้ดรุ่น 1.x มาปรับ: คิวรับ ESP-NOW ผู้เขียน/ผู้อ่านคนเดียว, bed_model.h ตรรกะล้วนทดสอบบน PC, ตัวจัดช่องเวลาส่ง Sync, NVS เก็บ resetSeq ถาวร |
  * | 2.0.0-CYD | 2026-11-27 | เขียนใหม่ทั้งหมดด่านที่ 1 (ฐานบอร์ด: จอ ไฟหลังจอ ทัช) |
  *
@@ -47,28 +48,63 @@
 #include "espnow_link.h"
 #include "diag_screen.h"
 #include "status_screen.h"
+#include "buzzer.h"
+#include "sys_store.h"
 
-#define APP_VERSION "2.0.1-CYD"
+#define APP_VERSION "2.0.2-CYD"
 
-enum AppMode : uint8_t { MODE_STATUS = 0, MODE_DIAG };
+enum AppMode : uint8_t { MODE_UI = 0, MODE_DIAG };
+
+constexpr uint32_t SNOOZE_MS = 120000;       // พักเสียงเตือน 2 นาที
 
 Bed beds[MAX_BEDS];
 uint8_t activeBeds = DEFAULT_ACTIVE_BEDS;
 SyncScheduler syncSched;
-AppMode appMode = MODE_STATUS;
+AppMode appMode = MODE_UI;
+BuzzerEngine buzz;
+SysSettings sysSet = {SYS_MAGIC, 100, 1};
+uint32_t snoozeUntil = 0;
+static uint32_t lastNearChime[MAX_BEDS] = {0};
 uint32_t badPackets = 0, ignoredPackets = 0;
-static uint32_t lastEvalMs = 0, lastLinkTickMs = 0, lastDrawMs = 0;
+static uint32_t lastEvalMs = 0, lastLinkTickMs = 0;
 static char cmdLine[64];
 static uint8_t cmdLen = 0;
 
+// ประกาศล่วงหน้า: นิยามอยู่ใน ui.h ซึ่งถูก include ท้ายไฟล์ (ห้ามใส่ค่าปริยายซ้ำที่นิยาม)
+static void uiRequestFull();
+
 static void setMode(AppMode m) {
   appMode = m;
-  if (m == MODE_DIAG) {
-    if (!loadCal()) runCalibration();
-    drawTestScreen();
-  } else {
-    statusDrawHeader();
-    lastDrawMs = 0;
+  if (!cal.valid && !loadCal()) runCalibration();    // ทั้งหน้าจอใช้งานและหน้าทดสอบต้องใช้ทัช
+  if (m == MODE_DIAG) drawTestScreen();
+  else uiRequestFull();
+}
+
+// ---- เสียงเตือน ------------------------------------------------------------------------------
+// รหัสเตือนที่ร้องแรงที่สุดในทุกเตียง (ไม่รวมใกล้หมด ซึ่งเป็นเสียงเตือนเบาแยกต่างหาก)
+static uint8_t worstAlarm(uint32_t now) {
+  (void)now;
+  uint8_t best = ALERT_NONE;
+  for (int i = 0; i < activeBeds; i++)
+    if (isCriticalAlert(beds[i].alert) && buzzPriority(beds[i].alert) > buzzPriority(best)) best = beds[i].alert;
+  return best;
+}
+
+static bool snoozed(uint32_t now) { return snoozeUntil != 0 && (int32_t)(snoozeUntil - now) > 0; }
+
+static void serviceBuzzer(uint32_t now) {
+  const uint8_t code = worstAlarm(now);
+  if (code == ALERT_NONE) snoozeUntil = 0;                 // เหตุการณ์หายแล้ว ให้เหตุครั้งหน้าดังทันที
+  buzz.setAlert(snoozed(now) ? (uint8_t)ALERT_NONE : code, now);
+  if (code == ALERT_NONE || snoozed(now)) {
+    for (int i = 0; i < activeBeds; i++) {                 // ใกล้หมดที่ยังไม่รับทราบ: 3 ครั้งสั้น ๆ ซ้ำทุก 5 นาที
+      if (beds[i].alert != ALERT_NEAR_END || beds[i].nearEndAck) { lastNearChime[i] = 0; continue; }
+      if (lastNearChime[i] == 0 || (uint32_t)(now - lastNearChime[i]) >= 300000UL) { lastNearChime[i] = now ? now : 1; buzz.chime(now); break; }
+    }
+  }
+  if (CYD_BUZZER_PIN >= 0) {
+    const bool on = buzz.update(now);
+    digitalWrite(CYD_BUZZER_PIN, on ? CYD_BUZZER_ON_LEVEL : (CYD_BUZZER_ON_LEVEL == HIGH ? LOW : HIGH));
   }
 }
 
@@ -103,7 +139,7 @@ static void handleLine(char *line) {
   if (!strcmp(cmd, "beds") && n >= 2) {
     if (a < 1 || a > MAX_BEDS) { Serial.println("beds 1-8"); return; }
     activeBeds = (uint8_t)a; saveBeds(beds, activeBeds); syncSched.requestAll(activeBeds);
-    if (appMode == MODE_STATUS) statusDrawHeader();
+    uiRequestFull();
     return;
   }
   if (!strcmp(cmd, "rate") && n >= 3 && i >= 0) {
@@ -130,7 +166,7 @@ static void handleLine(char *line) {
   if (!strcmp(cmd, "ack") && n >= 2 && i >= 0) {
     beds[i].nearEndAck = true; syncSched.request(i); return;
   }
-  if (!strcmp(cmd, "m")) { setMode(appMode == MODE_STATUS ? MODE_DIAG : MODE_STATUS); return; }
+  if (!strcmp(cmd, "m")) { setMode(appMode == MODE_UI ? MODE_DIAG : MODE_UI); return; }
   if (!strcmp(cmd, "i")) { panelSetInvert(!g_invert); if (appMode == MODE_DIAG) drawTestScreen(); printSettings(); return; }
   if (!strcmp(cmd, "b")) { panelSetBgr(!g_bgr); if (appMode == MODE_DIAG) drawTestScreen(); printSettings(); return; }
   if (!strcmp(cmd, "r")) { panelSetRotation(g_rotation + 1); setMode(MODE_DIAG); runCalibration(); drawTestScreen(); printSettings(); return; }
@@ -171,18 +207,27 @@ static void serviceAlerts(uint32_t now) {
   }
 }
 
+#include "ui.h"        // หน้าจอทั้งหมด (ต้องอยู่ท้ายไฟล์หลักก่อน setup() เพราะใช้ตัวแปรด้านบน)
+
 void setup() {
   Serial.begin(115200);
   pinMode(cyd::BOOT_BTN, INPUT_PULLUP);
+  if (CYD_BUZZER_PIN >= 0) {
+    pinMode(CYD_BUZZER_PIN, OUTPUT);
+    digitalWrite(CYD_BUZZER_PIN, CYD_BUZZER_ON_LEVEL == HIGH ? LOW : HIGH);   // เงียบไว้ก่อนเสมอ
+  }
   panelBegin();
+  sysSet = loadSys();
+  backlightSet(sysSet.brightness);
+  buzz.enabled = sysSet.buzzerOn;
   touchChip.begin();
   activeBeds = loadBeds(beds);
   const bool linkOk = linkBegin();
-  Serial.println("Host-CYD28 " APP_VERSION " (stage 2: network core)");
+  Serial.println("Host-CYD28 " APP_VERSION " (stage 3: screens + buzzer)");
   printSettings();
   Serial.println(linkOk ? "ESP-NOW ready" : "ESP-NOW INIT FAILED");
   syncSched.requestAll(activeBeds);
-  setMode(MODE_STATUS);
+  setMode(MODE_UI);
 }
 
 void loop() {
@@ -193,19 +238,13 @@ void loop() {
   if ((uint32_t)(now - lastLinkTickMs) >= LINK_WINDOW_MS) { lastLinkTickMs = now; bedsLinkTick(beds, MAX_BEDS); }
   const int s = syncSched.next(now, activeBeds);
   if (s >= 0) linkSendSync(bedBuildSync(beds[s], s, linkChannel(), (uint32_t)time(nullptr), now));
-  if (appMode == MODE_STATUS) {
-    if ((uint32_t)(now - lastDrawMs) >= 500) {
-      lastDrawMs = now;
-      statusDrawRows(beds, activeBeds, now, linkChannel(), rxDropped, badPackets);
-    }
-  } else {
-    diagStep();
-  }
+  serviceBuzzer(now);
+  if (appMode == MODE_UI) uiStep(now); else diagStep();
   if (digitalRead(cyd::BOOT_BTN) == LOW) {            // BOOT สั้น = สลับหน้า · ค้าง 1.5 วินาที = คาลิเบรตใหม่
     const uint32_t t0 = millis();
     while (digitalRead(cyd::BOOT_BTN) == LOW && millis() - t0 < 1500) delay(10);
     if (millis() - t0 >= 1500) { setMode(MODE_DIAG); runCalibration(); drawTestScreen(); }
-    else setMode(appMode == MODE_STATUS ? MODE_DIAG : MODE_STATUS);
+    else setMode(appMode == MODE_UI ? MODE_DIAG : MODE_UI);
     while (digitalRead(cyd::BOOT_BTN) == LOW) delay(10);
   }
   delay(2);

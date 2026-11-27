@@ -54,9 +54,9 @@ firmware/
 ยังไม่มีเครื่องมือซิงก์อัตโนมัติแบบ Fallout
 
 **อยู่ระหว่างเขียน `Host-CYD28` ใหม่ทั้งหมด (v2.0.0 แบ่งสี่ด่าน ดู `firmware/Host-CYD28/README.md`) บนแบรนช์งาน**
-ด่านที่ 1-2 เสร็จแล้ว ข้อความข้างบนเกี่ยวกับการแตกจาก Touch24 ใช้กับรุ่น 1.x เท่านั้น
-ระหว่างนี้ `tools/cyd-preview` และ `tools/cyd-tap-test` ใช้ไม่ได้กับสเก็ตช์ใหม่ จะเขียนใหม่ในด่านที่ 3
-และ `tools/lvgl-*` ยังอ้างอิง `Host-CYD-LVGL` ซึ่งไม่ถูกแตะ
+ด่านที่ 1-3 เสร็จแล้ว ข้อความข้างบนเกี่ยวกับการแตกจาก Touch24 ใช้กับรุ่น 1.x เท่านั้น
+`tools/cyd-preview/run.sh` และ `tools/cyd-tap-test/run.sh` ใช้กับสเก็ตช์ v2 ไม่ได้ (ออกแบบสำหรับ Host-CYD28 รุ่น 1.x) ให้ใช้ `cyd-ui-test` แทน
+แต่ **ห้ามลบสองโฟลเดอร์นั้น** เพราะ `tools/lvgl-tap-test` ยังใช้ `cases.h` `calib_cases.h` และ `driver.cpp` ของมัน (Host-CYD-LVGL ไม่ถูกแตะ)
 
 `Host-CYD-LVGL` แตกจาก `Host-CYD28` ที่ v1.4.0 ตรรกะใน `.ino` และ `web_dashboard.h` เหมือนกัน (ต่างที่ส่วนจอ ทัช และ SD)
 จึง **แก้บั๊กฝั่งตรรกะเมื่อไร ต้องพิจารณาแก้ทั้งสามสาย** (Touch24, CYD28, CYD-LVGL) โค้ด LVGL ตรวจกับตัวแทนบน PC เท่านั้น ยังไม่เคยคอมไพล์กับ LVGL จริง
@@ -169,6 +169,7 @@ bash tools/touch-preview/run.sh         # คอมไพล์และเร�
 bash tools/cyd-preview/run.sh           # คอมไพล์และเรนเดอร์ Host รุ่นบอร์ด CYD
 bash tools/cyd-board-test/run.sh        # Host-CYD28 รุ่นเขียนใหม่: ทัช คาลิเบรต และสเก็ตช์ทั้งไฟล์กับ ESP-NOW จำลอง
 bash tools/cyd-bed-test/run.sh          # Host-CYD28 รุ่นเขียนใหม่: ตรรกะเตียง รหัสเตือน ตัวจัดช่องเวลาส่ง Sync
+bash tools/cyd-ui-test/run.sh           # Host-CYD28 รุ่นเขียนใหม่: โซนแตะ เส้นทางหน้าจอ จังหวะบัซเซอร์ และเรนเดอร์ภาพ docs/screens-cyd2/
 bash tools/cyd-tap-test/run.sh          # โซนแตะตรงปุ่มทุกหน้าของ Host CYD ทั้งสองแนว
 bash tools/buzzer-pattern-test/run.sh   # จังหวะเสียงเตือน Station ทั้ง Passive (เหมือนรุ่นก่อน) และ Active
 bash tools/tft28-button-test/run.sh     # ปุ่มเดียวและบัซเซอร์ (Passive/Active) ของ Host-TFT28

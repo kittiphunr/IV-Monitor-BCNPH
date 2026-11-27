@@ -1,7 +1,7 @@
 /**
  * @file      board.h
  * @brief     ขาและค่าเลือกของบอร์ด ESP32-2432S028 (CYD)
- * @version   2.0.0-CYD
+ * @version   2.0.2-CYD
  * @date      2026-11-27
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
@@ -15,6 +15,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 2.0.2-CYD | 2026-11-27 | เพิ่มขาและระดับขับของบัซเซอร์ Active (CYD_BUZZER_PIN, CYD_BUZZER_ON_LEVEL) |
  * | 2.0.0-CYD | 2026-11-27 | เขียนใหม่ทั้งหมดด่านที่ 1 (ฐานบอร์ด: จอ ไฟหลังจอ ทัช) ไม่นำโค้ดรุ่น 1.x มาปรับ |
  *
  * @warning  ยังไม่ได้ทดสอบบนฮาร์ดแวร์จริง ตรวจด้วยเครื่องมือจำลองบนเครื่อง PC เท่านั้น
@@ -34,6 +35,12 @@
 #endif
 #ifndef CYD_BGR
 #define CYD_BGR       1      // 1 = ลำดับสี BGR (เฉพาะ ST7789) ถ้าแดงกับน้ำเงินสลับกันให้ตั้ง 0
+#endif
+#ifndef CYD_BUZZER_PIN
+#define CYD_BUZZER_PIN 27    // บัซเซอร์ Active ต่อที่ขา IO27 ของขั้ว CN1 (ว่างบนบอร์ด) -1 = ไม่ต่อบัซเซอร์ ห้ามใช้ GPIO26 (เป็นขาเข้าของวงจรขยายลำโพงบนบอร์ด)
+#endif
+#ifndef CYD_BUZZER_ON_LEVEL
+#define CYD_BUZZER_ON_LEVEL HIGH   // HIGH = ขับตรงหรือผ่านทรานซิสเตอร์ NPN · LOW = โมดูลบัซเซอร์ที่ทำงานเมื่อขาเป็น LOW
 #endif
 #ifndef CYD_SPI_HZ
 #define CYD_SPI_HZ    40000000UL

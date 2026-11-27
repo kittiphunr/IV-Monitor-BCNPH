@@ -1,7 +1,7 @@
 /**
  * @file      bed_model.h
  * @brief     แบบจำลองเตียง: รับแพ็กเก็ต สถานะออนไลน์ การตัดสินรหัสเตือน คุณภาพลิงก์ ตัวจัดช่วงส่ง Sync
- * @version   2.0.1-CYD
+ * @version   2.0.2-CYD
  * @date      2026-11-27
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
@@ -15,6 +15,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 2.0.2-CYD | 2026-11-27 | เพิ่ม bedRemainingMin() สำหรับหน้าจอด่านที่ 3 |
  * | 2.0.1-CYD | 2026-11-27 | เขียนใหม่ด่านที่ 2 (แกนเครือข่าย) ไม่นำโค้ดรุ่น 1.x มาปรับ |
  *
  * @warning  ยังไม่ได้ทดสอบบนฮาร์ดแวร์จริง ตรวจด้วยเครื่องมือจำลองบนเครื่อง PC เท่านั้น
@@ -108,6 +109,15 @@ inline bool bedOccluded(const Bed &b, uint32_t now) {
 }
 
 inline float bedVolumeMl(const Bed &b) { return (float)b.totalDrops / (float)safeDropFactor(b.cfg.dropFactor); }
+
+// เวลาที่เหลือจนครบแผน (นาที) ใช้อัตราจริงถ้ามี ไม่งั้นใช้เป้าหมาย คืน -1 เมื่อคำนวณไม่ได้
+inline int bedRemainingMin(const Bed &b) {
+  const float plan = b.cfg.planVolumeMl, vol = bedVolumeMl(b);
+  const float rate = b.flowRateHr > 0 ? b.flowRateHr : b.cfg.targetRateHr;
+  if (!(plan > 0) || !(rate > 0) || vol >= plan) return -1;
+  const float m = (plan - vol) / rate * 60.0f;
+  return m > 99 * 60 ? 99 * 60 : (int)(m + 0.5f);
+}
 
 // รับแพ็กเก็ตหนึ่งใบ (ผ่าน packetPlausible มาแล้ว) คืน true เมื่อเลขเตียงมีบอร์ดแย่งกัน
 inline void bedIngest(Bed &b, const struct_message &m, int8_t rssi, const uint8_t *src, uint32_t now) {

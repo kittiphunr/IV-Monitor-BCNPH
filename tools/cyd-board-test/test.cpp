@@ -246,9 +246,8 @@ static void testDriverAndSketch() {
   simT0 = g_ms; simEnabled = true;
   setup();
   CHECK(g_recvCb != nullptr, "setup() ต้องลงทะเบียน callback ESP-NOW");
-  CHECK(!cal.valid, "บูตแล้วระบบเครือข่ายต้องทำงานเลย ไม่บังคับคาลิเบรตก่อน");
-  setMode(MODE_DIAG);                                     // เข้าหน้าทดสอบ: ยังไม่มีค่าคาลิเบรต จึงต้องทำคาลิเบรตก่อน
-  CHECK(cal.valid, "เข้าหน้าทดสอบแล้วต้องคาลิเบรตสำเร็จเมื่อยังไม่มีค่าในหน่วยความจำ");
+  CHECK(cal.valid, "setup() ต้องคาลิเบรตสำเร็จเมื่อยังไม่มีค่าในหน่วยความจำ (หน้าจอใช้งานต้องใช้ทัช)");
+  setMode(MODE_DIAG);                                     // หน้าทดสอบ: ต้องไม่คาลิเบรตซ้ำเมื่อมีค่าแล้ว
   float worst = 0;
   for (int i = 0; i < 3; i++) {
     int rx, ry; truthRaw(targets[i].sx, targets[i].sy, rx, ry);
@@ -274,7 +273,7 @@ static void testDriverAndSketch() {
   holdPen = false;
   for (int i = 0; i < 30; i++) { g_ms += 5; loop(); }
   CHECK(brightness == 50, "แตะปุ่ม - ต้องลดความสว่างเป็น 50");
-  setMode(MODE_STATUS);
+  setMode(MODE_UI);
   simEnabled = false;
   testNetwork();
   fclose(g_ops);
