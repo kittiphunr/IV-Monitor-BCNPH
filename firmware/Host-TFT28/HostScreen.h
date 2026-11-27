@@ -1,8 +1,8 @@
 /**
  * @file      HostScreen.h
  * @brief     ทุกอย่างที่วาดลงจอสี TFT 2.8 นิ้ว ของเครื่องส่วนกลาง
- * @version   4.8.1
- * @date      2026-09-23
+ * @version   4.10.0
+ * @date      2026-11-27
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
  * @par Organization
@@ -17,6 +17,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 4.10.0 | 2026-11-27 | ข้อความหน้าจอดับเปลี่ยนเป็น "PRESS THE BUTTON TO WAKE" เพราะเหลือปุ่มเดียว |
  * | 4.8.1 | 2026-09-23 | แยกออกมาจากไฟล์หลัก ย้ายที่อยู่ล้วน ๆ ไม่ได้แก้เนื้อในแม้แต่บรรทัดเดียว |
  *
  * @warning  ถูก `#include` ท้ายไฟล์หลักก่อน `setup()` ห้ามย้ายขึ้นไปบนสุด
@@ -294,7 +295,7 @@ void updateAlarmScreen() {
 void drawSaverFramework() {
   tft.fillScreen(C_BG);
   textCenterIn("SMART IV HOST", 0, SCR_W, 24, 1, C_DIM, C_BG);
-  textCenterIn("PRESS ANY BUTTON TO WAKE", 0, SCR_W, 210, 1, C_DIM, C_BG);
+  textCenterIn("PRESS THE BUTTON TO WAKE", 0, SCR_W, 210, 1, C_DIM, C_BG);
   cacheClock = ""; cacheBottom = "";
 }
 

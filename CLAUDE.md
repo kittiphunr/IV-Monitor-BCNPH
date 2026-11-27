@@ -165,6 +165,7 @@ bash tools/cyd-preview/run.sh           # คอมไพล์และเร�
 bash tools/cyd-touch-test/run.sh        # ไดรเวอร์ทัช bit-bang ของบอร์ด CYD
 bash tools/cyd-tap-test/run.sh          # โซนแตะตรงปุ่มทุกหน้าของ Host CYD ทั้งสองแนว
 bash tools/buzzer-pattern-test/run.sh   # จังหวะเสียงเตือน Station ทั้ง Passive (เหมือนรุ่นก่อน) และ Active
+bash tools/tft28-button-test/run.sh     # ปุ่มเดียวและบัซเซอร์ (Passive/Active) ของ Host-TFT28
 bash tools/lvgl-preview/run.sh          # คอมไพล์และเรนเดอร์ Host CYD แบบ LVGL (กับตัวแทน LVGL ไม่ใช่ของจริง)
 bash tools/lvgl-tap-test/run.sh         # โซนแตะและเส้นทางคลิก LVGL ของ Host-CYD-LVGL
 bash tools/c3-preview/run.sh            # คอมไพล์และเรนเดอร์ Station รุ่นบอร์ดเล็ก
