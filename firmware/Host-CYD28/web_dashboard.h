@@ -1,7 +1,7 @@
 /**
  * @file      web_dashboard.h
  * @brief     หน้าเว็บแดชบอร์ด (หน้าเดียว) เก็บใน flash
- * @version   2.2.0-CYD
+ * @version   2.3.0-CYD
  * @date      2026-11-27
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
@@ -15,6 +15,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 2.3.0-CYD | 2026-11-27 | ปุ่มพิมพ์รายงานในการ์ดเตียง: สร้างใบรายงาน A4 (หัวเรื่อง เตียง/ผู้ป่วย กราฟ สรุป เหตุการณ์ของเตียง ช่องลงนาม) ฝั่งเบราว์เซอร์ด้วย window.print() ใช้พิมพ์หรือบันทึกเป็น PDF ได้ ไม่เพิ่มเส้นทาง API |
  * | 2.2.0-CYD | 2026-11-27 | กราฟแนวโน้มอัตราไหล (SVG วาดด้วย createElementNS ไม่ใช้ innerHTML) เลือกช่วง 30/60/240 นาที พร้อมรายงานสรุป ปุ่มดาวน์โหลด CSV รายนาที และแผงไฟล์บนการ์ด SD |
  * | 2.1.0-CYD | 2026-11-27 | ช่องชื่อ/ป้ายผู้ป่วยในการ์ดเตียง · แผงตั้งค่า Wi-Fi/รหัสผ่านเว็บ (เตือนถ้ายังใช้รหัสปริยาย) · แปลข้อความผิดพลาดจากเครื่องเป็นภาษาไทย |
  * | 2.0.3-CYD | 2026-11-27 | เขียนใหม่ด่านที่ 4 (เว็บ นาฬิกา SD ประวัติเหตุการณ์) ไม่นำโค้ดรุ่น 1.x มาปรับ |
@@ -51,6 +52,9 @@ details.tr{margin-top:12px;border-top:1px solid var(--line);padding-top:8px}deta
 section{padding:0 16px 24px}table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}th{color:var(--dim);font-weight:600}
 #toast{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);background:var(--card);border:1px solid var(--line);padding:10px 16px;border-radius:8px;display:none}
 .note{color:var(--dim);font-size:12px;padding:0 16px 16px}
+/* [2.3.0-CYD] เพิ่ม: ใบรายงานสำหรับพิมพ์ ซ่อนทุกอย่างยกเว้น #sheet ตอนสั่งพิมพ์ */
+#sheet{display:none}
+@media print{@page{size:A4;margin:14mm}body>*:not(#sheet){display:none!important}body{background:#fff}#sheet{display:block;color:#000;background:#fff;font:12pt/1.45 "TH Sarabun New","Sarabun",system-ui,sans-serif}#sheet h2{margin:0 0 4px;font-size:18pt}#sheet table{margin-top:8px}#sheet th,#sheet td{border:1px solid #777;padding:3px 6px;color:#000}#sheet svg{width:100%;height:auto;border:1px solid #777;background:#fff;margin-top:8px}#sheet .sign{display:flex;gap:40px;margin-top:48px}#sheet .sign div{flex:1;border-top:1px solid #000;padding-top:4px;text-align:center}#sheet .fine{font-size:10pt;margin-top:16px}}
 </style></head><body>
 <header><h1>Smart IV Alert &ndash; Host</h1><div class="meta" id="meta">กำลังเชื่อมต่อ...</div></header>
 <main id="beds"></main>
@@ -69,6 +73,7 @@ section{padding:0 16px 24px}table{width:100%;border-collapse:collapse;font-size:
 <div class="meta">เว้นช่องที่ไม่ต้องการเปลี่ยนไว้ว่าง ค่าใหม่มีผลหลังรีสตาร์ท ต้องต่อ Wi-Fi ใหม่และล็อกอินใหม่ ลืมรหัส: กดปุ่ม BOOT บนบอร์ดค้างไว้ตอนเปิดเครื่อง 2 วินาทีเพื่อคืนค่าปริยาย</div>
 </form></section>
 <div class="note">ดูข้อมูลได้ทันที การแก้ค่า/เริ่มถุงใหม่/รับทราบ ต้องล็อกอิน (เบราว์เซอร์จะถามชื่อผู้ใช้และรหัสผ่าน) ระบบนี้ไม่ใช่ระบบเตือนที่ได้รับการรับรองทางการแพทย์</div>
+<div id="sheet"></div>
 <div id="toast"></div>
 <script>
 "use strict";
@@ -103,10 +108,34 @@ function drawChart(svg,d){
   poly(d.r,function(k){return(d.f[k]&1)!==0},"#2fbf71",1.6);
   var lab=svgEl("text",{x:3,y:9,"font-size":8,fill:"#889"});lab.textContent=Math.round(max)+" mL/h";svg.appendChild(lab);
 }
+function reportRows(s){
+  var al=Object.keys(s.alertMinutes||{}).map(function(k){return k+" "+s.alertMinutes[k]+" นาที"}).join(", ")||"ไม่มี";
+  return [["ช่วงที่สรุป",s.minutes+" นาที"],["อัตราไหลเฉลี่ย",s.avgRate+" mL/h"],["ต่ำสุด / สูงสุด",s.minRate+" / "+s.maxRate+" mL/h"],["เป้าหมายเฉลี่ย",s.avgTarget+" mL/h"],["ปริมาตรที่ให้",s.totalMl+" mL"],["คลาดจากเป้าเฉลี่ย",s.devPct+" %"],["อยู่ใน ±10% ของเป้า",s.withinPct+" % ของเวลา"],["ครั้งที่เกิดเตือนวิกฤต",s.episodes],["เวลาที่เตือน",al],["ไม่มีข้อมูล (Station เงียบ)",s.gap+" นาที"]];
+}
 function showReport(box,s){
   box.textContent="";
-  var al=Object.keys(s.alertMinutes||{}).map(function(k){return k+" "+s.alertMinutes[k]+" นาที"}).join(", ")||"ไม่มี";
-  [["ช่วงที่สรุป",s.minutes+" นาที"],["อัตราไหลเฉลี่ย",s.avgRate+" mL/h"],["ต่ำสุด / สูงสุด",s.minRate+" / "+s.maxRate+" mL/h"],["เป้าหมายเฉลี่ย",s.avgTarget+" mL/h"],["ปริมาตรที่ให้",s.totalMl+" mL"],["คลาดจากเป้าเฉลี่ย",s.devPct+" %"],["อยู่ใน ±10% ของเป้า",s.withinPct+" % ของเวลา"],["ครั้งที่เกิดเตือนวิกฤต",s.episodes],["เวลาที่เตือน",al],["ไม่มีข้อมูล (Station เงียบ)",s.gap+" นาที"]].forEach(function(p){box.appendChild(el("span",null,p[0]));box.appendChild(el("b",null,String(p[1])))});
+  reportRows(s).forEach(function(p){box.appendChild(el("span",null,p[0]));box.appendChild(el("b",null,String(p[1])))});
+}
+/* [2.3.0-CYD] เพิ่ม: ใบรายงานพิมพ์ได้ ดึงข้อมูลชุดเดียวกับกราฟ แล้วสั่ง window.print() */
+function printReport(id,name,mins){
+  Promise.all(["/api/trend?bed="+id+"&mins="+mins,"/api/report?bed="+id+"&mins="+mins,"/api/events"].map(function(u){return fetch(u).then(function(r){if(!r.ok)throw new Error("ดึงข้อมูลไม่ได้");return r.json()})})).then(function(a){
+    var sh=$("sheet"),tb,tr;sh.textContent="";
+    sh.appendChild(el("h2",null,"รายงานการให้สารน้ำทางหลอดเลือดดำ"));
+    sh.appendChild(el("div",null,"เตียง "+id+(name?" · ผู้ป่วย "+name:"")));
+    sh.appendChild(el("div",null,"ข้อมูล "+mins+" นาทีล่าสุด · พิมพ์เมื่อ "+new Date().toLocaleString("th-TH")+" (ตามนาฬิกาเครื่องที่สั่งพิมพ์)"));
+    var svg=document.createElementNS(SVGNS,"svg");svg.setAttribute("viewBox","0 0 300 120");drawChart(svg,a[0]);sh.appendChild(svg);
+    sh.appendChild(el("div","fine","เขียว=อัตราไหล ฟ้า=เป้าหมาย แดง=เหตุเตือนวิกฤต เหลือง=ใกล้หมด เทา=ไม่มีข้อมูล (ไม่ใช่ศูนย์)"));
+    tb=el("table");reportRows(a[1]).forEach(function(p){tr=el("tr");tr.appendChild(el("th",null,p[0]));tr.appendChild(el("td",null,String(p[1])));tb.appendChild(tr)});sh.appendChild(tb);
+    var ev=a[2].filter(function(e){return Number(e.bed)===Number(id)}).slice(0,20);
+    sh.appendChild(el("h3",null,"เหตุการณ์ของเตียงนี้ (ล่าสุดไม่เกิน 20 รายการ)"));
+    tb=el("table");tr=el("tr");["เวลา","เหตุการณ์","รายละเอียด"].forEach(function(t){tr.appendChild(el("th",null,t))});tb.appendChild(tr);
+    ev.forEach(function(e){tr=el("tr");[fmtTime(e.epoch,e.up),e.event,e.detail].forEach(function(t){tr.appendChild(el("td",null,t))});tb.appendChild(tr)});
+    if(!ev.length){tr=el("tr");var td=el("td",null,"ไม่มีเหตุการณ์");td.colSpan=3;tr.appendChild(td);tb.appendChild(tr)}
+    sh.appendChild(tb);
+    var sg=el("div","sign");["ผู้บันทึก","ผู้ตรวจสอบ"].forEach(function(t){sg.appendChild(el("div",null,t))});sh.appendChild(sg);
+    sh.appendChild(el("div","fine","ข้อมูลจากอุปกรณ์เสริมเฝ้าระวัง ไม่ใช่ระบบเตือนที่ได้รับการรับรองทางการแพทย์ ต้องตรวจสอบสารน้ำและผู้ป่วยโดยตรงเสมอ"));
+    window.print();
+  }).catch(function(e){toast(e.message)});
 }
 function loadSd(){
   fetch("/api/sd").then(function(r){return r.json()}).then(function(s){
@@ -136,15 +165,16 @@ function buildCard(b){
   var iName=field("name","ชื่อ/ป้ายผู้ป่วย (ไม่เกิน 63 ไบต์ ไทยได้ประมาณ 21 ตัว)","text",{maxlength:63,autocomplete:"off"});iName.parentNode.style.gridColumn="1/-1";
   var iRate=field("rate","อัตราเป้าหมาย (mL/h)","number",{min:0,max:3000}),iPlan=field("plan","ปริมาตรถุง (mL)","number",{min:0,max:10000}),
       iDf=field("df","Drop factor","select"),iNear=field("near","เตือนใกล้หมดที่ (%)","number",{min:50,max:95,step:1});
-  var det=el("details","tr"),dsum=el("summary",null,"กราฟแนวโน้มและรายงาน"),rangeSel=el("select"),chart=document.createElementNS(SVGNS,"svg"),legend=el("div","legend","เขียว=อัตราไหล ฟ้า=เป้าหมาย แดง=เหตุเตือนวิกฤต เหลือง=ใกล้หมด เทา=ไม่มีข้อมูล (ไม่ใช่ศูนย์)"),rep=el("div","rep"),dl=el("a","dl","ดาวน์โหลด CSV รายนาที (ล็อกอิน)");
+  var det=el("details","tr"),dsum=el("summary",null,"กราฟแนวโน้มและรายงาน"),rangeSel=el("select"),chart=document.createElementNS(SVGNS,"svg"),legend=el("div","legend","เขียว=อัตราไหล ฟ้า=เป้าหมาย แดง=เหตุเตือนวิกฤต เหลือง=ใกล้หมด เทา=ไม่มีข้อมูล (ไม่ใช่ศูนย์)"),rep=el("div","rep"),dl=el("a","dl","ดาวน์โหลด CSV รายนาที (ล็อกอิน)"),prn=el("button","alt","พิมพ์รายงาน / บันทึกเป็น PDF");prn.type="button";prn.style.margin="6px 8px 0 0";
   [[30,"30 นาที"],[60,"1 ชั่วโมง"],[240,"4 ชั่วโมง"]].forEach(function(o){var op=el("option",null,o[1]);op.value=o[0];rangeSel.appendChild(op)});rangeSel.value=60;rangeSel.style.margin="6px 0 0";
   chart.setAttribute("viewBox","0 0 300 120");chart.setAttribute("class","chart");
-  det.appendChild(dsum);det.appendChild(rangeSel);det.appendChild(chart);det.appendChild(legend);det.appendChild(rep);det.appendChild(dl);
+  det.appendChild(dsum);det.appendChild(rangeSel);det.appendChild(chart);det.appendChild(legend);det.appendChild(rep);det.appendChild(prn);det.appendChild(dl);
   function loadTrend(){
     var m=rangeSel.value;dl.href="/api/trend.csv?bed="+b.id+"&mins=240";
     fetch("/api/trend?bed="+b.id+"&mins="+m).then(function(r){return r.json()}).then(function(d){drawChart(chart,d)}).catch(function(){});
     fetch("/api/report?bed="+b.id+"&mins="+m).then(function(r){return r.json()}).then(function(s){showReport(rep,s)}).catch(function(){});
   }
+  prn.onclick=function(){printReport(b.id,obj.curName,rangeSel.value)};
   det.addEventListener("toggle",function(){if(det.open)loadTrend()});rangeSel.onchange=loadTrend;
   openTrends.push(function(){if(det.open)loadTrend()});
   var row=el("div","row"),save=el("button",null,"บันทึก"),bag=el("button","danger","เริ่มถุงใหม่"),ack=el("button","alt","รับทราบใกล้หมด");
