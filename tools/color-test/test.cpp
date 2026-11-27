@@ -86,6 +86,14 @@ int main(int argc, char **argv) {
   for (int r = 0; r < 4; r++) { handleCommand('r'); checkBounds("หมุนจอ"); }
   CHECK(rotation == 3, "หมุนครบ 4 ครั้งต้องกลับมาเดิม");
   handleCommand('h');
+  // จอดำ/ขาวเต็มจอ ความสว่าง และกลับหน้าทดสอบ
+  handleCommand('k'); handleCommand('w'); handleCommand('x');
+  const int bl0 = blPct;
+  for (int i = 0; i < 15; i++) handleCommand('-');
+  CHECK(blPct == 10, "ความสว่างต้องไม่ต่ำกว่า 10%");
+  for (int i = 0; i < 15; i++) handleCommand('+');
+  CHECK(blPct == 100 && bl0 == 100, "ความสว่างต้องไม่เกิน 100% และเริ่มที่ 100%");
+  checkBounds("กลับหน้าทดสอบด้วย x");
   // โหมดเดินเอง
   handleCommand('a'); CHECK(autoMode, "a เปิดโหมดเดินเอง");
   const bool beforeInv = invertOn, beforeBgr = bgrOn;
