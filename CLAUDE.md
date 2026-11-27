@@ -17,6 +17,7 @@ firmware/
 ├── Host-CYD-LVGL/    เครื่องส่วนกลาง บอร์ด CYD แบบ TFT_eSPI + XPT2046_Touchscreen + LVGL (ปิด SD) แตกจาก Host-CYD28
 ├── FlowSim-Lab/      เครื่องมือจำลอง ไม่มีเลขเวอร์ชัน
 ├── CYD-ScreenTest/   เครื่องมือทดสอบจอบอร์ด CYD หาชิปจอและค่าที่ถูกต้อง ไม่มีเลขเวอร์ชัน
+├── CYD-ColorTest/    เครื่องมือทดสอบสีจอ CYD หน้าเดียว ไล่ครบทุกชุดค่า (ชิป x กลับสี x BGR) ด้วยปุ่ม BOOT ไม่มีเลขเวอร์ชัน
 ├── Buzzer-Test/      เครื่องมือกวาดความถี่หาจุดที่บัซเซอร์ Passive ดังที่สุด ไม่มีเลขเวอร์ชัน
 └── reference/        เอกสารอ้างอิง ไม่มีเลขเวอร์ชัน
 ```
@@ -169,6 +170,7 @@ bash tools/touch-preview/run.sh         # คอมไพล์และเร�
 bash tools/cyd-preview/run.sh           # คอมไพล์และเรนเดอร์ Host รุ่นบอร์ด CYD
 bash tools/cyd-board-test/run.sh        # Host-CYD28 รุ่นเขียนใหม่: ทัช คาลิเบรต และสเก็ตช์ทั้งไฟล์กับ ESP-NOW จำลอง
 bash tools/cyd-bed-test/run.sh          # Host-CYD28 รุ่นเขียนใหม่: ตรรกะเตียง รหัสเตือน ตัวจัดช่องเวลาส่ง Sync
+bash tools/color-test/run.sh            # CYD-ColorTest: ทุกคำสั่ง ทั้งสองชิป ทุกชุดค่า ข้อความไม่ล้นจอ
 bash tools/cyd-ui-test/run.sh           # Host-CYD28 รุ่นเขียนใหม่: โซนแตะ เส้นทางหน้าจอ จังหวะบัซเซอร์ และเรนเดอร์ภาพ docs/screens-cyd2/
 bash tools/cyd-tap-test/run.sh          # โซนแตะตรงปุ่มทุกหน้าของ Host CYD ทั้งสองแนว
 bash tools/buzzer-pattern-test/run.sh   # จังหวะเสียงเตือน Station ทั้ง Passive (เหมือนรุ่นก่อน) และ Active
