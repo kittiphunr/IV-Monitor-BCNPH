@@ -1,7 +1,7 @@
 /**
  * @file      web_api.h
  * @brief     ตรรกะล้วนของ API เว็บ: สร้าง JSON และตรวจค่าที่รับเข้ามา
- * @version   2.1.0-CYD
+ * @version   2.2.0-CYD
  * @date      2026-11-27
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
@@ -15,6 +15,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 2.2.0-CYD | 2026-11-27 | apiTrendJson / apiReportJson / apiTrendCsvLines (กราฟและรายงานย้อนหลังรายนาที) · apiParseMins |
  * | 2.1.0-CYD | 2026-11-27 | state JSON มี name ต่อเตียง · apiParseName · apiParseWifiUpdate (ตรวจทั้งชุดหรือไม่ใช้เลย) · apiWifiJson (ไม่เปิดเผยรหัสผ่าน และบอกว่ายังใช้รหัสปริยายอยู่หรือไม่) |
  * | 2.0.4-CYD | 2026-11-27 | state JSON เพิ่มฟิลด์ noDropSync (Station เตียงนั้นรู้จัก NO DROP หรือไม่) |
  * | 2.0.3-CYD | 2026-11-27 | เขียนใหม่ด่านที่ 4 (เว็บ นาฬิกา SD ประวัติเหตุการณ์) ไม่นำโค้ดรุ่น 1.x มาปรับ |
@@ -33,6 +34,7 @@
 #include "clock_sync.h"
 #include "bed_names.h"
 #include "net_config.h"
+#include "trend.h"
 
 enum ApiErr : uint8_t { API_OK = 0, API_BAD_BED, API_BAD_VALUE, API_NO_FIELDS, API_BAD_TIME, API_NEED_CONFIRM, API_OVERFLOW };
 
@@ -200,6 +202,48 @@ inline ApiErr apiWifiJson(char *out, size_t cap, const NetConfig &c, const char 
   j.fmt(",\"webUser\":"); j.str(c.webUser);
   j.fmt(",\"ip\":"); j.str(ip);
   j.fmt(",\"clients\":%d,\"defaultWifiPass\":%s,\"defaultWebPass\":%s}", clients, defWifi ? "true" : "false", defWeb ? "true" : "false");
+  return j.over ? API_OVERFLOW : API_OK;
+}
+
+// จำนวนนาทีย้อนหลังที่ขอ: ต้องเป็นจำนวนเต็ม 1..TREND_MINUTES ไม่ส่งมา = ค่าปริยาย
+inline ApiErr apiParseMins(const char *s, int dflt, int &mins) {
+  if (!apiHas(s)) { mins = dflt; return API_OK; }
+  double v;
+  if (!apiParseNumber(s, v) || v != floor(v) || v < 1 || v > TREND_MINUTES) return API_BAD_VALUE;
+  mins = (int)v;
+  return API_OK;
+}
+
+// กราฟแนวโน้ม: อาร์เรย์ขนานเรียงเก่า -> ใหม่ r = อัตราไหล (-1 = ไม่มีข้อมูล) t = เป้าหมาย a = รหัสเตือน f = ธง (1 ถูกต้อง 2 กำลังนับ)
+// ใช้จำนวนเต็มล้วนเพื่อให้ JSON สั้น (240 นาที < 4 KB) ไม่ใช้ทศนิยม
+inline ApiErr apiTrendJson(char *out, size_t cap, const TrendRing &r, int bed, int mins) {
+  const int n = mins > r.count ? r.count : mins;
+  JsonOut j(out, cap);
+  j.fmt("{\"bed\":%d,\"mins\":%d,\"count\":%d,\"r\":[", bed, mins, n);
+  for (int i = n - 1; i >= 0; i--) { const TrendSample &x = r.newest(i); j.fmt("%s%d", i == n - 1 ? "" : ",", (x.flags & TS_VALID) ? (int)x.rate : -1); }
+  j.fmt("],\"t\":[");
+  for (int i = n - 1; i >= 0; i--) j.fmt("%s%u", i == n - 1 ? "" : ",", (unsigned)r.newest(i).target);
+  j.fmt("],\"a\":[");
+  for (int i = n - 1; i >= 0; i--) j.fmt("%s%u", i == n - 1 ? "" : ",", (unsigned)r.newest(i).alert);
+  j.fmt("],\"f\":[");
+  for (int i = n - 1; i >= 0; i--) j.fmt("%s%u", i == n - 1 ? "" : ",", (unsigned)r.newest(i).flags);
+  j.fmt("]}");
+  return j.over ? API_OVERFLOW : API_OK;
+}
+
+// รายงานสรุป (ชื่อรหัสเตือนใช้ตัวเดียวกับประวัติเหตุการณ์ และข้ามรหัสที่ไม่เคยเกิด)
+inline ApiErr apiReportJson(char *out, size_t cap, const TrendSummary &s, int bed, int mins) {
+  JsonOut j(out, cap);
+  j.fmt("{\"bed\":%d,\"mins\":%d,\"minutes\":%d,\"valid\":%d,\"running\":%d,\"gap\":%d,", bed, mins, s.minutes, s.validMinutes, s.runningMinutes, s.gapMinutes);
+  j.fmt("\"avgRate\":%.1f,\"minRate\":%u,\"maxRate\":%u,\"totalMl\":%.1f,\"avgTarget\":%.1f,\"devPct\":%.1f,\"withinPct\":%d,\"episodes\":%d,\"alertMinutes\":{",
+        (double)apiNum(s.avgRate), (unsigned)s.minRate, (unsigned)s.maxRate, (double)apiNum(s.totalMl), (double)apiNum(s.avgTarget), (double)apiNum(s.devPct), s.withinPct, s.alertEpisodes);
+  bool first = true;
+  for (int c = 1; c < 8; c++) {
+    if (s.alertMinutes[c] <= 0) continue;
+    j.fmt("%s\"%s\":%d", first ? "" : ",", alertName((uint8_t)c), s.alertMinutes[c]);
+    first = false;
+  }
+  j.fmt("}}");
   return j.over ? API_OVERFLOW : API_OK;
 }
 

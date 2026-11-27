@@ -3,6 +3,7 @@
 #include "Arduino.h"
 #define HTTP_POST 2
 #define HTTP_GET 1
+#define CONTENT_LENGTH_UNKNOWN ((size_t) -1)
 class WebServer {
 public:
   WebServer(int) {}
@@ -18,5 +19,7 @@ public:
   void send(int, const char*, const char*) {}
   void send_P(int, const char*, const char*) {}
   void sendHeader(const char*, const String&) {}
+  void setContentLength(size_t) {}
+  void sendContent(const char*) {}
   size_t streamFile(class fs::File&, const char*) { return 0; }
 };

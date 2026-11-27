@@ -4,7 +4,9 @@
 #include <map>
 #include <string>
 #include "Arduino.h"
+#include "FS.h"
 #define HTTP_GET 1
+#define CONTENT_LENGTH_UNKNOWN ((size_t) -1)
 #define HTTP_POST 2
 
 struct WebTestState {
@@ -16,6 +18,9 @@ struct WebTestState {
   std::string type, body;
   bool begun = false;
   int authRequests = 0;
+  std::map<std::string, std::string> headers;
+  size_t contentLength = 0;
+  int chunks = 0, streamed = 0;
 };
 inline WebTestState g_web;
 
@@ -35,12 +40,15 @@ class WebServer {
   void send(int c, const char *t, const String &b) { g_web.code = c; g_web.type = t; g_web.body = b.c_str(); }
   void send(int c, const char *t, const char *b) { g_web.code = c; g_web.type = t; g_web.body = b; }
   void send_P(int c, const char *t, const char *b) { g_web.code = c; g_web.type = t; g_web.body = b; }
-  void sendHeader(const char *, const String &) {}
+  void sendHeader(const char *k, const String &v) { g_web.headers[k] = v.c_str(); }
+  void setContentLength(size_t n) { g_web.contentLength = n; }
+  void sendContent(const char *c) { g_web.body += c; g_web.chunks++; }
+  size_t streamFile(fs::File &f, const char *t) { g_web.code = 200; g_web.type = t; g_web.body = fs::g_mem.files[f._path]; g_web.streamed++; return g_web.body.size(); }
 };
 
 // เรียกคำขอหนึ่งครั้ง
 inline int webCall(int method, const char *path, std::map<std::string, std::string> args = {}, const char *user = "", const char *pass = "") {
-  g_web.args = args; g_web.user = user; g_web.pass = pass; g_web.code = 0; g_web.type.clear(); g_web.body.clear();
+  g_web.args = args; g_web.user = user; g_web.pass = pass; g_web.code = 0; g_web.type.clear(); g_web.body.clear(); g_web.headers.clear(); g_web.chunks = 0; g_web.streamed = 0;
   auto it = g_web.routes[method].find(path);
   if (it != g_web.routes[method].end()) it->second(); else if (g_web.notFound) g_web.notFound();
   return g_web.code;

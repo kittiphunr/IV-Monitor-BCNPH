@@ -7,7 +7,7 @@ SK=../../firmware/Host-CYD28
 OUT="${1:-../../docs/screens-cyd2}"
 python3 ../check-ino-types.py "$SK/Host-CYD28.ino"
 cp "$SK/Host-CYD28.ino" sketch.cpp
-FLAGS="-std=gnu++17 -I. -I../screen-preview -I$SK -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-format-truncation"
+FLAGS="-std=gnu++17 -I. -I../cyd-bed-test -I../screen-preview -I$SK -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-format-truncation"
 g++ $FLAGS -o /tmp/cyd_web_test test.cpp
 timeout 60 /tmp/cyd_web_test
 
@@ -29,6 +29,14 @@ for f in ['state_empty', 'state_worst', 'state_show', 'state_names']:
 for f in ['events', 'events_show']:
     ev = json.load(open(f'/tmp/cyd_web_{f}.json'))
     assert isinstance(ev, list) and all({'up','epoch','bed','event','detail'} <= set(e) for e in ev), f
+tr = json.load(open('/tmp/cyd_web_trend.json'))
+assert len(tr['r']) == len(tr['t']) == len(tr['a']) == len(tr['f']) == tr['count'] == 80, tr['count']
+assert tr['r'].count(-1) == 9 and all(v >= -1 for v in tr['r']) and max(tr['r']) == 90 and set(tr['a']) >= {0, 3, 1}, 'trend shape'
+assert all((f & 1) == 0 for r_, f in zip(tr['r'], tr['f']) if r_ == -1) and all(f & 1 for r_, f in zip(tr['r'], tr['f']) if r_ != -1), 'flags match gaps'
+rp = json.load(open('/tmp/cyd_web_report.json'))
+assert rp['valid'] == 71 and rp['gap'] == 9 and rp['alertMinutes']['TOO_FAST'] == 10 and isinstance(rp['avgRate'], float), rp
+sd = json.load(open('/tmp/cyd_web_sd.json'))
+assert sd['ok'] is True and '20260910' in sd['days'] and 'unsync' in sd['days'], sd
 names = json.load(open('/tmp/cyd_web_state_names.json'))
 assert names['beds'][1]['name'] == 'นายสมชาย ใจดี' and names['beds'][2]['name'] == 'a"b\\c<script>x</script>&\'', names['beds'][:3]
 w = json.load(open('/tmp/cyd_web_wifi.json'))
@@ -51,7 +59,7 @@ done
 if [ -n "$CHROME" ] && [ -x "$CHROME" ]; then
   mkdir -p "$OUT"
   python3 make_preview.py /tmp/cyd_web_preview.html
-  "$CHROME" --headless --disable-gpu --no-sandbox --hide-scrollbars --virtual-time-budget=3000 --window-size=1200,1700 \
+  "$CHROME" --headless --disable-gpu --no-sandbox --hide-scrollbars --virtual-time-budget=3000 --window-size=1200,2300 \
     --screenshot="$OUT/web_dashboard.png" "file:///tmp/cyd_web_preview.html" >/dev/null 2>&1
   echo "  ภาพ: $OUT/web_dashboard.png"
 else

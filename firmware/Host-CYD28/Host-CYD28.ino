@@ -1,7 +1,7 @@
 /**
  * @file      Host-CYD28.ino
  * @brief     Host บอร์ด CYD (ESP32-2432S028) เขียนใหม่ ด่านที่ 4 (ครบทุกด่าน): เว็บแดชบอร์ด นาฬิกา SD ประวัติเหตุการณ์
- * @version   2.1.0-CYD
+ * @version   2.2.0-CYD
  * @date      2026-11-27
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
@@ -26,6 +26,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 2.2.0-CYD | 2026-11-27 | กราฟแนวโน้มอัตราไหลและรายงานย้อนหลังรายนาที: บันทึกต่อเตียงทุกนาที (วงแหวน 240 นาที ในหน่วยความจำ) + ไฟล์รายวัน /trend/วัน.csv บน SD · หน้า TREND บนจอ · กราฟ รายงานสรุป และดาวน์โหลด CSV บนเว็บ |
  * | 2.1.0-CYD | 2026-11-27 | ชื่อ/ป้ายผู้ป่วยต่อเตียง (บันทึกใน NVS แสดงบนเว็บ และบนจอถ้าเป็น ASCII) · หน้าตั้งค่า Wi-Fi/รหัสผ่านเว็บ (ค่าใหม่มีผลหลังรีสตาร์ท เก็บใน NVS) · คืนค่าปริยาย: กด BOOT ค้าง 2 วินาทีตอนเปิดเครื่องหรือพิมพ์ wifireset ทาง Serial |
  * | 2.0.5-CYD | 2026-11-27 | หน้าเปิดเครื่องแบบโลโก้ (splash.h + logo.h สร้างจากภาพด้วย tools/logo-convert) แสดงทันทีหลังเริ่มจอ ค้าง CYD_SPLASH_MS แตะข้ามได้ |
  * | 2.0.4-CYD | 2026-11-27 | ส่งรหัส NO DROP (6) ให้ Station ที่ประกาศว่ารองรับ (Station 7.12.0 ขึ้นไป สายเสถียร 7.5.9 บอร์ดเล็ก 1.4.0 Fallout 1.6.0) จึงขึ้นเตือนที่เครื่องประจำเตียงด้วย รุ่นเก่ายังได้รับ 0 เหมือนเดิม |
@@ -60,8 +61,9 @@
 #include "splash.h"
 #include "bed_names.h"
 #include "net_config.h"
+#include "trend.h"
 
-#define APP_VERSION "2.1.0-CYD"
+#define APP_VERSION "2.2.0-CYD"
 
 enum AppMode : uint8_t { MODE_UI = 0, MODE_DIAG };
 
@@ -71,6 +73,8 @@ Bed beds[MAX_BEDS];
 uint8_t activeBeds = DEFAULT_ACTIVE_BEDS;
 SyncScheduler syncSched;
 EventLog events;
+TrendState trend;                     // บันทึกรายนาทีต่อเตียง (วงแหวนในหน่วยความจำ)
+static uint32_t lastObserveMs = 0;
 NetConfig netCfg;                      // ค่า Wi-Fi/บัญชีเว็บที่ใช้จริง (โหลดจาก NVS ตอนเปิดเครื่อง)
 bool restartPending = false;
 uint32_t restartAtMs = 0;
@@ -338,6 +342,12 @@ void loop() {
   if (restartPending && (int32_t)(now - restartAtMs) >= 0) ESP.restart();   // หลังบันทึกค่า Wi-Fi: รีสตาร์ทให้ค่าใหม่มีผล
   serviceRx(now);
   if ((uint32_t)(now - lastEvalMs) >= 250) { lastEvalMs = now; serviceAlerts(now); }
+  if ((uint32_t)(now - lastObserveMs) >= 1000) {                       // เก็บสถิติของนาทีปัจจุบันทุกวินาที ปิดนาทีเมื่อครบ 60 วินาที
+    lastObserveMs = now;
+    TrendSample closed[MAX_BEDS];                                    // ปิดนาทีก่อนเก็บสถิติ ข้อมูลของวินาทีที่ครบนาทีพอดีเป็นของนาทีถัดไป
+    if (trendClose(trend, beds, activeBeds, now, closed)) sdLogTrend(closed, activeBeds, clockEpoch(), trend.minuteStartMs / 60000, clockTzMin);
+    trendObserve(trend, beds, activeBeds, now);
+  }
   if ((uint32_t)(now - lastLinkTickMs) >= LINK_WINDOW_MS) { lastLinkTickMs = now; bedsLinkTick(beds, MAX_BEDS); }
   const int s = syncSched.next(now, activeBeds);
   if (s >= 0) linkSendSync(bedBuildSync(beds[s], s, linkChannel(), clockEpoch(), now));

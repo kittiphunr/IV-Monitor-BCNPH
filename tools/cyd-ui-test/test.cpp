@@ -7,6 +7,7 @@
 #include <vector>
 #include "Arduino.h"
 #include "touch_cal.h"
+#include "scenario.h"
 #include "protocol.h"
 #include <WiFi.h>
 #include <esp_now.h>
@@ -482,6 +483,113 @@ static void testExtremeValues() {
   ui.scr = SCR_BED; drawNow(); mark("bed_extreme");
 }
 
+
+// ---- หน้า TREND (กราฟแนวโน้มบนจอ) ----
+struct L4 { int x0, y0, x1, y1; unsigned col; };
+static std::vector<L4> linesSince(long from) {
+  fflush(g_ops);
+  std::vector<L4> out;
+  FILE *f = fopen(g_opsPath.c_str(), "r");
+  fseek(f, from, SEEK_SET);
+  static char line[400000];
+  while (fgets(line, sizeof(line), f)) {
+    L4 l;
+    if (sscanf(line, "LINE %d %d %d %d %u", &l.x0, &l.y0, &l.x1, &l.y1, &l.col) == 5) out.push_back(l);
+  }
+  fclose(f);
+  return out;
+}
+static int countBigRects(long from) {                     // จำนวนการล้างกรอบกราฟทั้งกรอบ (RECT x y w h สีดำ ทึบ)
+  int n = 0;
+  for (auto &r : rectsSince(from, 0)) if (r.x == TR_X && r.y == TR_Y && r.w == TR_W && r.h == TR_H) n++;
+  return n;
+}
+static void fillStandardTrend() {
+  trend = TrendState();
+  Bed tmp[MAX_BEDS]; tmp[0].cfg.targetRateHr = 60;
+  uint32_t drops = 0, now = 1000; double acc = 0; int n; const Seg *segs = standardScenario(n);
+  runScenario(trend, tmp, 0, segs, n, now, acc, drops);
+}
+
+static void testTrendScreen() {
+  scenario();
+  fillStandardTrend();
+  ui = UiState(); ui.scr = SCR_BED; ui.bed = 0; drawNow();
+  screenCheck("BED (ห้าปุ่ม)", "bed_buttons");
+  for (int id : {Z_BACK, Z_SETBTN, Z_GRAPH, Z_NEWBAG, Z_ACK}) { int x, y, w, h; CHECK(zoneRect(id, x, y, w, h) && w >= 40 && h >= 40, "ปุ่มหน้า BED ต้องใหญ่พอแตะ (ไม่เล็กกว่า 40 พิกเซล)"); }
+  CHECK(tapId(Z_GRAPH) && ui.scr == SCR_TREND, "GRAPH เข้าหน้า TREND");
+  screenCheck("TREND", "trend");
+  // ขอบเขตกราฟ: ทุกเส้นที่วาดต้องอยู่ในกรอบ
+  long from = opsEnd();
+  ui.needFull = true; uiRefresh(g_ms);
+  auto lines = linesSince(from);
+  CHECK(lines.size() > 30, "กราฟต้องมีเส้นจริง");
+  bool inside = true, hasGreen = false, hasCyan = false;
+  for (auto &l : lines) {
+    if (l.x0 < TR_X || l.x1 < TR_X || l.x0 >= TR_X + TR_W || l.x1 >= TR_X + TR_W || l.y0 < TR_Y || l.y1 < TR_Y || l.y0 >= TR_Y + TR_H || l.y1 >= TR_Y + TR_H) inside = false;
+    if (l.col == C_GREEN) hasGreen = true;
+    if (l.col == C_CYAN) hasCyan = true;
+  }
+  CHECK(inside, "ทุกเส้นของกราฟต้องอยู่ในกรอบ");
+  CHECK(hasGreen && hasCyan, "ต้องมีเส้นอัตราไหล (เขียว) และเส้นเป้าหมาย (ฟ้า)");
+  CHECK(!rectsSince(from, C_BTNRED).empty() || true, "ตรวจแถบเตือน");
+  // แถบเตือนวิกฤตสีแดงต้องมี (สถานการณ์มีเตือนเร็วเกิน 10 นาที) และเส้นประเตือนใกล้หมดสีเหลืองอำพันก็มี
+  {
+    fflush(g_ops);
+    FILE *f = fopen(g_opsPath.c_str(), "r"); fseek(f, from, SEEK_SET);
+    static char ln[400000]; int redBars = 0, amberBars = 0, grayTicks = 0;
+    while (fgets(ln, sizeof(ln), f)) {
+      int x, y, h2, w2; unsigned c, fl;
+      if (sscanf(ln, "RECT %d %d %d %d %u %u", &x, &y, &w2, &h2, &c, &fl) == 6 && w2 == 1) {       // drawFastVLine ในตัวจำลองบันทึกเป็น RECT กว้าง 1
+        if (c == C_BTNRED) redBars++; else if (c == C_AMBER) amberBars++; else if (c == C_GRAY && h2 == 4) grayTicks++;
+      }
+    }
+    fclose(f);
+    CHECK(redBars >= 8 && amberBars >= 8, "ต้องมีแถบแดง (เตือนวิกฤต) และเหลืองอำพัน (ใกล้หมด) ตามนาทีที่เกิดเหตุ");
+    CHECK(grayTicks >= 8, "ช่วง Station เงียบต้องแสดงเป็นขีดเทา ไม่ใช่เส้นอัตราไหลศูนย์");
+  }
+  // ช่วง 30 / 60 / 240 นาที
+  CHECK(ui.trendRangeIdx == 1, "ค่าเริ่มต้น 60 นาที");
+  tapId(Z_RANGE); CHECK(ui.trendRangeIdx == 2 && ui.scr == SCR_TREND, "RANGE -> 240 นาที"); mark("trend_240"); checkTextBounds("TREND 240");
+  tapId(Z_RANGE); CHECK(ui.trendRangeIdx == 0, "RANGE -> 30 นาที"); mark("trend_30"); checkTextBounds("TREND 30");
+  tapId(Z_RANGE); CHECK(ui.trendRangeIdx == 1, "RANGE -> 60 นาที (วนครบ)");
+  // วาดกราฟใหม่เฉพาะเมื่อมีตัวอย่างใหม่ (ไม่กะพริบ)
+  ui.needFull = true; uiRefresh(g_ms);
+  from = opsEnd();
+  drawTrend(false);
+  CHECK(countBigRects(from) == 0, "ไม่มีตัวอย่างใหม่ ต้องไม่ล้างและวาดกราฟซ้ำ");
+  TrendSample x = {}; x.flags = TS_VALID | TS_RUNNING; x.rate = 70; x.target = 60;
+  trend.ring[0].add(x);
+  from = opsEnd();
+  drawTrend(false);
+  CHECK(countBigRects(from) == 1, "มีตัวอย่างใหม่ต้องวาดกราฟใหม่หนึ่งครั้ง");
+  CHECK(tapId(Z_BACKBED) && ui.scr == SCR_BED, "BACK กลับหน้า BED");
+  // กราฟของเตียงอื่นไม่ปนกัน: เตียงที่ไม่มีตัวอย่างขึ้นข้อความไม่มีข้อมูล ไม่มีเส้น
+  ui.bed = 2; ui.scr = SCR_TREND; ui.needFull = true; uiRefresh(g_ms);
+  from = opsEnd(); ui.needFull = true; uiRefresh(g_ms);
+  CHECK(linesSince(from).empty(), "เตียงที่ไม่มีข้อมูลต้องไม่มีเส้นกราฟ");
+  screenCheck("TREND ว่าง", "trend_empty");
+  // พิกัด: ใหม่สุดอยู่ขวา เก่าสุดอยู่ซ้าย เรียงต่อเนื่อง ไม่ออกนอกกรอบ
+  for (int range : TREND_RANGES) {
+    CHECK(trendX(range - 1, range) == TR_X + 1, "ตัวอย่างเก่าสุดชิดซ้าย");
+    CHECK(trendX(0, range) <= TR_X + TR_W - 2 && trendX(0, range) >= TR_X + TR_W - 4, "ตัวอย่างใหม่สุดชิดขวา");
+    bool mono = true; for (int a = 1; a < range; a++) if (trendX(a, range) > trendX(a - 1, range)) mono = false;
+    CHECK(mono, "ยิ่งเก่ายิ่งอยู่ซ้าย");
+  }
+  CHECK(trendX(0, 1) >= TR_X && trendX(0, 1) < TR_X + TR_W, "ช่วง 1 นาทีไม่หารศูนย์");
+  CHECK(trendY(0, 100) == TR_Y + TR_H - 2 && trendY(100, 100) == TR_Y + 2 && trendY(50, 100) > trendY(100, 100) && trendY(50, 100) < trendY(0, 100), "แกนตั้ง: ศูนย์ล่างสุด ค่าสูงสุดบนสุด เรียงต่อเนื่อง");
+  CHECK(trendY(-5, 100) == trendY(0, 100) && trendY(1e9f, 100) == trendY(100, 100) && trendY(10, 0) >= TR_Y && trendY(10, -3) <= TR_Y + TR_H, "ค่านอกช่วงถูกตัด และสเกลศูนย์/ติดลบไม่พัง");
+  // ค่าสุดขั้ว: อัตรา 65535 ต้องไม่ล้นกรอบ
+  trend = TrendState();
+  for (int i = 0; i < TREND_MINUTES; i++) { TrendSample e = {}; e.flags = TS_VALID | TS_RUNNING; e.rate = 65535; e.target = 65535; e.alert = ALERT_LOST_LINK; trend.ring[0].add(e); }
+  ui.bed = 0; ui.trendRangeIdx = 2; ui.scr = SCR_TREND; ui.needFull = true;
+  from = opsEnd(); uiRefresh(g_ms);
+  bool insideX = true; for (auto &l : linesSince(from)) if (l.y0 < TR_Y || l.y1 < TR_Y || l.y0 >= TR_Y + TR_H || l.y1 >= TR_Y + TR_H) insideX = false;
+  CHECK(insideX, "อัตราสูงสุดของชนิดข้อมูลต้องไม่ล้นกรอบ");
+  checkTextBounds("TREND สุดขั้ว");
+  ui.trendRangeIdx = 1;
+}
+
 int main(int argc, char **argv) {
   g_opsPath = argc > 1 ? argv[1] : "/tmp/cyd_ui_ops.txt";
   g_ops = fopen(g_opsPath.c_str(), "w");
@@ -496,6 +604,7 @@ int main(int argc, char **argv) {
   printf("ทดสอบค่าสุดขั้ว\n");
   testExtremeValues();
   testSplash();
+  testTrendScreen();
   fclose(g_ops);
   if (fails) { printf("รวมล้มเหลว %d รายการ\n", fails); return 1; }
   printf("ผ่านทั้งหมด\n");

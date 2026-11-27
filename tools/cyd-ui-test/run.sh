@@ -7,7 +7,7 @@ SK=../../firmware/Host-CYD28
 OUT="${1:-../../docs/screens-cyd2}"
 python3 ../check-ino-types.py "$SK/Host-CYD28.ino"
 cp "$SK/Host-CYD28.ino" sketch.cpp
-g++ -std=gnu++17 -I../screen-preview -I"$SK" -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-format-truncation -o /tmp/cyd_ui_test test.cpp
+g++ -std=gnu++17 -I../screen-preview -I../cyd-bed-test -I"$SK" -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-format-truncation -o /tmp/cyd_ui_test test.cpp
 rm -f sketch.cpp
 timeout 60 /tmp/cyd_ui_test /tmp/cyd_ui_ops.txt
 python3 ../screen-preview/render.py /tmp/cyd_ui_ops.txt "$OUT" 320 240 2
