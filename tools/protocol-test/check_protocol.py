@@ -40,7 +40,7 @@ def size_of(fields):
 
 
 def main() -> int:
-    inos = sorted(ROOT.glob("firmware/*/*.ino"))
+    inos = sorted(ROOT.glob("firmware/*/*.ino")) + sorted(ROOT.glob("firmware/*/protocol.h"))   # Host-CYD28 รุ่นเขียนใหม่เก็บโครงสร้างใน protocol.h
     problems = 0
 
     for name in STRUCTS:

@@ -1,0 +1,411 @@
+// ทดสอบหน้าจอ ทัช และเสียงของ Host-CYD28 ด่านที่ 3 บนเครื่อง PC
+#include <cstdio>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
+#include <string>
+#include <vector>
+#include "Arduino.h"
+#include "touch_cal.h"
+#include "protocol.h"
+#include <WiFi.h>
+#include <esp_now.h>
+#include <esp_wifi.h>
+
+FILE *g_ops = nullptr;
+SerialClass Serial;
+ESPClass ESP;
+unsigned long g_ms = 100000;
+unsigned long millis() { return g_ms; }
+unsigned long micros() { return g_ms * 1000UL; }
+void delay(unsigned long ms) { g_ms += ms; }
+void delayMicroseconds(unsigned long) {}
+void pinMode(int, int) {}
+static int g_pinLevel[64];
+void digitalWrite(int p, int v) { g_pinLevel[p] = v; }
+int digitalRead(int) { return 1; }                      // IRQ สูง = ไม่มีนิ้ว BOOT ไม่กด
+bool ledcAttach(int, int, int) { return true; }
+static int g_bl = -1;
+void ledcWrite(int, int v) { g_bl = v; }
+void ledcSetup(int, int, int) {}
+void ledcAttachPin(int, int) {}
+void analogSetAttenuation(adc_attenuation_t) {}
+void analogReadResolution(int) {}
+int analogRead(int) { return 0; }
+void tone(int, unsigned int, unsigned long) {}
+void noTone(int) {}
+long map(long x, long a, long b, long c, long d) { return (x - a) * (d - c) / (b - a) + c; }
+WiFiClassStub WiFi;
+int esp_now_init() { return 0; }
+int esp_now_deinit() { return 0; }
+int esp_now_register_recv_cb(esp_now_recv_cb_t) { return 0; }
+int esp_now_add_peer(const esp_now_peer_info_t *) { return 0; }
+int esp_now_del_peer(const uint8_t *) { return 0; }
+int esp_now_send(const uint8_t *, const uint8_t *, int) { return 0; }
+int esp_wifi_get_channel(uint8_t *ch, wifi_second_chan_t *) { *ch = 1; return 0; }
+int esp_wifi_set_channel(uint8_t, wifi_second_chan_t) { return 0; }
+int esp_wifi_set_ps(int) { return 0; }
+
+#include "sketch.cpp"
+
+static int fails = 0;
+#define CHECK(c, msg) do { if (!(c)) { printf("ล้มเหลว: %s (บรรทัด %d)\n", msg, __LINE__); fails++; } } while (0)
+
+static std::string g_opsPath;
+static void mark(const char *name) { fprintf(g_ops, "MARK %s\n", name); fflush(g_ops); }
+
+// ---- ตัวช่วยจำลอง ----
+static const uint8_t MAC[6] = {1, 2, 3, 4, 5, 6};
+static struct_message mk(int id, int run, uint32_t drops, float rate, uint32_t since) {
+  struct_message m = {}; m.stationId = (uint8_t)id; m.isRunning = (uint8_t)run; m.totalDrops = drops;
+  m.flowRateHr = rate; m.msSinceLastDrop = since; m.batteryVolts = 3.9f; return m;
+}
+static void resetBeds() {
+  for (int i = 0; i < MAX_BEDS; i++) beds[i] = Bed();
+  activeBeds = 5;
+  snoozeUntil = 0;
+  syncSched = SyncScheduler();
+  sysSet = {SYS_MAGIC, 100, 1};
+  buzz = BuzzerEngine();
+}
+static void scenario() {
+  resetBeds();
+  const uint32_t t = g_ms;
+  beds[0].cfg.targetRateHr = 60;  beds[0].cfg.planVolumeMl = 500;  beds[0].cfg.resetSeq = 7;   // ไม่ใช่ 0 เพื่อให้จับได้ถ้าโค้ดทับค่านี้
+  bedIngest(beds[0], mk(1, 1, 3100, 60, 400), -48, MAC, t);  beds[0].linkPct = 100;
+  beds[1].cfg.targetRateHr = 100; beds[1].cfg.planVolumeMl = 1000;
+  bedIngest(beds[1], mk(2, 1, 9000, 142, 380), -61, MAC, t); beds[1].alert = ALERT_TOO_FAST; beds[1].linkPct = 90;
+  beds[3].cfg.targetRateHr = 80;  beds[3].cfg.planVolumeMl = 500;
+  bedIngest(beds[3], mk(4, 1, 8200, 80, 700), -70, MAC, t);  beds[3].alert = ALERT_NEAR_END; beds[3].linkPct = 50;
+  bedIngest(beds[4], mk(5, 0, 120, 0, 0), -55, MAC, t);      beds[4].linkPct = 100;
+  for (int i = 0; i < MAX_BEDS; i++) beds[i].alert = beds[i].alert;  // เตียง 3 ไม่เคยได้ยิน = NO DATA
+  cal.a = 1; cal.b = 0; cal.c = 0; cal.d = 0; cal.e = 1; cal.f = 0; cal.valid = true;
+}
+
+static int zoneRect(int id, int &x, int &y, int &w, int &h) {
+  for (uint8_t i = 0; i < zoneCount; i++) if (zones[i].id == id) { x = zones[i].x; y = zones[i].y; w = zones[i].w; h = zones[i].h; return 1; }
+  return 0;
+}
+static bool tapId(int id) {
+  int x, y, w, h;
+  if (!zoneRect(id, x, y, w, h)) return false;
+  uiTap(x + w / 2, y + h / 2, g_ms);
+  uiRefresh(g_ms);                                       // เหมือน uiStep(): วาดหน้าใหม่ทันทีหลังแตะ ก่อนการแตะครั้งถัดไป
+  g_ms += 200;
+  return true;
+}
+static void drawNow() { ui.needFull = true; uiRefresh(g_ms); }
+
+// อ่านไฟล์คำสั่งวาดล่าสุด ตรวจว่าข้อความทุกบรรทัดอยู่ในจอ 320x240
+static long g_opsChecked = 0;
+static void checkTextBounds(const char *what) {
+  fflush(g_ops);
+  FILE *f = fopen(g_opsPath.c_str(), "r");
+  if (!f) return;
+  fseek(f, g_opsChecked, SEEK_SET);
+  char line[512];
+  while (fgets(line, sizeof(line), f)) {
+    if (strncmp(line, "TEXT ", 5) != 0) continue;
+    int x, y, size, col, bg, off = 0;
+    sscanf(line, "TEXT %d %d %d %d %d %n", &x, &y, &size, &col, &bg, &off);
+    int len = (int)strlen(line + off);
+    while (len > 0 && (line[off + len - 1] == '\n' || line[off + len - 1] == '\r')) len--;
+    if (x < 0 || y < 0 || x + len * 6 * size > 320 || y + 8 * size > 240) {
+      printf("ล้มเหลว: %s ข้อความล้นจอที่ (%d,%d) ขนาด %d: %.*s\n", what, x, y, size, len, line + off);
+      fails++;
+    }
+  }
+  g_opsChecked = ftell(f);
+  fclose(f);
+}
+
+// ทุกโซนต้องอยู่ในจอ ศูนย์กลางโซนต้องแตะโดนโซนของตัวเอง (ไม่มีโซนอื่นทับ) และไม่มีโซนซ้ำเลขเดียวกัน
+static void checkZones(const char *what) {
+  for (uint8_t i = 0; i < zoneCount; i++) {
+    const Zone &z = zones[i];
+    if (z.x < 0 || z.y < 0 || z.x + z.w > 320 || z.y + z.h > 240 || z.w < 24 || z.h < 16) {
+      printf("ล้มเหลว: %s โซน %d อยู่นอกจอหรือเล็กเกินแตะ\n", what, z.id); fails++;
+    }
+    if (zoneAt(z.x + z.w / 2, z.y + z.h / 2) != z.id) { printf("ล้มเหลว: %s โซน %d ถูกโซนอื่นทับตรงกลาง\n", what, z.id); fails++; }
+    for (uint8_t j = i + 1; j < zoneCount; j++) if (zones[j].id == z.id) { printf("ล้มเหลว: %s โซน %d ซ้ำ\n", what, z.id); fails++; }
+  }
+}
+
+static void screenCheck(const char *what, const char *markName = nullptr) {
+  checkZones(what);
+  if (markName) mark(markName);
+  checkTextBounds(what);
+}
+
+// ---------------- บัซเซอร์: เก็บไทม์ไลน์ระดับ 1 ms ----------------
+static std::vector<int> timeline(BuzzerEngine &b, uint32_t t0, uint32_t ms) {
+  std::vector<int> v;
+  for (uint32_t t = 0; t < ms; t++) v.push_back(b.update(t0 + t) ? 1 : 0);
+  return v;
+}
+static int pulses(const std::vector<int> &v) { int n = 0; for (size_t i = 0; i < v.size(); i++) if (v[i] && (i == 0 || !v[i - 1])) n++; return n; }
+static int onMs(const std::vector<int> &v) { int n = 0; for (int x : v) n += x; return n; }
+
+static void testBuzzerPatterns() {
+  struct Case { uint8_t code; int bursts, on, cycle; } cases[] = {
+    {ALERT_OCCLUSION, 3, 150, 3 * 150 + 2 * 100 + 900}, {ALERT_TOO_FAST, 4, 60, 4 * 60 + 3 * 60 + 900},
+    {ALERT_TOO_SLOW, 1, 350, 350 + 1200}, {ALERT_COMPLETE, 2, 250, 2 * 250 + 200 + 1800},
+    {ALERT_NO_SIGNAL, 2, 100, 2 * 100 + 100 + 1500}, {ALERT_LOST_LINK, 5, 80, 5 * 80 + 4 * 80 + 2000}};
+  for (const Case &c : cases) {
+    BuzzerEngine b;
+    b.setAlert(c.code, 5000);
+    auto v = timeline(b, 5000, c.cycle * 2);
+    CHECK(pulses(v) == c.bursts * 2, "จำนวนครั้งต่อรอบของรหัสเตือนต้องตรงแบบแผน");
+    CHECK(onMs(v) == c.bursts * c.on * 2, "ความยาวเสียงรวมต่อรอบต้องตรงแบบแผน");
+    CHECK(v[0] == 1 && v[c.cycle] == 1, "รอบใหม่ต้องเริ่มด้วยเสียงทันที");
+    CHECK(!v[c.cycle - 1], "ท้ายรอบต้องเป็นช่วงเงียบ");
+  }
+  // จังหวะของแต่ละรหัสต้องต่างกันพอแยกด้วยหูได้ (ลายนิ้วมือ = จำนวนครั้ง x ความยาว)
+  for (size_t i = 0; i < 6; i++) for (size_t j = i + 1; j < 6; j++)
+    CHECK(!(cases[i].bursts == cases[j].bursts && cases[i].on == cases[j].on), "สองรหัสเตือนต้องไม่มีจังหวะเหมือนกัน");
+  BuzzerEngine b;
+  b.setAlert(ALERT_OCCLUSION, 100);
+  b.update(100);
+  const bool l1 = b.update(100 + 160);
+  b.setAlert(ALERT_OCCLUSION, 100 + 200);                // รหัสเดิมซ้ำ ต้องไม่เริ่มจังหวะใหม่
+  CHECK(b.update(100 + 160) == l1, "ตั้งรหัสเดิมซ้ำต้องไม่รีสตาร์ตจังหวะ");
+  b.setAlert(ALERT_NONE, 5000);
+  CHECK(!b.update(5000) && !b.update(5100), "รหัส 0 ต้องเงียบ");
+  b.setAlert(ALERT_OCCLUSION, 6000);
+  b.enabled = false;
+  CHECK(!b.update(6000), "ปิดเสียงแล้วต้องเงียบทุกกรณี");
+  b.click(6000);
+  CHECK(!b.update(6001), "ปิดเสียงแล้วเสียงกดก็ต้องเงียบ");
+  b.enabled = true;
+  // เสียงกดแทรกในช่วงเงียบของจังหวะเตือนได้ และสั้น
+  BuzzerEngine c;
+  c.setAlert(ALERT_OCCLUSION, 0);
+  CHECK(!c.update(700), "ช่วงเงียบของสายพับ (หลังครบ 3 ครั้งที่ 550 ms)");
+  c.click(700);
+  CHECK(c.update(710) && !c.update(730), "เสียงกดต้องดังราว 25 ms แล้วหยุด");
+  // เตือนใกล้หมด: 3 ครั้งสั้น ๆ แล้วเงียบ
+  BuzzerEngine d;
+  d.chime(1000);
+  auto v = timeline(d, 1000, 2000);
+  CHECK(pulses(v) == 3 && onMs(v) == 300, "ใกล้หมดต้อง 3 ครั้ง ครั้งละ 100 ms");
+  CHECK(!d.update(1000 + 600), "เสียงใกล้หมดต้องจบเอง");
+  // เสียงทดสอบ
+  BuzzerEngine e;
+  e.test(0);
+  CHECK(e.update(100) && !e.update(450), "เสียงทดสอบต้องดังราว 400 ms");
+  // ลำดับความสำคัญ
+  CHECK(buzzPriority(ALERT_OCCLUSION) > buzzPriority(ALERT_LOST_LINK) && buzzPriority(ALERT_LOST_LINK) > buzzPriority(ALERT_TOO_FAST) &&
+        buzzPriority(ALERT_TOO_FAST) > buzzPriority(ALERT_COMPLETE) && buzzPriority(ALERT_COMPLETE) > buzzPriority(ALERT_NO_SIGNAL) &&
+        buzzPriority(ALERT_NO_SIGNAL) > buzzPriority(ALERT_TOO_SLOW) && buzzPriority(ALERT_TOO_SLOW) > buzzPriority(ALERT_NONE), "ลำดับความสำคัญของรหัสเตือน");
+  CHECK(buzzPriority(ALERT_NEAR_END) == 0, "ใกล้หมดไม่ใช่เสียงเตือนวิกฤต");
+}
+
+static int pinOn() { return g_pinLevel[CYD_BUZZER_PIN] == CYD_BUZZER_ON_LEVEL; }
+
+static void testBuzzerIntegration() {
+  scenario();
+  beds[0].alert = ALERT_NONE; beds[1].alert = ALERT_NONE; beds[3].alert = ALERT_NONE;
+  uint32_t t = g_ms;
+  serviceBuzzer(t);
+  CHECK(!pinOn(), "ไม่มีเหตุเตือนต้องเงียบ");
+  beds[1].alert = ALERT_TOO_FAST;
+  serviceBuzzer(t);
+  CHECK(worstAlarm(t) == ALERT_TOO_FAST && pinOn(), "เตียงเร็วเกินต้องร้อง");
+  beds[0].alert = ALERT_OCCLUSION;
+  CHECK(worstAlarm(t) == ALERT_OCCLUSION, "หลายเตียงเตือนพร้อมกันต้องเลือกรหัสที่สำคัญที่สุด");
+  // พักเสียง
+  snoozeUntil = t + SNOOZE_MS;
+  g_ms = t + 1000; serviceBuzzer(g_ms);
+  CHECK(!pinOn() && snoozed(g_ms), "พักเสียงแล้วต้องเงียบ");
+  g_ms = t + SNOOZE_MS + 10; serviceBuzzer(g_ms);
+  CHECK(!snoozed(g_ms), "พักครบเวลาต้องหมดเอง");
+  // เหตุหายหมด ต้องล้างการพัก เพื่อให้เหตุครั้งหน้าดังทันที
+  snoozeUntil = g_ms + 50000;
+  beds[0].alert = ALERT_NONE; beds[1].alert = ALERT_NONE;
+  serviceBuzzer(g_ms);
+  CHECK(snoozeUntil == 0, "ไม่มีเหตุวิกฤตแล้วต้องล้างการพักเสียง");
+  // ใกล้หมด: ดัง 3 ครั้งแล้วเงียบ ซ้ำทุก 5 นาทีจนกว่าจะรับทราบ
+  beds[3].alert = ALERT_NEAR_END;
+  g_ms += 1000;
+  int rising = 0, last = 0;
+  for (int k = 0; k < 800; k++) { g_ms++; serviceBuzzer(g_ms); int on = pinOn(); if (on && !last) rising++; last = on; }
+  CHECK(rising == 3, "ใกล้หมดต้องดัง 3 ครั้งแล้วเงียบ");
+  rising = 0;
+  for (int k = 0; k < 60000; k++) { g_ms += 5; serviceBuzzer(g_ms); int on = pinOn(); if (on && !last) rising++; last = on; }   // ผ่านไป 300 วินาที
+  CHECK(rising == 3, "ครบ 5 นาทียังไม่รับทราบต้องดังซ้ำ 3 ครั้ง");
+  beds[3].nearEndAck = true;
+  rising = 0;
+  for (int k = 0; k < 70000; k++) { g_ms += 5; serviceBuzzer(g_ms); int on = pinOn(); if (on && !last) rising++; last = on; }
+  CHECK(rising == 0, "รับทราบแล้วต้องไม่ดังซ้ำ");
+  // เสียงกด
+  g_ms += 100000; serviceBuzzer(g_ms);
+  buzz.click(g_ms); serviceBuzzer(g_ms + 1);
+  CHECK(pinOn(), "แตะแล้วต้องมีเสียงกด");
+  serviceBuzzer(g_ms + 50);
+  CHECK(!pinOn(), "เสียงกดต้องหยุดเอง");
+}
+
+// ---------------- หน้าจอ ----------------
+static void testNavigationAndEditing() {
+  scenario();
+  ui = UiState();
+  drawNow();
+  CHECK(ui.scr == SCR_HOME, "เริ่มที่หน้า HOME");
+  screenCheck("HOME", "home");
+  CHECK(focusBed(g_ms) == 1, "เตียงเร็วเกินต้องเป็นเตียงที่โชว์ใหญ่");
+  CHECK(tapId(Z_BED_ROW + 1) && ui.scr == SCR_BED && ui.bed == 1, "แตะแถวเตียง 2 ต้องเข้าหน้า BED เตียง 2");
+  drawNow(); screenCheck("BED", "bed");
+  // หน้า BED ของเตียงที่ใกล้หมด (ACK ใช้ได้)
+  CHECK(tapId(Z_BACK) && ui.scr == SCR_HOME, "BACK กลับ HOME");
+  CHECK(tapId(Z_BED_ROW + 3) && ui.bed == 3, "เข้าเตียง 4");
+  drawNow(); screenCheck("BED near end", "bed_nearend");
+  syncSched = SyncScheduler();
+  CHECK(tapId(Z_ACK) && beds[3].nearEndAck, "ACK ต้องรับทราบเตียงที่ใกล้หมด");
+  CHECK(syncSched.next(g_ms + 5000, 5) == 3, "รับทราบแล้วต้องขอส่ง Sync ด่วน");
+  // เตียงที่ไม่ใกล้หมด ACK ต้องไม่ทำอะไร
+  ui.bed = 0; drawNow();
+  tapId(Z_ACK);
+  CHECK(!beds[0].nearEndAck, "ACK บนเตียงที่ไม่ใกล้หมดต้องไม่ทำอะไร");
+  // ตั้งค่า
+  CHECK(tapId(Z_SETBTN) && ui.scr == SCR_SET, "SET เข้าหน้าตั้งค่า");
+  screenCheck("SET", "set");
+  CHECK(tapId(Z_F_RATE) && ui.scr == SCR_NUMPAD && ui.field == NF_RATE, "แตะช่องอัตราเข้าแป้นตัวเลข");
+  screenCheck("NUMPAD", "numpad_empty");
+  tapId(Z_KEY + 7); tapId(Z_KEY + 5);
+  CHECK(strcmp(ui.buf, "75") == 0, "กด 7 5 ต้องได้ 75");
+  tapId(Z_KEY_DOT); tapId(Z_KEY + 5); tapId(Z_KEY_DOT);
+  CHECK(strcmp(ui.buf, "75.5") == 0, "จุดทศนิยมซ้ำต้องถูกเมิน");
+  tapId(Z_KEY_DEL); tapId(Z_KEY_DEL);
+  CHECK(strcmp(ui.buf, "75") == 0, "ลบถอยหลัง");
+  drawNumpadValue(); mark("numpad_75"); checkTextBounds("NUMPAD value");
+  CHECK(tapId(Z_KEY_OK) && ui.scr == SCR_SET && ui.edit.targetRateHr == 75, "OK ต้องกลับหน้าตั้งค่าพร้อมค่าใหม่");
+  CHECK(beds[0].cfg.targetRateHr == 60, "ยังไม่ SAVE ห้ามแก้ค่าจริง");
+  CHECK(tapId(Z_F_DF) && ui.edit.dropFactor == 60, "แตะ DROP FACTOR วน 20 -> 60");
+  tapId(Z_F_DF); CHECK(ui.edit.dropFactor == 10, "60 -> 10");
+  tapId(Z_F_DF); tapId(Z_F_DF); CHECK(ui.edit.dropFactor == 20, "10 -> 15 -> 20");
+  tapId(Z_F_DF);
+  const uint8_t seq0 = beds[0].cfg.resetSeq;
+  syncSched = SyncScheduler();
+  CHECK(tapId(Z_SAVE) && ui.scr == SCR_BED, "SAVE กลับหน้า BED");
+  CHECK(beds[0].cfg.targetRateHr == 75 && beds[0].cfg.dropFactor == 60, "SAVE ต้องเขียนค่าจริง");
+  CHECK(beds[0].cfg.resetSeq == seq0, "ห้ามแตะ resetSeq จากหน้าตั้งค่า (Station จะล้างตัวนับเอง)");
+  CHECK(syncSched.next(g_ms + 5000, 5) == 0, "SAVE ต้องขอส่ง Sync ด่วน");
+  // ยกเลิกต้องไม่แก้อะไร
+  tapId(Z_SETBTN); tapId(Z_F_PLAN); tapId(Z_KEY + 9); tapId(Z_KEY_OK);
+  CHECK(ui.edit.planVolumeMl == 9, "แก้ปริมาตรในสำเนา");
+  tapId(Z_CANCEL);
+  CHECK(ui.scr == SCR_BED && beds[0].cfg.planVolumeMl == 500, "CANCEL ต้องทิ้งการแก้ไข");
+  // ตรวจค่าในแป้นตัวเลข
+  tapId(Z_SETBTN); tapId(Z_F_RATE);
+  for (int d : {5, 0, 0, 0}) tapId(Z_KEY + d);
+  CHECK(!tapId(Z_KEY_OK) || ui.scr == SCR_NUMPAD, "อัตรา 5000 เกินช่วงต้องไม่ผ่าน");
+  CHECK(ui.scr == SCR_NUMPAD, "ค่านอกช่วงต้องค้างที่แป้นตัวเลข");
+  drawNumpadValue(); mark("numpad_invalid");
+  tapId(Z_CANCEL); tapId(Z_F_NEAR);
+  tapId(Z_KEY + 4); tapId(Z_KEY + 0); tapId(Z_KEY_OK);
+  CHECK(ui.scr == SCR_NUMPAD, "เกณฑ์ใกล้หมด 40 ต่ำกว่า 50 ต้องไม่ผ่าน");
+  tapId(Z_KEY_DEL); tapId(Z_KEY_DEL); tapId(Z_KEY + 9); tapId(Z_KEY + 5); tapId(Z_KEY_OK);
+  CHECK(ui.scr == SCR_SET && ui.edit.nearEndPct == 95, "เกณฑ์ใกล้หมด 95 ต้องผ่าน");
+  tapId(Z_F_NEAR); tapId(Z_KEY + 0); tapId(Z_KEY + 7);
+  CHECK(strcmp(ui.buf, "7") == 0, "เลขศูนย์นำหน้าต้องถูกแทนที่");
+  tapId(Z_F_NEAR);                                        // อยู่ใน NUMPAD แล้ว โซนนี้ไม่มี ต้องเมินเฉย
+  tapId(Z_CANCEL); tapId(Z_CANCEL);
+  // เริ่มถุงใหม่ต้องยืนยัน
+  CHECK(ui.scr == SCR_BED, "กลับหน้า BED");
+  const uint8_t seq1 = beds[0].cfg.resetSeq;
+  tapId(Z_NEWBAG);
+  CHECK(ui.confirmBag, "NEW BAG ต้องถามยืนยันก่อน");
+  checkZones("CONFIRM");
+  CHECK(zoneAt(160, 20) == Z_NONE && zoneAt(10, 210) == Z_NONE, "ระหว่างถามยืนยัน ปุ่มอื่นต้องแตะไม่ได้");
+  mark("bed_confirm"); checkTextBounds("CONFIRM");
+  tapId(Z_NO);
+  CHECK(!ui.confirmBag && beds[0].cfg.resetSeq == seq1, "NO ต้องไม่เปลี่ยนอะไร");
+  drawNow();
+  syncSched = SyncScheduler();
+  tapId(Z_NEWBAG); tapId(Z_YES);
+  CHECK(beds[0].cfg.resetSeq == (uint8_t)(seq1 + 1) && beds[0].totalDrops == 0, "YES ต้องเริ่มถุงใหม่");
+  CHECK(syncSched.next(g_ms + 5000, 5) == 0, "เริ่มถุงใหม่ต้องส่ง Sync ด่วน");
+}
+
+static void testSystemAndSilence() {
+  scenario();
+  ui = UiState();
+  drawNow();
+  {                                                      // เสียงกด: แตะโดนปุ่มต้องดังสั้น ๆ แตะที่ว่างต้องเงียบ
+    buzz = BuzzerEngine();
+    uiTap(160, 3, g_ms);
+    CHECK(!buzz.update(g_ms + 5), "แตะที่ว่างต้องไม่มีเสียง");
+    int x, y, w, h; zoneRect(Z_SYS, x, y, w, h);
+    const uint32_t t0 = g_ms + 1000;
+    uiTap(x + w / 2, y + h / 2, t0);
+    CHECK(buzz.update(t0 + 5) && !buzz.update(t0 + 60), "แตะโดนปุ่มต้องมีเสียงกดสั้น ๆ");
+    ui.scr = SCR_HOME; drawNow();
+  }
+  CHECK(tapId(Z_SYS) && ui.scr == SCR_SYSTEM, "SYS เข้าหน้าระบบ");
+  drawNow(); screenCheck("SYSTEM", "system");
+  for (int i = 0; i < 10; i++) tapId(Z_BEDS_DEC);
+  CHECK(activeBeds == 1, "จำนวนเตียงต้องไม่ต่ำกว่า 1");
+  for (int i = 0; i < 12; i++) tapId(Z_BEDS_INC);
+  CHECK(activeBeds == 8, "จำนวนเตียงต้องไม่เกิน 8");
+  for (int i = 0; i < 12; i++) tapId(Z_BRI_DEC);
+  CHECK(sysSet.brightness == 10 && g_bl == (10 * 255) / 100, "ความสว่างต้องไม่ต่ำกว่า 10% และสั่งไฟหลังจอจริง");
+  for (int i = 0; i < 12; i++) tapId(Z_BRI_INC);
+  CHECK(sysSet.brightness == 100, "ความสว่างไม่เกิน 100%");
+  tapId(Z_BUZZ_TOGGLE);
+  CHECK(!sysSet.buzzerOn && !buzz.enabled, "สวิตช์เสียงต้องปิดเสียงจริง");
+  drawNow(); mark("system_buzzer_off");
+  tapId(Z_BUZZ_TOGGLE);
+  CHECK(buzz.enabled, "เปิดเสียงกลับ");
+  g_ms += 1000; buzz.test(g_ms);
+  CHECK(buzz.update(g_ms + 10), "ปุ่ม TEST ต้องมีเสียง");
+  CHECK(tapId(Z_BACK) && ui.scr == SCR_HOME, "BACK กลับ HOME");
+  // ปุ่มพักเสียง
+  activeBeds = 5;
+  for (int i = 0; i < MAX_BEDS; i++) if (beds[i].alert != ALERT_NONE && isCriticalAlert(beds[i].alert)) beds[i].alert = ALERT_NONE;
+  drawNow();
+  tapId(Z_SILENCE);
+  CHECK(!snoozed(g_ms), "ไม่มีเหตุเตือน ปุ่มพักเสียงต้องไม่ทำอะไร");
+  beds[1].alert = ALERT_OCCLUSION;
+  drawNow(); screenCheck("HOME alarm", "home_alarm");
+  tapId(Z_SILENCE);
+  CHECK(snoozed(g_ms), "แตะแล้วต้องพักเสียง");
+  uiRefresh(g_ms + 600); mark("home_silenced"); checkTextBounds("HOME silenced");
+  tapId(Z_SILENCE);
+  CHECK(!snoozed(g_ms), "แตะซ้ำต้องยกเลิกการพัก");
+}
+
+static void testExtremeValues() {
+  scenario();
+  beds[0].cfg.targetRateHr = 3000; beds[0].cfg.planVolumeMl = 10000;
+  bedIngest(beds[0], mk(1, 1, 4000000, 2999, 400), -99, MAC, g_ms);
+  beds[0].batteryV = 5.9f; beds[0].linkPct = 100; beds[0].idConflict = true;
+  activeBeds = 8;
+  ui = UiState();
+  for (int s = SCR_HOME; s <= SCR_SYSTEM; s++) {
+    ui.scr = (Screen)s; ui.bed = 0; ui.field = NF_PLAN; strcpy(ui.buf, "10000");
+    ui.edit = beds[0].cfg;
+    drawNow();
+    screenCheck("ค่าสุดขั้ว");
+  }
+  ui.scr = SCR_HOME; ui.bed = 0; drawNow(); mark("home_8beds_extreme");
+  ui.scr = SCR_BED; drawNow(); mark("bed_extreme");
+}
+
+int main(int argc, char **argv) {
+  g_opsPath = argc > 1 ? argv[1] : "/tmp/cyd_ui_ops.txt";
+  g_ops = fopen(g_opsPath.c_str(), "w");
+  printf("ทดสอบจังหวะบัซเซอร์\n");
+  testBuzzerPatterns();
+  printf("ทดสอบบัซเซอร์ร่วมกับเตียง\n");
+  testBuzzerIntegration();
+  printf("ทดสอบเส้นทางหน้าจอ\n");
+  testNavigationAndEditing();
+  printf("ทดสอบหน้าระบบและปุ่มพักเสียง\n");
+  testSystemAndSilence();
+  printf("ทดสอบค่าสุดขั้ว\n");
+  testExtremeValues();
+  fclose(g_ops);
+  if (fails) { printf("รวมล้มเหลว %d รายการ\n", fails); return 1; }
+  printf("ผ่านทั้งหมด\n");
+  return 0;
+}
