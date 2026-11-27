@@ -1,7 +1,7 @@
 /**
  * @file      CYD-ColorTest.ino
  * @brief     เครื่องมือทดสอบสีจอบอร์ด CYD หน้าเดียว ไล่ครบทุกชุดค่า (ชิปจอ x กลับสี x ลำดับสี) หาค่าที่ถูกต้อง
- * @version   S1.0.0
+ * @version   S1.0.3
  * @date      2026-11-27
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
@@ -24,11 +24,15 @@
  * วิธีใช้:
  *   กด BOOT สั้น  สลับชุด กลับสี/ลำดับสี (4 ชุดต่อชิป) · กด BOOT ค้าง 1 วินาที สลับชิปจอ ILI9341 <-> ST7789
  *   Serial: n = ชุดถัดไป · p = สลับชิป · i = สลับกลับสี · b = สลับ RGB/BGR · r = หมุนจอ · a = โหมดเดินเองทุก 4 วินาที · h = ช่วยเหลือ
+ *           k = จอดำเต็มจอ · w = จอขาวเต็มจอ · + / - = ความสว่างไฟหลังจอ · x = กลับหน้าทดสอบ (ใช้ดูว่าดำสนิทจริงไหม ปิดไฟห้องแล้วดูด้วยตา ภาพถ่ายหลอกได้เพราะกล้องปรับแสงอัตโนมัติ)
  * หมายเหตุ: ลำดับสี (BGR) สั่งได้เฉพาะ ST7789 ในรุ่น ILI9341 ใช้ค่าที่ไลบรารีตั้งให้ (แถวนั้นจึงแสดงชุดเดียว)
  *
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | S1.0.3 | 2026-11-27 | เพิ่มคำสั่ง k (จอดำเต็มจอ) w (จอขาวเต็มจอ) + - (ความสว่าง) x (กลับหน้าทดสอบ) ใช้ดูระดับดำจริงของแผงโดยไม่ให้กล้องปรับแสงหลอก |
+ * | S1.0.2 | 2026-11-27 | กดชุดถัดไปบน ST7789 วนทีละบิต (INV0/BGR0 -> INV1/BGR0 -> INV1/BGR1 -> INV0/BGR1) กดครั้งแรกจึงลองกลับสีทันที · ค่าเริ่มต้นเป็น BGR=0 และ ROT=3 ตามผลถ่ายภาพจากบอร์ดจริง (BGR=1 ทำให้แดง/น้ำเงินสลับ ROT=1 ภาพกลับหัว 180 องศา) |
+ * | S1.0.1 | 2026-11-27 | เริ่มที่ ST7789 (START_PANEL 1) ตามผลบนบอร์ดจริงที่จอ ILI9341 ให้ภาพไม่เต็มจอและแดง/น้ำเงินสลับ ตั้ง 0 ถ้าบอร์ดเป็นจอ ILI9341 |
  * | S1.0.0 | 2026-11-27 | สร้างเครื่องมือทดสอบสีหน้าเดียว ไล่ชุดค่าได้ด้วยปุ่ม BOOT |
  *
  * @warning  ยังไม่ได้ทดสอบบนฮาร์ดแวร์จริง ตรวจด้วยเครื่องมือจำลองบนเครื่อง PC เท่านั้น
@@ -39,7 +43,7 @@
 #include <Adafruit_ILI9341.h>
 #include <Adafruit_ST7789.h>
 
-#define APP_VERSION "S1.0.0"
+#define APP_VERSION "S1.0.3"
 
 // ขาของบอร์ด CYD (ตายตัวตามผังวงจร)
 #define PIN_SCK 14
@@ -50,17 +54,19 @@
 #define PIN_BL 21
 #define PIN_BOOT 0
 #define SPI_HZ 40000000UL
+#define START_PANEL 1        // ชิปจอที่ใช้ตอนเปิดเครื่อง: 1 = ST7789 (บอร์ด USB สองช่อง) · 0 = ILI9341 (USB ช่องเดียว) สลับขณะรันได้ด้วย BOOT ค้าง
 
 SPIClass spiTft(HSPI);
 Adafruit_ILI9341 *ili = nullptr;
 Adafruit_ST7789 *st = nullptr;
 
-uint8_t panelType = 0;       // 0 = ILI9341, 1 = ST7789
+uint8_t panelType = START_PANEL;   // 0 = ILI9341, 1 = ST7789
 bool invertOn = false;
-bool bgrOn = true;
-uint8_t rotation = 1;
+bool bgrOn = false;      // ผลจากบอร์ดจริง: BGR=0 ให้ลำดับสีถูก
+uint8_t rotation = 3;    // ผลจากบอร์ดจริง: ROT=1 ภาพกลับหัวเมื่อถือพอร์ต USB ไว้ด้านขวา
 bool autoMode = false;
 uint32_t lastAuto = 0;
+int blPct = 100;
 
 static const uint16_t BLACK = 0x0000, WHITE = 0xFFFF, RED = 0xF800, GREEN = 0x07E0, BLUE = 0x001F,
                       YELLOW = 0xFFE0, CYAN = 0x07FF, MAGENTA = 0xF81F;
@@ -68,6 +74,7 @@ static const uint16_t BLACK = 0x0000, WHITE = 0xFFFF, RED = 0xF800, GREEN = 0x07
 #define GFX (panelType ? (Adafruit_GFX *)st : (Adafruit_GFX *)ili)
 
 static void backlight(int pct) {
+  blPct = pct;
 #if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 3
   ledcAttach(PIN_BL, 5000, 8);
   ledcWrite(PIN_BL, (pct * 255) / 100);
@@ -166,7 +173,7 @@ static void printState() {
 // ชุดถัดไป: ST7789 วน 4 ชุด (กลับสี x BGR) · ILI9341 วน 2 ชุด (กลับสีอย่างเดียว เพราะไลบรารีกำหนดลำดับสีเอง)
 static void nextSet() {
   if (panelType == 1) {
-    if (!bgrOn) { bgrOn = true; invertOn = !invertOn; } else bgrOn = false;
+    if (invertOn == bgrOn) invertOn = !invertOn; else bgrOn = !bgrOn;   // วนแบบเกรย์โค้ด: (0,0) -> (1,0) -> (1,1) -> (0,1) ทีละบิต
   } else {
     invertOn = !invertOn;
   }
@@ -182,7 +189,11 @@ static void handleCommand(char c) {
   else if (c == 'b') { bgrOn = !bgrOn; applyPanelSettings(); drawTest(); printState(); }
   else if (c == 'r') { rotation = (rotation + 1) & 3; applyPanelSettings(); drawTest(); printState(); }
   else if (c == 'a') { autoMode = !autoMode; lastAuto = millis(); Serial.println(autoMode ? "auto ON" : "auto OFF"); }
-  else if (c == 'h') Serial.println("n next set | p chip | i invert | b bgr | r rotate | a auto | BOOT short=next, long=chip");
+  else if (c == 'k') { GFX->fillScreen(BLACK); Serial.println("full black"); }
+  else if (c == 'w') { GFX->fillScreen(WHITE); Serial.println("full white"); }
+  else if (c == '+' || c == '-') { int v = blPct + (c == '+' ? 10 : -10); if (v < 10) v = 10; if (v > 100) v = 100; backlight(v); Serial.print("backlight "); Serial.println(String(v)); }
+  else if (c == 'x') { drawTest(); printState(); }
+  else if (c == 'h') Serial.println("n next set | p chip | i invert | b bgr | r rotate | a auto | k black | w white | +/- backlight | x test page | BOOT short=next, long=chip");
 }
 
 void setup() {

@@ -63,9 +63,11 @@ int main(int argc, char **argv) {
   g_path = argc > 1 ? argv[1] : "/tmp/cyd_colortest_ops.txt";
   g_ops = fopen(g_path.c_str(), "w");
   setup();
-  CHECK(panelType == 0 && ili != nullptr && st == nullptr, "เริ่มที่ ILI9341");
+  CHECK(panelType == START_PANEL && (START_PANEL ? st != nullptr : ili != nullptr), "ต้องเริ่มที่ชิปตาม START_PANEL");
+  if (START_PANEL) { handleCommand('p'); CHECK(panelType == 0 && ili != nullptr && st == nullptr, "p ต้องสลับกลับเป็น ILI9341"); }
   fprintf(g_ops, "MARK ili9341_set0\n");
   checkBounds("ILI9341 ชุดแรก");
+  if (panelType != 0) { handleCommand('p'); }
   // ILI9341: สองชุด (กลับสี) แล้ววนกลับ
   const bool inv0 = invertOn;
   handleCommand('n'); CHECK(invertOn != inv0, "n ต้องสลับกลับสีบน ILI9341");
@@ -82,8 +84,16 @@ int main(int argc, char **argv) {
   handleCommand('i'); handleCommand('i'); handleCommand('b'); handleCommand('b');
   CHECK(invertOn == i1 && bgrOn == b1, "i/b สลับสองครั้งต้องกลับมาเดิม");
   for (int r = 0; r < 4; r++) { handleCommand('r'); checkBounds("หมุนจอ"); }
-  CHECK(rotation == 1, "หมุนครบ 4 ครั้งต้องกลับมาเดิม");
+  CHECK(rotation == 3, "หมุนครบ 4 ครั้งต้องกลับมาเดิม");
   handleCommand('h');
+  // จอดำ/ขาวเต็มจอ ความสว่าง และกลับหน้าทดสอบ
+  handleCommand('k'); handleCommand('w'); handleCommand('x');
+  const int bl0 = blPct;
+  for (int i = 0; i < 15; i++) handleCommand('-');
+  CHECK(blPct == 10, "ความสว่างต้องไม่ต่ำกว่า 10%");
+  for (int i = 0; i < 15; i++) handleCommand('+');
+  CHECK(blPct == 100 && bl0 == 100, "ความสว่างต้องไม่เกิน 100% และเริ่มที่ 100%");
+  checkBounds("กลับหน้าทดสอบด้วย x");
   // โหมดเดินเอง
   handleCommand('a'); CHECK(autoMode, "a เปิดโหมดเดินเอง");
   const bool beforeInv = invertOn, beforeBgr = bgrOn;
