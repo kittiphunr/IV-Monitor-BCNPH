@@ -1,7 +1,7 @@
 /**
  * @file      Host-CYD28.ino
  * @brief     Host บอร์ด CYD (ESP32-2432S028) เขียนใหม่ ด่านที่ 4 (ครบทุกด่าน): เว็บแดชบอร์ด นาฬิกา SD ประวัติเหตุการณ์
- * @version   2.0.5-CYD
+ * @version   2.1.0-CYD
  * @date      2026-11-27
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
@@ -26,6 +26,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 2.1.0-CYD | 2026-11-27 | ชื่อ/ป้ายผู้ป่วยต่อเตียง (บันทึกใน NVS แสดงบนเว็บ และบนจอถ้าเป็น ASCII) · หน้าตั้งค่า Wi-Fi/รหัสผ่านเว็บ (ค่าใหม่มีผลหลังรีสตาร์ท เก็บใน NVS) · คืนค่าปริยาย: กด BOOT ค้าง 2 วินาทีตอนเปิดเครื่องหรือพิมพ์ wifireset ทาง Serial |
  * | 2.0.5-CYD | 2026-11-27 | หน้าเปิดเครื่องแบบโลโก้ (splash.h + logo.h สร้างจากภาพด้วย tools/logo-convert) แสดงทันทีหลังเริ่มจอ ค้าง CYD_SPLASH_MS แตะข้ามได้ |
  * | 2.0.4-CYD | 2026-11-27 | ส่งรหัส NO DROP (6) ให้ Station ที่ประกาศว่ารองรับ (Station 7.12.0 ขึ้นไป สายเสถียร 7.5.9 บอร์ดเล็ก 1.4.0 Fallout 1.6.0) จึงขึ้นเตือนที่เครื่องประจำเตียงด้วย รุ่นเก่ายังได้รับ 0 เหมือนเดิม |
  * | 2.0.3-CYD | 2026-11-27 | เขียนใหม่ด่านที่ 4 ไม่นำโค้ดรุ่น 1.x มาปรับ: จุดเชื่อมต่อ Wi-Fi + เว็บแดชบอร์ดหน้าเดียว (ดูได้ทันที แก้ค่าต้องล็อกอิน), นาฬิกาตั้งจากเบราว์เซอร์ (RTC DS3231 ไม่บังคับ), ประวัติเหตุการณ์ในหน่วยความจำ 48 รายการ + บันทึก CSV ลง SD, คำสั่งแก้ค่าทุกทางผ่านฟังก์ชันเดียว (commitBedConfig/doNewBag/doAck) จึงลงประวัติเหมือนกัน |
@@ -57,8 +58,10 @@
 #include "clock_sync.h"
 #include "sd_log.h"
 #include "splash.h"
+#include "bed_names.h"
+#include "net_config.h"
 
-#define APP_VERSION "2.0.5-CYD"
+#define APP_VERSION "2.1.0-CYD"
 
 enum AppMode : uint8_t { MODE_UI = 0, MODE_DIAG };
 
@@ -68,6 +71,9 @@ Bed beds[MAX_BEDS];
 uint8_t activeBeds = DEFAULT_ACTIVE_BEDS;
 SyncScheduler syncSched;
 EventLog events;
+NetConfig netCfg;                      // ค่า Wi-Fi/บัญชีเว็บที่ใช้จริง (โหลดจาก NVS ตอนเปิดเครื่อง)
+bool restartPending = false;
+uint32_t restartAtMs = 0;
 static bool wasOnline[MAX_BEDS] = {false};
 AppMode appMode = MODE_UI;
 BuzzerEngine buzz;
@@ -83,6 +89,15 @@ static uint8_t cmdLen = 0;
 static void logEvent(uint8_t bed, uint8_t type, uint8_t code = 0) {
   events.add(millis(), clockEpoch(), bed, type, code);
   sdLogEvent(events.newest(0));
+}
+
+// บันทึกชื่อ/ป้ายผู้ป่วย (ชื่อผ่านการตรวจ nameClean มาแล้ว)
+static void commitBedName(int i, const char *clean) {
+  if (i < 0 || i >= MAX_BEDS) return;
+  strncpy(beds[i].name, clean, BED_NAME_MAX);
+  beds[i].name[BED_NAME_MAX] = 0;
+  saveNames(beds);
+  logEvent((uint8_t)(i + 1), EV_CONFIG);
 }
 
 // บันทึกค่าตั้งเตียง (resetSeq ใช้ค่าจริงของ Host เสมอ ห้ามรับจากภายนอก ไม่งั้น Station จะล้างตัวนับเอง)
@@ -208,6 +223,7 @@ static void handleLine(char *line) {
   if (!strcmp(cmd, "ack") && n >= 2 && i >= 0) {
     doAck(i); return;
   }
+  if (!strcmp(cmd, "wifireset")) { netReset(); Serial.println("wifi/web credentials reset to defaults, restarting"); restartAtMs = millis() + 500; restartPending = true; return; }
   if (!strcmp(cmd, "m")) { setMode(appMode == MODE_UI ? MODE_DIAG : MODE_UI); return; }
   if (!strcmp(cmd, "i")) { panelSetInvert(!g_invert); if (appMode == MODE_DIAG) drawTestScreen(); printSettings(); return; }
   if (!strcmp(cmd, "b")) { panelSetBgr(!g_bgr); if (appMode == MODE_DIAG) drawTestScreen(); printSettings(); return; }
@@ -259,6 +275,24 @@ static void serviceAlerts(uint32_t now) {
 #include "web_server.h"  // เว็บ (ใช้ commitBedConfig doNewBag doAck ด้านบน)
 #include "ui.h"        // หน้าจอทั้งหมด (ต้องอยู่ท้ายไฟล์หลักก่อน setup() เพราะใช้ตัวแปรด้านบน)
 
+// กด BOOT ค้างตั้งแต่เปิดเครื่อง 2 วินาที = คืนค่า Wi-Fi/บัญชีเว็บเป็นค่าปริยาย (ต้องอยู่หน้าเครื่องจริง ป้องกันการล็อกตัวเองออกจากเครื่อง)
+static void bootWifiResetCheck() {
+  if (digitalRead(cyd::BOOT_BTN) != LOW) return;
+  const uint32_t t0 = millis();
+  while (digitalRead(cyd::BOOT_BTN) == LOW && millis() - t0 < 2000) { splashTick(); delay(10); }
+  if (digitalRead(cyd::BOOT_BTN) != LOW) return;
+  netReset();
+  netCfg = netDefaults();
+  tft.fillRect(0, 100, tft.width(), 40, C_BLACK);
+  tft.setTextSize(2); tft.setTextColor(C_YELLOW, C_BLACK);
+  tft.setCursor(24, 110); tft.print("WI-FI RESET TO DEFAULT");
+  if (CYD_BUZZER_PIN >= 0) { digitalWrite(CYD_BUZZER_PIN, CYD_BUZZER_ON_LEVEL); delay(150); digitalWrite(CYD_BUZZER_PIN, CYD_BUZZER_ON_LEVEL == HIGH ? LOW : HIGH); }
+  delay(1200);
+  while (digitalRead(cyd::BOOT_BTN) == LOW) delay(10);
+  splashDraw();                          // วาดโลโก้กลับ (ข้อความรีเซ็ตทับไว้)
+  logEvent(0, EV_CONFIG);
+}
+
 void setup() {
   Serial.begin(115200);
   pinMode(cyd::BOOT_BTN, INPUT_PULLUP);
@@ -273,8 +307,11 @@ void setup() {
   buzz.enabled = sysSet.buzzerOn;
   touchChip.begin();
   activeBeds = loadBeds(beds);
+  loadNames(beds);
+  netCfg = netLoad();
+  bootWifiResetCheck();                  // กด BOOT ค้างตอนเปิดเครื่อง = คืนรหัส Wi-Fi/เว็บเป็นค่าปริยาย (กรณีลืมรหัส)
   splashTick();
-  const bool linkOk = linkBegin(true);   // เปิดจุดเชื่อมต่อ Wi-Fi ของ Host ด้วย (หน้าเว็บ)
+  const bool linkOk = linkBegin(true, netCfg.ssid, netCfg.wifiPass);   // เปิดจุดเชื่อมต่อ Wi-Fi ของ Host ด้วย (หน้าเว็บ)
   splashTick();
   Serial.println("Host-CYD28 " APP_VERSION " (stage 4+: NO DROP to stations)");
   printSettings();
@@ -285,7 +322,9 @@ void setup() {
   splashTick();
   webBegin();
   splashTick();
-  Serial.println("AP " CYD_AP_SSID " http://192.168.4.1/");
+  Serial.print("AP ");
+  Serial.print(netCfg.ssid);
+  Serial.println(" http://192.168.4.1/");
   logEvent(0, EV_BOOT);
   syncSched.requestAll(activeBeds);
   splashWait([]() { int16_t a, b, c; return touchChip.read(a, b, c); });   // ค้างโลโก้ให้ครบเวลา แตะเพื่อข้าม
@@ -296,6 +335,7 @@ void loop() {
   const uint32_t now = millis();
   handleSerial();
   webService();
+  if (restartPending && (int32_t)(now - restartAtMs) >= 0) ESP.restart();   // หลังบันทึกค่า Wi-Fi: รีสตาร์ทให้ค่าใหม่มีผล
   serviceRx(now);
   if ((uint32_t)(now - lastEvalMs) >= 250) { lastEvalMs = now; serviceAlerts(now); }
   if ((uint32_t)(now - lastLinkTickMs) >= LINK_WINDOW_MS) { lastLinkTickMs = now; bedsLinkTick(beds, MAX_BEDS); }

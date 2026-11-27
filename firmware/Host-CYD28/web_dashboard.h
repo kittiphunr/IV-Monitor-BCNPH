@@ -1,7 +1,7 @@
 /**
  * @file      web_dashboard.h
  * @brief     หน้าเว็บแดชบอร์ด (หน้าเดียว) เก็บใน flash
- * @version   2.0.3-CYD
+ * @version   2.1.0-CYD
  * @date      2026-11-27
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
@@ -15,6 +15,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 2.1.0-CYD | 2026-11-27 | ช่องชื่อ/ป้ายผู้ป่วยในการ์ดเตียง · แผงตั้งค่า Wi-Fi/รหัสผ่านเว็บ (เตือนถ้ายังใช้รหัสปริยาย) · แปลข้อความผิดพลาดจากเครื่องเป็นภาษาไทย |
  * | 2.0.3-CYD | 2026-11-27 | เขียนใหม่ด่านที่ 4 (เว็บ นาฬิกา SD ประวัติเหตุการณ์) ไม่นำโค้ดรุ่น 1.x มาปรับ |
  *
  * @warning  ยังไม่ได้ทดสอบบนฮาร์ดแวร์จริง ตรวจด้วยเครื่องมือจำลองบนเครื่อง PC เท่านั้น
@@ -52,6 +53,16 @@ section{padding:0 16px 24px}table{width:100%;border-collapse:collapse;font-size:
 <main id="beds"></main>
 <section><h2 style="font-size:16px">ประวัติเหตุการณ์</h2>
 <table><thead><tr><th>เวลา</th><th>เตียง</th><th>เหตุการณ์</th><th>รายละเอียด</th></tr></thead><tbody id="ev"></tbody></table></section>
+<section id="wifiPanel"><h2 style="font-size:16px">ตั้งค่า Wi-Fi และรหัสผ่าน</h2>
+<div class="meta" id="wifiInfo">กำลังโหลด...</div><div class="meta" id="wifiWarn" style="color:var(--warn)"></div>
+<form id="wifiForm" style="max-width:420px;margin-top:8px">
+<div><label>ชื่อ Wi-Fi ของ Host (1-31 ตัว: A-Z a-z 0-9 ช่องว่าง _ . -)</label><input id="wSsid" autocomplete="off" maxlength="31"></div>
+<div><label>รหัส Wi-Fi (8-63 ตัวอักษร ASCII)</label><input id="wPass" type="password" autocomplete="new-password" maxlength="63"></div>
+<div><label>ชื่อผู้ใช้เว็บ (3-16 ตัว: A-Z a-z 0-9 _ . -)</label><input id="wUser" autocomplete="off" maxlength="16"></div>
+<div><label>รหัสผ่านเว็บ (6-32 ตัว ไม่มีช่องว่าง)</label><input id="wWeb" type="password" autocomplete="new-password" maxlength="32"></div>
+<div class="row"><button type="button" id="wSave">บันทึก (เครื่องจะรีสตาร์ท)</button></div>
+<div class="meta">เว้นช่องที่ไม่ต้องการเปลี่ยนไว้ว่าง ค่าใหม่มีผลหลังรีสตาร์ท ต้องต่อ Wi-Fi ใหม่และล็อกอินใหม่ ลืมรหัส: กดปุ่ม BOOT บนบอร์ดค้างไว้ตอนเปิดเครื่อง 2 วินาทีเพื่อคืนค่าปริยาย</div>
+</form></section>
 <div class="note">ดูข้อมูลได้ทันที การแก้ค่า/เริ่มถุงใหม่/รับทราบ ต้องล็อกอิน (เบราว์เซอร์จะถามชื่อผู้ใช้และรหัสผ่าน) ระบบนี้ไม่ใช่ระบบเตือนที่ได้รับการรับรองทางการแพทย์</div>
 <div id="toast"></div>
 <script>
@@ -63,10 +74,11 @@ function el(tag,cls,text){var e=document.createElement(tag);if(cls)e.className=c
 function toast(m){var t=$("toast");t.textContent=m;t.style.display="block";clearTimeout(toast.h);toast.h=setTimeout(function(){t.style.display="none"},3500)}
 function fmtLeft(m){if(m<0)return"--";return m>=60?Math.floor(m/60)+" ชม. "+(m%60)+" นาที":m+" นาที"}
 function fmtTime(e,up){if(e>0){var d=new Date(e*1000);return d.toLocaleString("th-TH")}return"เปิดเครื่อง +"+up+" วิ"}
+var ERRTXT={"bad value":"ค่าที่กรอกไม่ถูกต้อง (ตรวจช่วงตัวเลข ความยาว หรืออักขระที่ไม่อนุญาต)","bad bed":"เลขเตียงไม่ถูกต้อง","no fields":"ไม่มีค่าที่จะบันทึก","confirm required":"ต้องยืนยันก่อน","nothing to acknowledge":"ไม่มีอะไรให้รับทราบ","bad time":"เวลาไม่ถูกต้อง"};
 function post(url,data){
   var body=new URLSearchParams(data).toString();
   return fetch(url,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:body,credentials:"same-origin"}).then(function(r){
-    return r.text().then(function(t){if(!r.ok)throw new Error(r.status===401?"ต้องล็อกอิน":t||("ผิดพลาด "+r.status));return t})})
+    return r.text().then(function(t){if(!r.ok)throw new Error(r.status===401?"ต้องล็อกอิน":ERRTXT[t]||t||("ผิดพลาด "+r.status));return t})})
 }
 function buildCard(b){
   var c=el("div","card idle"),top=el("div","top"),bed=el("span","bed","เตียง "+b.id),st=el("span","state");
@@ -76,17 +88,20 @@ function buildCard(b){
   var kv=el("div","kv");c.appendChild(kv);
   var f=el("form");
   function field(name,label,type,attrs){var d=el("div"),l=el("label",null,label),i=el(type==="select"?"select":"input");i.name=name;
-    if(type==="select"){[10,15,20,60].forEach(function(v){var o=el("option",null,v+" gtt/mL");o.value=v;i.appendChild(o)})}else{i.type="number";i.step="any";for(var k in attrs)i.setAttribute(k,attrs[k])}
+    if(type==="select"){[10,15,20,60].forEach(function(v){var o=el("option",null,v+" gtt/mL");o.value=v;i.appendChild(o)})}else{i.type=type;if(type==="number")i.step="any";for(var k in attrs)i.setAttribute(k,attrs[k])}
     d.appendChild(l);d.appendChild(i);f.appendChild(d);return i}
+  var iName=field("name","ชื่อ/ป้ายผู้ป่วย (ไม่เกิน 63 ไบต์ ไทยได้ประมาณ 21 ตัว)","text",{maxlength:63,autocomplete:"off"});iName.parentNode.style.gridColumn="1/-1";
   var iRate=field("rate","อัตราเป้าหมาย (mL/h)","number",{min:0,max:3000}),iPlan=field("plan","ปริมาตรถุง (mL)","number",{min:0,max:10000}),
       iDf=field("df","Drop factor","select"),iNear=field("near","เตือนใกล้หมดที่ (%)","number",{min:50,max:95,step:1});
   var row=el("div","row"),save=el("button",null,"บันทึก"),bag=el("button","danger","เริ่มถุงใหม่"),ack=el("button","alt","รับทราบใกล้หมด");
   save.type="button";bag.type="button";ack.type="button";row.appendChild(save);row.appendChild(bag);row.appendChild(ack);f.appendChild(row);c.appendChild(f);
-  [iRate,iPlan,iDf,iNear].forEach(function(i){i.addEventListener("focus",function(){editing=b.id});i.addEventListener("blur",function(){if(editing===b.id)editing=null})});
-  save.onclick=function(){post("/api/bed",{bed:b.id,rate:iRate.value,plan:iPlan.value,df:iDf.value,near:iNear.value}).then(function(){toast("บันทึกเตียง "+b.id+" แล้ว");editing=null;poll()}).catch(function(e){toast(e.message)})};
+  [iName,iRate,iPlan,iDf,iNear].forEach(function(i){i.addEventListener("focus",function(){editing=b.id});i.addEventListener("blur",function(){if(editing===b.id)editing=null})});
+  var obj;
+  save.onclick=function(){post("/api/bed",{bed:b.id,rate:iRate.value,plan:iPlan.value,df:iDf.value,near:iNear.value}).then(function(){if(iName.value!==obj.curName)return post("/api/name",{bed:b.id,name:iName.value})}).then(function(){toast("บันทึกเตียง "+b.id+" แล้ว");editing=null;poll()}).catch(function(e){toast(e.message)})};
   bag.onclick=function(){if(confirm("เริ่มถุงใหม่ที่เตียง "+b.id+"?\nตัวนับหยดที่ Station จะถูกล้าง"))post("/api/newbag",{bed:b.id,confirm:1}).then(function(){toast("เริ่มถุงใหม่เตียง "+b.id);poll()}).catch(function(e){toast(e.message)})};
   ack.onclick=function(){post("/api/ack",{bed:b.id}).then(function(){toast("รับทราบเตียง "+b.id);poll()}).catch(function(e){toast(e.message)})};
-  return {root:c,st:st,rv:rv,fill:fill,kv:kv,iRate:iRate,iPlan:iPlan,iDf:iDf,iNear:iNear,ack:ack};
+  obj={root:c,bed:bed,st:st,rv:rv,fill:fill,kv:kv,iName:iName,iRate:iRate,iPlan:iPlan,iDf:iDf,iNear:iNear,ack:ack,curName:""};
+  return obj;
 }
 function render(s){
   var meta=(s.synced?"เวลา Host ตรงแล้ว":"ยังไม่ได้ตั้งเวลา")+" · ช่อง "+s.channel+" · SD "+(s.sd?"พร้อม":"ไม่มี")+" · v"+s.version+" · เปิดเครื่อง "+Math.floor(s.uptime/60)+" นาที"+(s.snooze>0?" · พักเสียง "+s.snooze+" วิ":"");
@@ -94,14 +109,14 @@ function render(s){
   var host=$("beds");
   s.beds.forEach(function(b){
     var c=cards[b.id];if(!c){c=cards[b.id]=buildCard(b);host.appendChild(c.root)}
-    var cls=STATE_CLASS[b.state]||"idle";c.root.className="card "+cls;c.st.textContent=b.state;c.rv.textContent=Math.round(b.rate);
+    var cls=STATE_CLASS[b.state]||"idle";c.root.className="card "+cls;c.st.textContent=b.state;c.bed.textContent="เตียง "+b.id+(b.name?" · "+b.name:"");c.curName=b.name||"";c.rv.textContent=Math.round(b.rate);
     c.fill.style.width=(b.plan>0?Math.min(100,b.vol/b.plan*100):0)+"%";
     c.kv.textContent="";
     [["เป้าหมาย",b.target+" mL/h"],["ปริมาตร",b.vol+" / "+b.plan+" mL"],["เหลือ",fmtLeft(b.left)],["หยดรวม",b.drops],["ลิงก์",b.link+"% ("+b.rssi+" dBm)"],["แบตเตอรี่",b.batt>0?b.batt+" V":"-"]].forEach(function(p){
       c.kv.appendChild(el("span",null,p[0]));c.kv.appendChild(el("b",null,String(p[1])))});
     if(b.conflict){var w=el("b",null,"เลขเตียงซ้ำกับอีกบอร์ด!");w.style.color="var(--bad)";c.kv.appendChild(w)}
     c.ack.disabled=!(b.alert===3&&!b.ack);
-    if(editing!==b.id){c.iRate.value=b.target;c.iPlan.value=b.plan;c.iDf.value=b.df;c.iNear.value=b.near}
+    if(editing!==b.id){c.iName.value=b.name||"";c.iRate.value=b.target;c.iPlan.value=b.plan;c.iDf.value=b.df;c.iNear.value=b.near}
   });
   Object.keys(cards).forEach(function(id){if(id>s.active){cards[id].root.remove();delete cards[id]}});
   if(!s.synced&&!timeSent){timeSent=true;post("/api/time",{epoch:Math.floor(Date.now()/1000)}).catch(function(){timeSent=false})}
@@ -115,5 +130,19 @@ function poll(){
   fetch("/api/state").then(function(r){return r.json()}).then(render).catch(function(){$("meta").textContent="ขาดการเชื่อมต่อกับ Host"});
   fetch("/api/events").then(function(r){return r.json()}).then(renderEvents).catch(function(){});
 }
-poll();setInterval(poll,2000);
+function loadWifi(){
+  fetch("/api/wifi").then(function(r){return r.json()}).then(function(w){
+    $("wifiInfo").textContent="Wi-Fi: "+w.ssid+" · ที่อยู่ "+w.ip+" · เครื่องที่เชื่อมต่อ "+w.clients+" · ผู้ใช้เว็บ: "+w.webUser;
+    var warn=[];if(w.defaultWifiPass)warn.push("รหัส Wi-Fi");if(w.defaultWebPass)warn.push("รหัสผ่านเว็บ");
+    $("wifiWarn").textContent=warn.length?("ยังใช้ "+warn.join(" และ ")+"ปริยายอยู่ ควรเปลี่ยนก่อนใช้งานจริง"):"";
+    if(!$("wSsid").value)$("wSsid").placeholder=w.ssid;if(!$("wUser").value)$("wUser").placeholder=w.webUser;
+  }).catch(function(){$("wifiInfo").textContent="อ่านค่า Wi-Fi ไม่ได้"});
+}
+$("wSave").onclick=function(){
+  var d={ssid:$("wSsid").value,pass:$("wPass").value,webuser:$("wUser").value,webpass:$("wWeb").value};
+  if(!d.ssid&&!d.pass&&!d.webuser&&!d.webpass){toast("ยังไม่ได้กรอกค่าที่จะเปลี่ยน");return}
+  if(!confirm("บันทึกค่า Wi-Fi/รหัสผ่านใหม่ และรีสตาร์ท Host?\nต้องต่อ Wi-Fi ใหม่ด้วยค่าที่ตั้ง ถ้าพิมพ์ผิดจะเข้าเครื่องไม่ได้ (คืนค่าปริยายด้วยปุ่ม BOOT ตอนเปิดเครื่อง)"))return;
+  post("/api/wifi",d).then(function(){toast("บันทึกแล้ว Host กำลังรีสตาร์ท ต่อ Wi-Fi ใหม่ตามค่าที่ตั้ง");["wPass","wWeb"].forEach(function(k){$(k).value=""})}).catch(function(e){toast(e.message)});
+};
+poll();loadWifi();setInterval(poll,2000);
 </script></body></html>)HTML";

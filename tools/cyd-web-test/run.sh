@@ -19,7 +19,7 @@ rm -f sketch.cpp
 
 python3 - <<'PY'
 import json
-for f in ['state_empty', 'state_worst', 'state_show']:
+for f in ['state_empty', 'state_worst', 'state_show', 'state_names']:
     d = json.load(open(f'/tmp/cyd_web_{f}.json'))
     assert isinstance(d['beds'], list) and len(d['beds']) == d['active'], f
     for b in d['beds']:
@@ -29,7 +29,11 @@ for f in ['state_empty', 'state_worst', 'state_show']:
 for f in ['events', 'events_show']:
     ev = json.load(open(f'/tmp/cyd_web_{f}.json'))
     assert isinstance(ev, list) and all({'up','epoch','bed','event','detail'} <= set(e) for e in ev), f
-print('  JSON: ผ่านตัวตรวจ json.loads และมีฟิลด์ครบทุกชุด')
+names = json.load(open('/tmp/cyd_web_state_names.json'))
+assert names['beds'][1]['name'] == 'นายสมชาย ใจดี' and names['beds'][2]['name'] == 'a"b\\c<script>x</script>&\'', names['beds'][:3]
+w = json.load(open('/tmp/cyd_web_wifi.json'))
+assert set(w) == {'ssid', 'webUser', 'ip', 'clients', 'defaultWifiPass', 'defaultWebPass'} and 'pass' not in json.dumps(w).lower().replace('defaultwifipass','').replace('defaultwebpass',''), w
+print('  JSON: ผ่านตัวตรวจ json.loads และมีฟิลด์ครบทุกชุด (รวมชื่อไทย อักขระพิเศษ และไม่มีรหัสผ่านใน /api/wifi)')
 PY
 
 python3 - <<'PY'
@@ -47,7 +51,7 @@ done
 if [ -n "$CHROME" ] && [ -x "$CHROME" ]; then
   mkdir -p "$OUT"
   python3 make_preview.py /tmp/cyd_web_preview.html
-  "$CHROME" --headless --disable-gpu --no-sandbox --hide-scrollbars --virtual-time-budget=3000 --window-size=1200,1100 \
+  "$CHROME" --headless --disable-gpu --no-sandbox --hide-scrollbars --virtual-time-budget=3000 --window-size=1200,1700 \
     --screenshot="$OUT/web_dashboard.png" "file:///tmp/cyd_web_preview.html" >/dev/null 2>&1
   echo "  ภาพ: $OUT/web_dashboard.png"
 else

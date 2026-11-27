@@ -1,7 +1,7 @@
 /**
  * @file      ui.h
  * @brief     หน้าจอ Host (HOME / BED / BED SET / NUMPAD / SYSTEM) และการแตะ แนวนอน 320x240
- * @version   2.0.3-CYD
+ * @version   2.1.0-CYD
  * @date      2026-11-27
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
@@ -19,6 +19,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 2.1.0-CYD | 2026-11-27 | หน้า BED แสดงชื่อผู้ป่วยต่อท้ายเลขเตียงเมื่อเป็น ASCII ล้วน (ชื่อภาษาไทยแสดงบนเว็บ เพราะฟอนต์ของจอเป็น ASCII) หน้า SYSTEM แสดงชื่อ Wi-Fi ที่ตั้งไว้จริง |
  * | 2.0.3-CYD | 2026-11-27 | แก้ค่า/เริ่มถุงใหม่/รับทราบ/พักเสียงผ่านฟังก์ชันกลางของไฟล์หลักเพื่อลงประวัติ หน้า SYSTEM แสดงจุดเชื่อมต่อ Wi-Fi SD และนาฬิกา |
  * | 2.0.2-CYD | 2026-11-27 | เขียนใหม่ด่านที่ 3 ไม่นำโค้ดรุ่น 1.x มาปรับ |
  *
@@ -200,7 +201,9 @@ static void drawBed(bool full) {
   if (full) {
     zoneClear();
     tft.fillScreen(C_BLACK);
-    snprintf(s, sizeof(s), "BED %d", ui.bed + 1);
+    if (beds[ui.bed].name[0] && nameIsAscii(beds[ui.bed].name)) snprintf(s, sizeof(s), "BED %d %s", ui.bed + 1, beds[ui.bed].name);
+    else snprintf(s, sizeof(s), "BED %d", ui.bed + 1);
+    s[15] = 0;                                         // ชื่อตัวหนังสือขนาด 2 กว้าง 12 พิกเซล เหลือที่ให้ป้ายสถานะด้านขวา (เริ่มที่ x=200)
     topBar(s);
     uiBtn(Z_BACK, "BACK", 4, 190, 72, 46, C_PANEL);
     uiBtn(Z_SETBTN, "SET", 82, 190, 72, 46, C_PANEL);
@@ -332,7 +335,7 @@ static void drawSystem(bool full) {
   const uint32_t up = millis() / 1000;
   snprintf(s, sizeof(s), "v%s  UP %lu:%02lu:%02lu  PANEL %d  ", APP_VERSION, (unsigned long)(up / 3600), (unsigned long)((up / 60) % 60), (unsigned long)(up % 60), (int)CYD_PANEL);
   txt(8, 208, 1, C_GRAY, C_BLACK, s);
-  snprintf(s, sizeof(s), "WIFI %s  %s  SD %s  CLK %s  ", CYD_AP_SSID, "192.168.4.1", sdOk ? "OK" : "NO", clockSynced ? "SET" : "NOT SET");
+  snprintf(s, sizeof(s), "WIFI %s  %s  SD %s  CLK %s  ", netCfg.ssid, "192.168.4.1", sdOk ? "OK" : "NO", clockSynced ? "SET" : "NOT SET");
   s[52] = 0;
   txt(8, 220, 1, C_GRAY, C_BLACK, s);
   txt(8, 231, 1, C_GRAY, C_BLACK, "ESP-NOW PROTOCOL V3 - NOT A CERTIFIED ALARM SYSTEM");

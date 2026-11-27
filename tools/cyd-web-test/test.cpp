@@ -22,7 +22,8 @@ void delay(unsigned long ms) { g_ms += ms; }
 void delayMicroseconds(unsigned long) {}
 void pinMode(int, int) {}
 void digitalWrite(int, int) {}
-int digitalRead(int) { return 1; }
+static unsigned long g_bootUntil = 0;                       // ปุ่ม BOOT (GPIO0) ถูกกดอยู่จนถึงเวลานี้
+int digitalRead(int p) { return (p == 0 && g_ms < g_bootUntil) ? 0 : 1; }
 bool ledcAttach(int, int, int) { return true; }
 void ledcWrite(int, int) {}
 void ledcSetup(int, int, int) {}
@@ -77,6 +78,7 @@ static void runMs(int ms) { for (int e = 0; e < ms; e += 50) { g_ms += 50; servi
 static void reset() {
   for (int i = 0; i < MAX_BEDS; i++) { beds[i] = Bed(); wasOnline[i] = false; }
   activeBeds = 5; snoozeUntil = 0; syncSched = SyncScheduler(); events = EventLog(); g_sentCount = 0;
+  netCfg = netDefaults(); netReset(); restartPending = false; g_prefBlobs().clear();
   beds[0].cfg.targetRateHr = 60; beds[0].cfg.planVolumeMl = 500; beds[0].cfg.resetSeq = 9;
 }
 static bool nextSyncIs(int bed) { return syncSched.isPending(bed); }     // มีคำขอส่งด่วนของเตียงนี้ค้างอยู่ (รอบปกติไม่นับ)
@@ -244,6 +246,132 @@ static void testNoDropEndToEnd() {
   CHECK(sawEvent, "ต้องลงประวัติ ALERT NO_SIGNAL");
 }
 
+
+// ---- ชื่อผู้ป่วย ----
+static void testNames() {
+  reset();
+  CHECK(webCall(HTTP_POST, "/api/name", {{"bed", "1"}, {"name", "A"}}) == 401, "ตั้งชื่อต้องล็อกอิน");
+  CHECK(beds[0].name[0] == 0 && events.size() == 0, "ล็อกอินไม่ผ่านต้องไม่เปลี่ยนอะไร");
+  CHECK(webCall(HTTP_POST, "/api/name", {{"bed", "1"}, {"name", "Somchai K."}}, U, P) == 200 && strcmp(beds[0].name, "Somchai K.") == 0, "ตั้งชื่อ ASCII");
+  CHECK(events.size() == 1 && events.newest(0).type == EV_CONFIG && events.newest(0).bed == 1, "ลงประวัติ CONFIG");
+  CHECK(webCall(HTTP_POST, "/api/name", {{"bed", "2"}, {"name", "  นายสมชาย ใจดี  "}}, U, P) == 200 && strcmp(beds[1].name, "นายสมชาย ใจดี") == 0, "ชื่อไทย (ตัดช่องว่างหัวท้าย)");
+  CHECK(nameIsAscii(beds[0].name) && !nameIsAscii(beds[1].name), "ตรวจ ASCII สำหรับจอ");
+  CHECK(webCall(HTTP_POST, "/api/name", {{"bed", "3"}, {"name", "a\"b\\c<script>x</script>&'"}}, U, P) == 200, "อักขระพิเศษต้องเก็บได้ (ปลอดภัยเพราะเว็บใช้ textContent และ JSON หลีกให้)");
+  CHECK(webCall(HTTP_POST, "/api/name", {{"bed", "1"}, {"name", ""}}, U, P) == 200 && beds[0].name[0] == 0, "ชื่อว่าง = ล้างชื่อ");
+  CHECK(webCall(HTTP_POST, "/api/name", {{"bed", "1"}}, U, P) == 400, "ไม่ส่งฟิลด์ name ต้อง 400 (ไม่ใช่ล้างชื่อ)");
+  CHECK(webCall(HTTP_POST, "/api/name", {{"name", "x"}}, U, P) == 400 && webCall(HTTP_POST, "/api/name", {{"bed", "9"}, {"name", "x"}}, U, P) == 400, "เลขเตียงผิด");
+  const std::string thai10 = std::string("กขคงจฉชซฌญกขคงจฉชซฌญ") + "ก", thai11 = thai10 + "ฎ";    // ชื่อเก็บเป็น thai10 = 21 ตัว (63 ไบต์) thai11 = 22 ตัว (66 ไบต์)
+  CHECK(thai10.size() == 63 && webCall(HTTP_POST, "/api/name", {{"bed", "4"}, {"name", thai10}}, U, P) == 200, "ไทย 21 ตัว = 63 ไบต์ ใช้ได้ (ขอบ)");
+  CHECK(thai11.size() == 66 && webCall(HTTP_POST, "/api/name", {{"bed", "4"}, {"name", thai11}}, U, P) == 400 && strcmp(beds[3].name, thai10.c_str()) == 0, "ไทย 22 ตัว = 66 ไบต์ ต้องปฏิเสธและไม่แตะชื่อเดิม");
+  CHECK(webCall(HTTP_POST, "/api/name", {{"bed", "5"}, {"name", std::string(63, 'x')}}, U, P) == 200, "ยาว 63 ไบต์พอดี");
+  CHECK(webCall(HTTP_POST, "/api/name", {{"bed", "5"}, {"name", std::string(64, 'x')}}, U, P) == 400, "ยาว 64 ไบต์ต้องปฏิเสธ");
+  // UTF-8 ผิดรูป และอักขระควบคุม ต้องปฏิเสธทั้งหมด (ไม่งั้น JSON ของเว็บพัง)
+  const char *bad[] = {"\xC0\x80", "\xC1\xBF", "\xE0\x80\x80", "\xED\xA0\x80", "\xF4\x90\x80\x80", "\xF5\x80\x80\x80", "\xFF", "\x80", "\xE0\xB8", "ab\xC3", "a\nb", "a\tb", "a\x01" "b", "a\x7F" "b", "a\rb", "\xF0\x80\x80\x80"};
+  for (const char *b : bad) {
+    CHECK(webCall(HTTP_POST, "/api/name", {{"bed", "5"}, {"name", b}}, U, P) == 400, "UTF-8 ผิดรูป/อักขระควบคุมต้องปฏิเสธ");
+  }
+  CHECK(strcmp(beds[4].name, std::string(63, 'x').c_str()) == 0, "ค่าที่ถูกปฏิเสธต้องไม่ทำให้ชื่อเดิมเปลี่ยน");
+  CHECK(utf8Validate("สวัสดี") == 18 && utf8Validate("😀") == 4 && utf8Validate("\xF4\x8F\xBF\xBF") == 4 && utf8Validate("\xEF\xBF\xBF") == 3, "UTF-8 ที่ถูกต้อง (รวมขอบ U+10FFFF และ U+FFFF)");
+  // JSON ของ state ต้องถูกต้องแม้ชื่อมีอักขระพิเศษและภาษาไทย (python ตรวจ json.loads ใน run.sh)
+  webCall(HTTP_GET, "/api/state"); dump("/tmp/cyd_web_state_names.json", g_web.body);
+  CHECK(g_web.body.find("\"name\":\"นายสมชาย ใจดี\"") != std::string::npos, "state ต้องมีชื่อไทยตรงตัว");
+  CHECK(g_web.body.find("<script>") == std::string::npos || g_web.body.find("\\\"") != std::string::npos, "ข้อความพิเศษถูกหลีกใน JSON");
+  // จดจำข้ามการรีบูต
+  saveNames(beds);
+  Bed copy[MAX_BEDS];
+  loadNames(copy);
+  CHECK(strcmp(copy[1].name, "นายสมชาย ใจดี") == 0 && strcmp(copy[3].name, thai10.c_str()) == 0 && copy[0].name[0] == 0, "ชื่อต้องโหลดกลับได้หลังรีบูต");
+  // ข้อมูลใน NVS เสียเป็นรายเตียง: ล้างเฉพาะเตียงที่เสีย ไม่ทิ้งทั้งชุด
+  StoredNames sn; memset(&sn, 0, sizeof(sn)); sn.magic = NAMES_MAGIC;
+  strcpy(sn.name[0], "good"); memcpy(sn.name[1], "\xC0\x80" "zz", 5); strcpy(sn.name[2], "also ok");
+  memset(sn.name[3], 'x', BED_NAME_MAX + 1);                    // ไม่มีตัวจบสตริง
+  Preferences pr; pr.begin("names", false); pr.putBytes("all", &sn, sizeof(sn)); pr.end();
+  Bed loaded[MAX_BEDS]; loadNames(loaded);
+  CHECK(strcmp(loaded[0].name, "good") == 0 && loaded[1].name[0] == 0 && strcmp(loaded[2].name, "also ok") == 0, "ชื่อเสียต้องถูกล้างเฉพาะเตียงนั้น");
+  CHECK(strlen(loaded[3].name) == BED_NAME_MAX, "ชื่อไม่มีตัวจบสตริงต้องถูกตัดอย่างปลอดภัย");
+  sn.magic = 0xDEADBEEF; pr.begin("names", false); pr.putBytes("all", &sn, sizeof(sn)); pr.end();
+  Bed none[MAX_BEDS]; loadNames(none);
+  CHECK(none[0].name[0] == 0 && none[2].name[0] == 0, "เลขยืนยันผิดต้องไม่ใช้ข้อมูลนั้นเลย");
+  CHECK(static_cast<size_t>(sizeof(Bed::name)) == BED_NAME_MAX + 1, "ขนาดช่องชื่อใน Bed ต้องตรงกับ BED_NAME_MAX");
+}
+
+// ---- ตั้งค่า Wi-Fi และบัญชีเว็บ ----
+static void testWifiSettings() {
+  reset();
+  CHECK(webCall(HTTP_GET, "/api/wifi") == 200 && g_web.type == "application/json", "อ่านข้อมูล Wi-Fi ได้โดยไม่ล็อกอิน");
+  CHECK(g_web.body.find(CYD_AP_SSID) != std::string::npos, "ต้องบอกชื่อ Wi-Fi");
+  CHECK(g_web.body.find(CYD_AP_PASS) == std::string::npos && g_web.body.find(CYD_WEB_PASS) == std::string::npos, "ห้ามส่งรหัสผ่านออกไปทางเว็บเด็ดขาด");
+  CHECK(g_web.body.find("\"defaultWifiPass\":true") != std::string::npos && g_web.body.find("\"defaultWebPass\":true") != std::string::npos, "ต้องเตือนว่ายังใช้รหัสปริยาย");
+  dump("/tmp/cyd_web_wifi.json", g_web.body);
+  Args good = {{"ssid", "Ward 5 IV"}, {"pass", "newpass123"}, {"webuser", "nurse01"}, {"webpass", "s3cret!x"}};
+  CHECK(webCall(HTTP_POST, "/api/wifi", good) == 401 && !restartPending, "ตั้งค่า Wi-Fi ต้องล็อกอิน");
+  CHECK(webCall(HTTP_POST, "/api/wifi", good, U, "wrong") == 401, "รหัสผิดต้อง 401");
+  struct Bad { const char *k, *v; } bads[] = {
+    {"ssid", "has\"quote"}, {"ssid", " lead"}, {"ssid", "trail "}, {"ssid", "ไทย"}, {"ssid", "semi;colon"}, {"ssid", "012345678901234567890123456789012"},
+    {"pass", "short7!"}, {"pass", "ไม่ใช่ascii1"}, {"pass", "tab\tpass123"}, {"pass", "0123456789012345678901234567890123456789012345678901234567890123456789"},
+    {"webuser", "ab"}, {"webuser", "has space"}, {"webuser", "name:colon"}, {"webuser", "12345678901234567"},
+    {"webpass", "12345"}, {"webpass", "has space1"}, {"webpass", "ไทยไทยไทยไทย"}, {"webpass", "123456789012345678901234567890123"}};
+  for (auto &b : bads) {
+    Args a = {{b.k, b.v}};
+    CHECK(webCall(HTTP_POST, "/api/wifi", a, U, P) == 400, "ค่า Wi-Fi/บัญชีที่ผิดกฎต้อง 400");
+  }
+  CHECK(!restartPending, "ค่าผิดทั้งหมดต้องไม่ทำให้รีสตาร์ท");
+  CHECK(netLoad().ssid[0] == CYD_AP_SSID[0] && strcmp(netLoad().ssid, CYD_AP_SSID) == 0, "ค่าผิดต้องไม่ถูกบันทึก");
+  CHECK(webCall(HTTP_POST, "/api/wifi", {{"ssid", "OK name"}, {"pass", "short"}}, U, P) == 400 && strcmp(netLoad().ssid, CYD_AP_SSID) == 0, "ใช้ทั้งชุดหรือไม่ใช้เลย: ฟิลด์แรกถูก ฟิลด์ที่สองผิด ต้องไม่บันทึกฟิลด์แรก");
+  CHECK(webCall(HTTP_POST, "/api/wifi", {}, U, P) == 400 && g_web.body == "no fields", "ไม่มีฟิลด์เลยต้อง 400");
+  // สำเร็จ
+  g_ms += 1000;
+  const uint32_t t0 = g_ms;
+  CHECK(webCall(HTTP_POST, "/api/wifi", good, U, P) == 200 && g_web.body.find("restart") != std::string::npos, "ค่าถูกต้องต้องบันทึกสำเร็จ");
+  CHECK(restartPending && restartAtMs - t0 >= 2000 && restartAtMs - t0 <= 3000, "ต้องรีสตาร์ทหลังตอบเบราว์เซอร์ ไม่ใช่ทันที (ราว 2.5 วินาที)");
+  const NetConfig saved = netLoad();
+  CHECK(strcmp(saved.ssid, "Ward 5 IV") == 0 && strcmp(saved.wifiPass, "newpass123") == 0 && strcmp(saved.webUser, "nurse01") == 0 && strcmp(saved.webPass, "s3cret!x") == 0, "ต้องเก็บใน NVS ครบ");
+  // ก่อนรีสตาร์ท ค่าใช้งานยังเป็นของเดิม (ค่าใหม่มีผลหลังรีสตาร์ท) หลังรีสตาร์ทต้องใช้ค่าใหม่
+  CHECK(webCall(HTTP_POST, "/api/bed", {{"bed", "1"}, {"rate", "10"}}, U, P) == 200, "ก่อนรีสตาร์ทบัญชีเดิมยังใช้ได้");
+  netCfg = netLoad();                                                   // จำลองการรีบูต
+  CHECK(webCall(HTTP_POST, "/api/bed", {{"bed", "1"}, {"rate", "11"}}, U, P) == 401, "หลังรีสตาร์ทบัญชีเดิมต้องใช้ไม่ได้");
+  CHECK(webCall(HTTP_POST, "/api/bed", {{"bed", "1"}, {"rate", "11"}}, "nurse01", "s3cret!x") == 200 && beds[0].cfg.targetRateHr == 11, "บัญชีใหม่ใช้ได้");
+  webCall(HTTP_GET, "/api/wifi");
+  CHECK(g_web.body.find("Ward 5 IV") != std::string::npos && g_web.body.find("\"defaultWifiPass\":false") != std::string::npos && g_web.body.find("\"defaultWebPass\":false") != std::string::npos, "เปลี่ยนแล้วต้องเลิกเตือนรหัสปริยาย");
+  CHECK(g_web.body.find("newpass123") == std::string::npos && g_web.body.find("s3cret!x") == std::string::npos, "ห้ามส่งรหัสใหม่ออกไปทางเว็บ");
+  // เปลี่ยนเฉพาะบางฟิลด์ ที่เหลือคงเดิม
+  restartPending = false;
+  CHECK(webCall(HTTP_POST, "/api/wifi", {{"webpass", "another9"}}, "nurse01", "s3cret!x") == 200, "เปลี่ยนเฉพาะรหัสเว็บ");
+  const NetConfig part = netLoad();
+  CHECK(strcmp(part.ssid, "Ward 5 IV") == 0 && strcmp(part.wifiPass, "newpass123") == 0 && strcmp(part.webPass, "another9") == 0, "ฟิลด์ที่ไม่ส่งต้องคงเดิม");
+  // คืนค่าปริยายทาง Serial
+  restartPending = false;
+  handleLine((char *)"wifireset");
+  CHECK(restartPending && strcmp(netLoad().ssid, CYD_AP_SSID) == 0 && strcmp(netLoad().webPass, CYD_WEB_PASS) == 0, "wifireset ต้องคืนค่าปริยายและรีสตาร์ท");
+  // ตรวจค่าที่อ่านจาก NVS: ข้อมูลเสียต้องตกกลับเป็นค่าปริยาย
+  StoredNet bad; memset(&bad, 0, sizeof(bad)); bad.magic = NET_MAGIC; bad.cfg = netDefaults(); strcpy(bad.cfg.wifiPass, "x");   // รหัสสั้นเกินกฎ
+  Preferences pr; pr.begin("net", false); pr.putBytes("cfg", &bad, sizeof(bad)); pr.end();
+  CHECK(strcmp(netLoad().wifiPass, CYD_AP_PASS) == 0, "ค่าใน NVS ที่ผิดกฎต้องไม่ถูกใช้ (กลับเป็นค่าปริยาย)");
+  bad.magic = 0; bad.cfg = netDefaults(); strcpy(bad.cfg.ssid, "Evil"); pr.begin("net", false); pr.putBytes("cfg", &bad, sizeof(bad)); pr.end();
+  CHECK(strcmp(netLoad().ssid, CYD_AP_SSID) == 0, "เลขยืนยันผิดต้องไม่ใช้ข้อมูล");
+  CHECK(netValidSsid("a") && netValidSsid("My Ward-5_x.y") && !netValidSsid("") && !netValidSsid(nullptr), "ขอบของชื่อ Wi-Fi");
+  CHECK(netValidWifiPass("12345678") && !netValidWifiPass("1234567") && netValidWifiPass("pass word!") , "ขอบของรหัส Wi-Fi (มีช่องว่างได้)");
+  CHECK(netValidWebUser("abc") && !netValidWebUser("ab") && netValidWebPass("123456") && !netValidWebPass("12345 6"), "ขอบของบัญชีเว็บ");
+}
+
+// ---- กด BOOT ค้างตอนเปิดเครื่อง = คืนค่าปริยาย ----
+static void testBootReset() {
+  reset();
+  NetConfig custom = netDefaults(); strcpy(custom.ssid, "Custom"); strcpy(custom.webPass, "custompw1"); netSave(custom); netCfg = netLoad();
+  g_ms = 400000; g_bootUntil = 0;
+  bootWifiResetCheck();
+  CHECK(strcmp(netCfg.ssid, "Custom") == 0, "ไม่กด BOOT ต้องไม่รีเซ็ต");
+  g_ms = 410000; g_bootUntil = g_ms + 800;                                // กดสั้น 0.8 วินาที แล้วปล่อย
+  bootWifiResetCheck();
+  CHECK(strcmp(netCfg.ssid, "Custom") == 0 && strcmp(netLoad().webPass, "custompw1") == 0, "กดไม่ถึง 2 วินาทีต้องไม่รีเซ็ต");
+  g_ms = 420000; g_bootUntil = g_ms + 6000;                               // กดค้าง
+  bootWifiResetCheck();
+  CHECK(strcmp(netCfg.ssid, CYD_AP_SSID) == 0 && strcmp(netCfg.webPass, CYD_WEB_PASS) == 0, "กดค้างตอนเปิดเครื่องต้องคืนค่าปริยาย");
+  CHECK(strcmp(netLoad().ssid, CYD_AP_SSID) == 0, "ต้องล้างค่าที่เก็บไว้ด้วย");
+  CHECK(g_ms >= 420000 + 6000, "ต้องรอปล่อยปุ่มก่อนเริ่มระบบต่อ (กันกดค้างแล้วเข้าโหมดอื่นโดยไม่ตั้งใจ)");
+  CHECK(events.size() >= 1 && events.newest(0).type == EV_CONFIG, "ต้องลงประวัติ");
+}
+
 static void testRingAndCsv() {
   EventLog log;
   for (int i = 0; i < 60; i++) log.add(1000u * i, 0, (uint8_t)(1 + i % 5), EV_ALERT, ALERT_TOO_FAST);
@@ -275,6 +403,7 @@ static void testStateJsonWorstCase() {
     bedIngest(beds[i], mk(i + 1, 1, 4000000000u, 2999, 400), -99, MAC, g_ms);
     beds[i].batteryV = 5.99f; beds[i].linkPct = 100; beds[i].idConflict = true; beds[i].alert = ALERT_OCCLUSION;
   }
+  for (int i = 0; i < 8; i++) { memset(beds[i].name, '"', BED_NAME_MAX); beds[i].name[BED_NAME_MAX] = 0; }   // ชื่อเลวร้ายสุด: ทุกตัวต้องถูกหลีก (2 เท่า)
   beds[3].flowRateHr = NAN; beds[4].batteryV = INFINITY;   // ค่าที่ไม่ควรเกิดแต่ต้องไม่ทำ JSON พัง
   CHECK(webCall(HTTP_GET, "/api/state") == 200, "สภาพเลวร้ายสุด: state ต้องไม่ล้นบัฟเฟอร์");
   CHECK(g_web.body.find("nan") == std::string::npos && g_web.body.find("inf") == std::string::npos, "ห้ามมี nan/inf ใน JSON");
@@ -293,6 +422,7 @@ static void testNumbers() {
 static void makeShowcase() {
   reset();
   clockSynced = true; clockSet(1789000000);
+  strcpy(beds[0].name, "นายสมชาย ใจดี"); strcpy(beds[1].name, "Ms. Malee R."); strcpy(beds[3].name, "ป้ายัน เตียงริมหน้าต่าง");
   beds[0].cfg = {60, 500, 20, 80, 3};  bedIngest(beds[0], mk(1, 1, 3100, 60, 400), -48, MAC, g_ms); beds[0].linkPct = 100;
   beds[1].cfg = {100, 1000, 20, 80, 0}; bedIngest(beds[1], mk(2, 1, 9000, 142, 380), -61, MAC, g_ms); beds[1].alert = ALERT_TOO_FAST; beds[1].linkPct = 90;
   beds[3].cfg = {80, 500, 20, 80, 0};  bedIngest(beds[3], mk(4, 1, 8200, 80, 700), -70, MAC, g_ms); beds[3].alert = ALERT_NEAR_END; beds[3].linkPct = 50;
@@ -301,6 +431,7 @@ static void makeShowcase() {
   logEvent(4, EV_ALERT, ALERT_NEAR_END); logEvent(1, EV_CONFIG); logEvent(0, EV_SILENCE);
   webCall(HTTP_GET, "/api/state"); dump("/tmp/cyd_web_state_show.json", g_web.body);
   webCall(HTTP_GET, "/api/events"); dump("/tmp/cyd_web_events_show.json", g_web.body);
+  webCall(HTTP_GET, "/api/wifi"); dump("/tmp/cyd_web_wifi_show.json", g_web.body);
   webCall(HTTP_GET, "/"); dump("/tmp/cyd_web_page.html", g_web.body);
   clockSynced = false;
 }
@@ -317,6 +448,9 @@ int main() {
   testClock();
   testEventsFlow();
   testNoDropEndToEnd();
+  testNames();
+  testWifiSettings();
+  testBootReset();
   testRingAndCsv();
   testStateJsonWorstCase();
   testNumbers();
