@@ -1,8 +1,8 @@
 /**
  * @file      Station-Stable.ino
  * @brief     เฟิร์มแวร์เครื่องประจำเตียง สายเสถียร ใช้อัลกอริทึมตรวจจับและการคาลิเบรตแบบเดิม
- * @version   7.5.8
- * @date      2026-11-26
+ * @version   7.5.9
+ * @date      2026-11-27
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
  * @par Organization
@@ -22,6 +22,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 7.5.9 | 2026-11-27 | รู้จักรหัสเตือน NO DROP (รหัส 6 ที่ Host ส่งมาเมื่อเตียงออนไลน์แต่เซนเซอร์ไม่เคยจับหยดเลยนาน 90 วินาที): ขึ้นจอเตือนวิกฤต "NO DROP" พร้อมเสียงเตือนเฉพาะ (Active: 2 ครั้งสั้น · Passive: โทน 1400 Hz) ไฟสถานะเตือนเหมือนสายพับ และประกาศความสามารถนี้ให้ Host ผ่านบิต 0x02 ของ struct_message.flags (Host ส่งรหัส 6 ให้เฉพาะเตียงที่ประกาศ รุ่นเก่ายังได้ 0 เหมือนเดิม) เห็นหยดแล้วในเครื่องจะไม่ขึ้น NO DROP โครงสร้างแพ็กเก็ตไม่เปลี่ยน (ตามสายหลัก 7.12.0 ตรรกะตรวจจับหยดเดิมไม่เปลี่ยน) |
  * | 7.5.8 | 2026-11-26 | รองรับบัซเซอร์ Active เป็นตัวเลือกตอนคอมไพล์ (`BUZZER_ACTIVE 1`) ตามสายหลัก Station 7.11.0 ค่าปริยายยังเป็น Passive เหมือนเดิมทุกอย่าง |
  * | 7.5.7 | 2026-09-28 | ไฟสถานะการเชื่อมต่อดูสองทาง ขึ้น ONE-WAY เมื่อได้ยิน Host แต่ Host ไม่ได้ยินเตียง |
  * | 7.5.6 | 2026-09-23 | จำนวนหยดสะสมรอดการรีบูตและไฟดับแล้ว เพิ่มสุนัขเฝ้าบ้าน และแก้การนับเวลาที่พังเมื่อ millis() วนรอบ |
@@ -191,7 +192,7 @@
 esp_reset_reason_t bootResetReason = ESP_RST_UNKNOWN;
 
 
-#define APP_VERSION         "7.5.8"
+#define APP_VERSION         "7.5.9"
 
 #define TFT_CS              9
 #define TFT_DC              10
@@ -298,6 +299,9 @@ esp_reset_reason_t bootResetReason = ESP_RST_UNKNOWN;
 #define ALERT_NEAR_END    3   // ให้ไปแล้วถึง % ที่ตั้ง (เตรียมถุงใหม่)
 #define ALERT_COMPLETE    4
 #define ALERT_OCCLUSION   5
+// [7.5.9] เพิ่ม: Host บอกว่าติดต่อเตียงได้แต่เซนเซอร์ไม่เคยจับหยดเลย (NO DROP) Host ส่งรหัสนี้ให้เฉพาะเตียงที่ประกาศว่ารองรับ (MSG_FLAG_NO_SIGNAL_OK)
+#define ALERT_NO_SIGNAL   6
+#define MSG_FLAG_NO_SIGNAL_OK 0x02   // ใส่ใน struct_message.flags ทุกแพ็กเก็ต บอก Host ว่าเครื่องนี้รู้จักรหัส 6
 
 #define THEME_BG            0x0000
 #define THEME_SKYBLUE       0x5DFF
@@ -342,7 +346,7 @@ enum AppState {
 
 // ---- สถานะที่ใช้เลือกสีและคำบนจอ ----
 // ต้องประกาศไว้ตอนต้นไฟล์ เพราะ Arduino IDE แทรก prototype ของฟังก์ชันไว้ก่อนส่วนแสดงผล
-enum UiStatus { UI_OK = 0, UI_FAST, UI_SLOW, UI_NOFLOW, UI_NEAREND, UI_DONE, UI_PAUSED };
+enum UiStatus { UI_OK = 0, UI_FAST, UI_SLOW, UI_NOFLOW, UI_NEAREND, UI_DONE, UI_PAUSED, UI_NODROP };
 
 AppState currentState       = STATE_NORMAL_VIEW;
 int currentNursePage        = 1;
@@ -642,7 +646,8 @@ uint8_t safeDropFactor(uint8_t df) {
 
 bool isCriticalAlert(uint8_t code) {
   return code == ALERT_TOO_FAST || code == ALERT_TOO_SLOW ||
-         code == ALERT_COMPLETE || code == ALERT_OCCLUSION;
+         code == ALERT_COMPLETE || code == ALERT_OCCLUSION ||
+         code == ALERT_NO_SIGNAL;                              // [7.5.9] เพิ่ม: NO DROP เป็นเหตุวิกฤต
 }
 
 // สูตรเดียวกับ Host
@@ -697,6 +702,7 @@ uint8_t effectiveAlertCode() {
   if (isHostOnline) {
     uint8_t c = hostAlertCode;
     if (c == ALERT_OCCLUSION) c = ALERT_NONE;                // ข้อมูลในเครื่องใหม่กว่า
+    if (c == ALERT_NO_SIGNAL && hasFirstDropOccurred) c = ALERT_NONE;   // [7.5.9] เพิ่ม: เห็นหยดแล้วในเครื่อง = ไม่ใช่ NO DROP อีกต่อไป
     return c;
   }
   if (totalPlanMl > 0 && totalVolumeMl >= totalPlanMl) return ALERT_COMPLETE;
@@ -810,6 +816,7 @@ void handlePassiveBuzzerEngine(uint8_t code) {
     case ALERT_TOO_FAST:  bursts = 4; onMs = 60;  gapMs = 60;  pauseMs = 900;  break;
     case ALERT_TOO_SLOW:  bursts = 1; onMs = 350; gapMs = 0;   pauseMs = 1200; break;
     case ALERT_COMPLETE:  bursts = 2; onMs = 250; gapMs = 200; pauseMs = 1800; break;
+    case ALERT_NO_SIGNAL: bursts = 2; onMs = 100; gapMs = 100; pauseMs = 1500; break;   // [7.5.9] เพิ่ม: NO DROP: 2 ครั้งสั้น (เหมือน Host)
     default: return;
   }
   if (burstCode != code || burstLeft == 0) { burstCode = code; burstLeft = bursts; }
@@ -822,6 +829,7 @@ void handlePassiveBuzzerEngine(uint8_t code) {
     case ALERT_TOO_FAST:  beepNonBlocking(2200, 80);  buzzerNextBeepTime = now + 700;  break;
     case ALERT_TOO_SLOW:  beepNonBlocking(1200, 120); buzzerNextBeepTime = now + 1200; break;
     case ALERT_COMPLETE:  beepNonBlocking(1500, 250); buzzerNextBeepTime = now + 1500; break;
+    case ALERT_NO_SIGNAL: beepNonBlocking(1400, 100); buzzerNextBeepTime = now + 1500; break;   // [7.5.9] เพิ่ม: NO DROP
   }
 #endif
 }
@@ -1900,6 +1908,7 @@ UiStatus uiStatusOf(uint8_t code) {
     case ALERT_TOO_FAST:  return UI_FAST;
     case ALERT_TOO_SLOW:  return UI_SLOW;
     case ALERT_COMPLETE:  return UI_DONE;
+    case ALERT_NO_SIGNAL: return UI_NODROP;                  // [7.5.9] เพิ่ม:
     case ALERT_NEAR_END:  return UI_NEAREND;
     default:              return UI_OK;
   }
@@ -1911,6 +1920,7 @@ uint16_t uiStatusColor(UiStatus s) {
     case UI_FAST:    return COLOR_ORANGE;
     case UI_SLOW:    return COLOR_YELLOW;
     case UI_NOFLOW:  return COLOR_RED;
+    case UI_NODROP:  return COLOR_RED;                        // [7.5.9] เพิ่ม:
     case UI_NEAREND: return COLOR_ORANGE;
     case UI_DONE:    return THEME_CYAN;
     default:         return THEME_SKYBLUE;
@@ -1923,6 +1933,7 @@ const char* uiStatusWord(UiStatus s) {
     case UI_FAST:    return "TOO FAST";
     case UI_SLOW:    return "TOO SLOW";
     case UI_NOFLOW:  return "NO FLOW";
+    case UI_NODROP:  return "NO DROP";                        // [7.5.9] เพิ่ม:
     case UI_NEAREND: return "NEXT BAG";
     case UI_DONE:    return "COMPLETE";
     default:         return "PAUSED";
@@ -2456,7 +2467,7 @@ void loop() {
     myData.msSinceLastDrop = hasFirstDropOccurred ? (uint32_t)(currentMillis - lastDropTimestamp) : 0;
     if (myData.msSinceLastDrop == 0 && hasFirstDropOccurred) myData.msSinceLastDrop = 1;
     myData.batteryVolts    = readStationBattery();
-    myData.flags           = nearEndAckRequest ? 0x01 : 0x00;
+    myData.flags           = (nearEndAckRequest ? 0x01 : 0x00) | MSG_FLAG_NO_SIGNAL_OK;   // [7.5.9] เพิ่ม: บอก Host ว่ารู้จัก NO DROP
 
     if (esp_now_send(broadcastAddress, (uint8_t *)&myData, sizeof(myData)) == ESP_OK) {
       periodDropsCounter = 0;

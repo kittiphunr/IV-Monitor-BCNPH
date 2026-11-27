@@ -69,6 +69,17 @@ def main(ops_path, outdir):
                 warnings.append(f"ข้อความไม่ใช่ ASCII จะขึ้นเป็นสัญลักษณ์มั่วบนจอจริง ที่ ({x},{y}): {text!r}")
             for i, chpr in enumerate(raw):
                 font.draw_char(fillrect, x + i * 6 * size, y, chpr, col, bg, size)
+        elif op == "RGBBMP":
+            x, y, w, h = int(p[1]), int(p[2]), int(p[3]), int(p[4])
+            hexs = p[5] if len(p) > 5 else ""
+            px = img.load()
+            for i in range(min(w * h, len(hexs) // 4)):
+                c = int(hexs[i * 4:i * 4 + 4], 16)
+                col = rgb(c)
+                bx, by = (x + i % w) * S, (y + i // w) * S
+                for dy in range(S):
+                    for dx in range(S):
+                        if 0 <= bx + dx < W * S and 0 <= by + dy < H * S: px[bx + dx, by + dy] = col
         elif op == "MARK":
             name = p[1]
             out = os.path.join(outdir, f"{name}.png")

@@ -1,8 +1,8 @@
 /**
  * @file      Station-C3-OLED.ino
  * @brief     เฟิร์มแวร์เครื่องประจำเตียง รุ่นบอร์ดเล็ก จอ OLED 0.42 นิ้ว
- * @version   1.3.1-C3
- * @date      2026-09-23
+ * @version   1.4.0-C3
+ * @date      2026-11-27
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
  * @par Organization
@@ -25,6 +25,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 1.4.0-C3 | 2026-11-27 | รู้จักรหัสเตือน NO DROP (รหัส 6 ที่ Host ส่งมาเมื่อเตียงออนไลน์แต่เซนเซอร์ไม่เคยจับหยดเลยนาน 90 วินาที): ขึ้นจอเตือนวิกฤต "NO DROP" พร้อมเสียงเตือนเฉพาะ (Active: 2 ครั้งสั้น · Passive: โทน 1400 Hz) ไฟสถานะเตือนเหมือนสายพับ และประกาศความสามารถนี้ให้ Host ผ่านบิต 0x02 ของ struct_message.flags (Host ส่งรหัส 6 ให้เฉพาะเตียงที่ประกาศ รุ่นเก่ายังได้ 0 เหมือนเดิม) เห็นหยดแล้วในเครื่องจะไม่ขึ้น NO DROP โครงสร้างแพ็กเก็ตไม่เปลี่ยน (หน้าเตือนขึ้น NO DROP / check drip sensor) |
  * | 1.3.1-C3 | 2026-09-28 | จัดกึ่งกลางเลขเตียงและนาฬิกาหน้าพักจอด้วย getStrWidth() เดิมเดาความกว้าง logisoso16 ผิด นาฬิกาเยื้องซ้าย 5 พิกเซล |
  * | 1.3.0-C3 | 2026-09-28 | ไฟสถานะการเชื่อมต่อดูสองทาง ขึ้น ONE-WAY เมื่อได้ยิน Host แต่ Host ไม่ได้ยินเตียง |
  * | 1.2.0-C3 | 2026-09-24 | เพิ่มตัวช่วยคาลิเบรตสี่ขั้นตอนที่หน้าเครื่อง วัดทิศสัญญาณเอง และบันทึกสิ่งที่เรียนรู้ลง NVS |
@@ -113,7 +114,7 @@ esp_reset_reason_t bootResetReason = ESP_RST_UNKNOWN;
 
 #include "drop_detector.h"   // อัลกอริทึมตรวจจับหยด (ทดสอบบน PC ได้: tools/detector-test)
 
-#define APP_VERSION         "1.3.1-C3"
+#define APP_VERSION         "1.4.0-C3"
 
 // ---------------------------------------------------------------------------
 // ขา
@@ -151,6 +152,8 @@ esp_reset_reason_t bootResetReason = ESP_RST_UNKNOWN;
 #define ALERT_NEAR_END    3
 #define ALERT_COMPLETE    4
 #define ALERT_OCCLUSION   5
+#define ALERT_NO_SIGNAL   6   // [1.4.0-C3] เพิ่ม: Host บอกว่าติดต่อได้แต่เซนเซอร์ไม่เคยจับหยดเลย (NO DROP)
+#define MSG_FLAG_NO_SIGNAL_OK 0x02   // [1.4.0-C3] เพิ่ม: ใส่ใน struct_message.flags ทุกแพ็กเก็ต บอก Host ว่ารู้จักรหัส 6
 
 // ---------------------------------------------------------------------------
 // โครงสร้างแพ็กเก็ต Protocol v3 — ต้องเหมือน Host ทุกไบต์
@@ -862,6 +865,7 @@ uint8_t effectiveAlert() {
 
   // ข้อมูลในเครื่องใหม่กว่าเสมอ ถ้าหยดยังมาอยู่ก็ไม่ใช่การอุดตัน
   if (c == ALERT_OCCLUSION && msSinceLastDrop() < occlusionThresholdMs()) c = ALERT_NONE;
+  if (c == ALERT_NO_SIGNAL && hasFirstDropOccurred) c = ALERT_NONE;   // [1.4.0-C3] เพิ่ม: เห็นหยดแล้วในเครื่อง = ไม่ใช่ NO DROP อีกต่อไป
   if (c != ALERT_NONE) return c;
 
   // Host เงียบอยู่ แต่เครื่องเห็นเองว่าหยดหยุดไปนานผิดปกติ
@@ -950,7 +954,7 @@ void sendToHost() {
   myData.flowRateHr      = countingNow ? currentFlowRate_ml_hr : 0.0f;
   myData.msSinceLastDrop = msSinceLastDrop();
   myData.batteryVolts    = batteryVolts;
-  myData.flags           = nearEndAckRequest ? 0x01 : 0x00;
+  myData.flags           = (nearEndAckRequest ? 0x01 : 0x00) | MSG_FLAG_NO_SIGNAL_OK;   // [1.4.0-C3] เพิ่ม: บอก Host ว่ารู้จัก NO DROP
 
   esp_now_send(broadcastAddress, (uint8_t *)&myData, sizeof(myData));
   periodDropsCounter = 0;

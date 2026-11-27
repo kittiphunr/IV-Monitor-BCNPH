@@ -1,7 +1,7 @@
 /**
  * @file      Host-CYD28.ino
  * @brief     Host บอร์ด CYD (ESP32-2432S028) เขียนใหม่ ด่านที่ 4 (ครบทุกด่าน): เว็บแดชบอร์ด นาฬิกา SD ประวัติเหตุการณ์
- * @version   2.0.3-CYD
+ * @version   2.0.5-CYD
  * @date      2026-11-27
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
@@ -26,6 +26,8 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 2.0.5-CYD | 2026-11-27 | หน้าเปิดเครื่องแบบโลโก้ (splash.h + logo.h สร้างจากภาพด้วย tools/logo-convert) แสดงทันทีหลังเริ่มจอ ค้าง CYD_SPLASH_MS แตะข้ามได้ |
+ * | 2.0.4-CYD | 2026-11-27 | ส่งรหัส NO DROP (6) ให้ Station ที่ประกาศว่ารองรับ (Station 7.12.0 ขึ้นไป สายเสถียร 7.5.9 บอร์ดเล็ก 1.4.0 Fallout 1.6.0) จึงขึ้นเตือนที่เครื่องประจำเตียงด้วย รุ่นเก่ายังได้รับ 0 เหมือนเดิม |
  * | 2.0.3-CYD | 2026-11-27 | เขียนใหม่ด่านที่ 4 ไม่นำโค้ดรุ่น 1.x มาปรับ: จุดเชื่อมต่อ Wi-Fi + เว็บแดชบอร์ดหน้าเดียว (ดูได้ทันที แก้ค่าต้องล็อกอิน), นาฬิกาตั้งจากเบราว์เซอร์ (RTC DS3231 ไม่บังคับ), ประวัติเหตุการณ์ในหน่วยความจำ 48 รายการ + บันทึก CSV ลง SD, คำสั่งแก้ค่าทุกทางผ่านฟังก์ชันเดียว (commitBedConfig/doNewBag/doAck) จึงลงประวัติเหมือนกัน |
  * | 2.0.2-CYD | 2026-11-27 | เขียนใหม่ด่านที่ 3 ไม่นำโค้ดรุ่น 1.x มาปรับ: หน้า HOME/BED/BED SET/NUMPAD/SYSTEM แนวนอน, โซนแตะตารางเดียวกับที่วาด, บัซเซอร์ Active (เตือน/เสียงกด/ใกล้หมด), ปุ่มพักเสียง 2 นาที, ยืนยันก่อนเริ่มถุงใหม่ |
  * | 2.0.1-CYD | 2026-11-27 | เขียนใหม่ด่านที่ 2 ไม่นำโค้ดรุ่น 1.x มาปรับ: คิวรับ ESP-NOW ผู้เขียน/ผู้อ่านคนเดียว, bed_model.h ตรรกะล้วนทดสอบบน PC, ตัวจัดช่องเวลาส่ง Sync, NVS เก็บ resetSeq ถาวร |
@@ -54,8 +56,9 @@
 #include "event_log.h"
 #include "clock_sync.h"
 #include "sd_log.h"
+#include "splash.h"
 
-#define APP_VERSION "2.0.3-CYD"
+#define APP_VERSION "2.0.5-CYD"
 
 enum AppMode : uint8_t { MODE_UI = 0, MODE_DIAG };
 
@@ -265,12 +268,13 @@ void setup() {
   }
   panelBegin();
   sysSet = loadSys();
+  splashDraw();                          // โลโก้ขึ้นก่อนเริ่ม Wi-Fi/ESP-NOW เพื่อให้เห็นภาพเร็วที่สุด
   backlightSet(sysSet.brightness);
   buzz.enabled = sysSet.buzzerOn;
   touchChip.begin();
   activeBeds = loadBeds(beds);
   const bool linkOk = linkBegin(true);   // เปิดจุดเชื่อมต่อ Wi-Fi ของ Host ด้วย (หน้าเว็บ)
-  Serial.println("Host-CYD28 " APP_VERSION " (stage 4: web + clock + SD + events)");
+  Serial.println("Host-CYD28 " APP_VERSION " (stage 4+: NO DROP to stations)");
   printSettings();
   Serial.println(linkOk ? "ESP-NOW ready" : "ESP-NOW INIT FAILED");
   clockBegin();
@@ -279,6 +283,7 @@ void setup() {
   Serial.println("AP " CYD_AP_SSID " http://192.168.4.1/");
   logEvent(0, EV_BOOT);
   syncSched.requestAll(activeBeds);
+  splashWait([]() { int16_t a, b, c; return touchChip.read(a, b, c); });   // ค้างโลโก้ให้ครบเวลา แตะเพื่อข้าม
   setMode(MODE_UI);
 }
 

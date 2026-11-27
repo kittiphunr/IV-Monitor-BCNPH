@@ -271,7 +271,7 @@ void foBagIcon(int x, int y, uint16_t c) {
 int8_t foModeNow() {
   if (!isRunning) return 2;
   // การ์ดสถานะขึ้น NO FLOW ได้ทั้งจากเครื่องนี้เองและจาก Host ภาพต้องตรงกับการ์ดเสมอ
-  return (isLocallyOccluded() || uiStatusOf(uiAlertCode) == UI_NOFLOW) ? 3 : 0;
+  return (isLocallyOccluded() || uiStatusOf(uiAlertCode) == UI_NOFLOW || uiStatusOf(uiAlertCode) == UI_NODROP) ? 3 : 0;   // [1.6.0-FO] แก้: NO DROP ใช้ท่าเตือนเดียวกับสายพับ
 }
 
 // ปริมาตรที่เหลือในกล่องไอคอนถุง (แทนระดับน้ำในภาพถุงของสายหลัก)
@@ -444,7 +444,7 @@ void updatePage1Dynamic() {
     cacheRate = rate; cacheTarget = target;
     tft.fillRect(RIGHT_X + 4, 60, 84, 32, THEME_BG);
     if (!isRunning) textAt("--", RIGHT_X + 4, 60, 4, THEME_SKYBLUE, THEME_BG);
-    else textAt(String(rate), RIGHT_X + 4, 60, 4, (st == UI_NOFLOW) ? COLOR_RED : COLOR_WHITE, THEME_BG);
+    else textAt(String(rate), RIGHT_X + 4, 60, 4, (st == UI_NOFLOW || st == UI_NODROP) ? COLOR_RED : COLOR_WHITE, THEME_BG);
     textAt(padTo(targetRateHr > 0 ? ("SET " + String(target)) : String("SET --"), 9),
            RIGHT_X + 4, 108, 1, THEME_SKYBLUE, THEME_BG);
   }
@@ -695,6 +695,7 @@ void drawEmergencyScreen(uint8_t code) {
   else if (code == ALERT_TOO_FAST)  { headline = "TOO FAST"; sub = "ADJUST ROLLER CLAMP"; }
   else if (code == ALERT_TOO_SLOW)  { headline = "TOO SLOW"; sub = "ADJUST ROLLER CLAMP"; }
   else if (code == ALERT_COMPLETE)  { headline = "COMPLETE"; sub = "INFUSION FINISHED"; }
+  else if (code == ALERT_NO_SIGNAL) { headline = "NO DROP";  sub = "CHECK DRIP SENSOR"; }   // [1.6.0-FO] เพิ่ม:
 
   drawCenteredString(String(headline), 62, 3, COLOR_WHITE, COLOR_RED);
   drawCenteredString(String(sub), 96, 1, COLOR_YELLOW, COLOR_RED);
@@ -780,7 +781,7 @@ void updateScreensaverDynamic() {
     cacheRate = rate;
     tft.fillRect(6, 180, 160, 44, THEME_BG);
     drawCenteredString(rate >= 0 ? String(rate) : String("--"), 182, 5,
-                       (st == UI_NOFLOW) ? COLOR_RED : COLOR_WHITE, THEME_BG);
+                       (st == UI_NOFLOW || st == UI_NODROP) ? COLOR_RED : COLOR_WHITE, THEME_BG);
   }
 }
 

@@ -1,7 +1,7 @@
 /**
  * @file      board.h
  * @brief     ขาและค่าเลือกของบอร์ด ESP32-2432S028 (CYD)
- * @version   2.0.3-CYD
+ * @version   2.0.5-CYD
  * @date      2026-11-27
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
@@ -15,6 +15,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 2.0.5-CYD | 2026-11-27 | เพิ่ม CYD_SPLASH_MS (เวลาหน้าเปิดเครื่อง 0 = ปิด) |
  * | 2.0.3-CYD | 2026-11-27 | เพิ่มค่าเลือกของด่านที่ 4: ชื่อ/รหัสผ่านจุดเชื่อมต่อ Wi-Fi, บัญชีเว็บ, ขา RTC DS3231 (ปิดไว้), ขา SD |
  * | 2.0.2-CYD | 2026-11-27 | เพิ่มขาและระดับขับของบัซเซอร์ Active (CYD_BUZZER_PIN, CYD_BUZZER_ON_LEVEL) · ค่าปริยายตามผลถ่ายภาพจากบอร์ดจริง: CYD_PANEL 7789 (ILI9341 ให้ภาพไม่เต็มจอและแดง/น้ำเงินสลับ), CYD_BGR 0, CYD_ROTATION 3 |
  * | 2.0.0-CYD | 2026-11-27 | เขียนใหม่ทั้งหมดด่านที่ 1 (ฐานบอร์ด: จอ ไฟหลังจอ ทัช) ไม่นำโค้ดรุ่น 1.x มาปรับ |
@@ -63,6 +64,9 @@
 #endif
 #ifndef CYD_RTC_SCL
 #define CYD_RTC_SCL   -1
+#endif
+#ifndef CYD_SPLASH_MS
+#define CYD_SPLASH_MS 2500          // หน้าเปิดเครื่อง (โลโก้) ค้างนานกี่ ms แตะเพื่อข้ามได้ 0 = ปิดหน้านี้
 #endif
 #ifndef CYD_SPI_HZ
 #define CYD_SPI_HZ    40000000UL

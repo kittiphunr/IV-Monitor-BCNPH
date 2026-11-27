@@ -341,6 +341,7 @@ void drawAlertScreen() {
     case ALERT_TOO_SLOW:  title = "TOO SLOW"; action = "open the roller";    break;
     case ALERT_NEAR_END:  title = "NEAR END"; action = "prepare a new bag";  break;
     case ALERT_COMPLETE:  title = "FINISHED"; action = "IV plan completed";  break;
+    case ALERT_NO_SIGNAL: title = "NO DROP";  action = "check drip sensor"; break;   // [1.4.0-C3] เพิ่ม:
   }
 
   bool invert = ((millis() / 600) % 2) == 0;

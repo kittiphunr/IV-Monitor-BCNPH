@@ -39,6 +39,35 @@ def size_of(fields):
     return sum(SIZES.get(t, -9999) for t, _ in fields)
 
 
+def check_no_signal_capability() -> int:
+    """ตรวจว่า Station ทุกสายประกาศความสามารถ NO DROP ตรงกับที่ Host ใช้อ่าน (บิต 0x02 ของ struct_message.flags) และรหัสเตือน 6 ตรงกัน
+
+    Host ส่งรหัส 6 ให้เฉพาะเตียงที่ประกาศบิตนี้ ถ้า Station สายใดลืมใส่บิต หรือเลขบิตไม่ตรง
+    เครื่องนั้นจะไม่ได้รับ NO DROP โดยไม่มีอะไรฟ้อง จึงตรวจจากซอร์สตรง ๆ
+    """
+    print("\n=== ความสามารถ NO DROP (รหัส 6)")
+    problems = 0
+    host = (ROOT / "firmware/Host-CYD28/protocol.h").read_text(encoding="utf-8")
+    hf = re.search(r"MSG_FLAG_NO_SIGNAL_OK\s*=\s*(0x[0-9A-Fa-f]+)", host)
+    hc = re.search(r"ALERT_NO_SIGNAL\s*=\s*(\d+)", host)
+    if not hf or not hc:
+        print("  Host-CYD28 ไม่ประกาศ MSG_FLAG_NO_SIGNAL_OK หรือ ALERT_NO_SIGNAL")
+        return 1
+    flag, code = int(hf.group(1), 16), int(hc.group(1))
+    print(f"  {'Host-CYD28':34s} บิต 0x{flag:02X}  รหัส {code}  (ตัวอ้างอิง)")
+    for ino in sorted(ROOT.glob("firmware/Station*/*.ino")):
+        text = ino.read_text(encoding="utf-8")
+        label = ino.parent.name
+        mf = re.search(r"#define\s+MSG_FLAG_NO_SIGNAL_OK\s+(0x[0-9A-Fa-f]+)", text)
+        mc = re.search(r"#define\s+ALERT_NO_SIGNAL\s+(\d+)", text)
+        sets = re.search(r"myData\.flags\s*=[^;]*\|\s*MSG_FLAG_NO_SIGNAL_OK", text)
+        ok = bool(mf and mc and sets and int(mf.group(1), 16) == flag and int(mc.group(1)) == code)
+        print(f"  {label:34s} {'ตรงกัน และประกาศบิตทุกแพ็กเก็ต' if ok else '** ไม่ตรง/ไม่ประกาศ **'}")
+        if not ok:
+            problems += 1
+    return problems
+
+
 def main() -> int:
     inos = sorted(ROOT.glob("firmware/*/*.ino")) + sorted(ROOT.glob("firmware/*/protocol.h"))   # Host-CYD28 รุ่นเขียนใหม่เก็บโครงสร้างใน protocol.h
     problems = 0
@@ -67,6 +96,7 @@ def main() -> int:
                     if a != b:
                         print(f"      ฟิลด์ที่ {i}: อ้างอิง {a[0]} {a[1]}  <->  พบ {b[0]} {b[1]}")
 
+    problems += check_no_signal_capability()
     print()
     if problems:
         print(f"พบความต่าง {problems} จุด — Host กับ Station จะสื่อสารกันเพี้ยน")

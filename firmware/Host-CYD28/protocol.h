@@ -1,7 +1,7 @@
 /**
  * @file      protocol.h
  * @brief     โครงสร้างแพ็กเก็ต ESP-NOW Protocol v3 และรหัสเตือน
- * @version   2.0.1-CYD
+ * @version   2.0.4-CYD
  * @date      2026-11-27
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
@@ -15,6 +15,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 2.0.4-CYD | 2026-11-27 | เพิ่ม MSG_FLAG_NO_SIGNAL_OK (บิต 0x02 ของ struct_message.flags: Station ประกาศว่ารู้จักรหัส 6) และ alertCodeForBed(): ส่งรหัส NO DROP ให้เฉพาะ Station ที่ประกาศ ส่วนรุ่นเก่าได้ 0 เหมือนเดิม |
  * | 2.0.1-CYD | 2026-11-27 | เขียนใหม่ด่านที่ 2 (แกนเครือข่าย) ไม่นำโค้ดรุ่น 1.x มาปรับ |
  *
  * @warning  ยังไม่ได้ทดสอบบนฮาร์ดแวร์จริง ตรวจด้วยเครื่องมือจำลองบนเครื่อง PC เท่านั้น
@@ -31,6 +32,7 @@ typedef struct __attribute__((packed)) struct_message {
   uint32_t msSinceLastDrop;  // มิลลิวินาทีนับจากหยดล่าสุด (0 = ยังไม่มีหยด)
   float    batteryVolts;     // 0 = ไม่มีวงจรวัดแบตเตอรี่
   uint8_t  flags;            // bit0 = พยาบาลกดรับทราบเตือนใกล้หมดที่เตียง
+                             // bit1 = Station รู้จักรหัสเตือน 6 (NO DROP)
 } struct_message;            // 23 bytes
 
 typedef struct __attribute__((packed)) struct_host_sync {
@@ -67,10 +69,17 @@ constexpr uint8_t SYNC_FLAG_NEAR_END_ACK = 0x01;
 constexpr uint8_t SYNC_FLAG_HEARD        = 0x02;
 constexpr uint8_t SYNC_FLAG_REPORTS      = 0x04;
 constexpr uint8_t MSG_FLAG_NEAR_END_ACK  = 0x01;
+constexpr uint8_t MSG_FLAG_NO_SIGNAL_OK  = 0x02;   // [2.0.4-CYD] เพิ่ม: Station รุ่นที่รู้จักรหัส 6 (NO DROP) ใส่บิตนี้ทุกแพ็กเก็ต
 
 // Station รุ่นเก่าไม่รู้จักรหัส 6-7 จึงต้องแปลงเป็น NONE ก่อนส่งออกเสมอ
 inline uint8_t alertCodeForStation(uint8_t code) {
   return (code == ALERT_NO_SIGNAL || code == ALERT_LOST_LINK) ? (uint8_t)ALERT_NONE : code;
+}
+
+// [2.0.4-CYD] เพิ่ม: รหัสที่จะส่งให้ Station เฉพาะเตียง NO DROP (6) ส่งได้เมื่อ Station ประกาศรองรับ ส่วน LOST_LINK (7) เป็นรหัสของ Host เสมอ
+inline uint8_t alertCodeForBed(uint8_t code, bool stationKnowsNoSignal) {
+  if (code == ALERT_NO_SIGNAL && stationKnowsNoSignal) return ALERT_NO_SIGNAL;
+  return alertCodeForStation(code);
 }
 
 inline bool isCriticalAlert(uint8_t c) {

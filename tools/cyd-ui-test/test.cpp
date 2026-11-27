@@ -374,6 +374,35 @@ static void testSystemAndSilence() {
   CHECK(!snoozed(g_ms), "แตะซ้ำต้องยกเลิกการพัก");
 }
 
+
+// หน้าเปิดเครื่อง: โลโก้ถูกวาดเต็มกรอบกึ่งกลาง ค้างตามเวลา แตะข้ามได้ และปิดได้
+static void testSplash() {
+  splashDraw();
+  mark("splash");
+  CHECK(LOGO_PRESENT == 1 && LOGO_W <= 320 && LOGO_H <= 240, "ต้องมีโลโก้จริงและขนาดไม่เกินจอ");
+  const uint32_t t0 = millis();
+  CHECK(splashStartMs == t0, "ต้องจำเวลาเริ่มวาดโลโก้");
+  g_ms += 700;                                            // ระหว่างนั้นระบบอื่นเริ่มทำงานไปแล้ว 700 ms
+  const uint32_t before = millis();
+  splashWait([]() { return false; });
+  CHECK(millis() - t0 >= (uint32_t)CYD_SPLASH_MS && millis() - t0 < (uint32_t)CYD_SPLASH_MS + 20, "ต้องรอให้ครบเวลานับจากตอนวาด ไม่ใช่นับจากตอนเรียกรอ");
+  CHECK(millis() - before >= (uint32_t)CYD_SPLASH_MS - 700 - 5, "เวลาที่ใช้ไประหว่างเริ่มระบบต้องถูกหักออกจากการรอ");
+  splashDraw();
+  const uint32_t t1 = millis();
+  int calls = 0;
+  splashWait([&]() { return ++calls >= 5; });
+  CHECK(millis() - t1 < 100, "แตะจอต้องข้ามหน้าเปิดเครื่องทันที");
+  splashDraw();
+  g_ms += (uint32_t)CYD_SPLASH_MS + 1000;                 // เลยเวลาไปแล้ว (เริ่มระบบนาน) ต้องไม่รอเพิ่ม
+  const uint32_t t2 = millis();
+  splashWait([]() { return false; });
+  CHECK(millis() == t2, "เริ่มระบบนานเกินเวลาโลโก้แล้ว ต้องไม่รอเพิ่มอีก");
+  // สีที่วาดต้องมาจากไฟล์โลโก้จริง (พื้นขาว วงแหวน แดง ทอง)
+  uint32_t nonWhite = 0;
+  for (int i = 0; i < LOGO_W * LOGO_H; i++) if (LOGO_DATA[i] != 0xFFFF) nonWhite++;
+  CHECK(nonWhite > 5000 && nonWhite < (uint32_t)(LOGO_W * LOGO_H) * 9 / 10, "ภาพโลโก้ต้องมีเนื้อภาพจริง ไม่ใช่ว่างหรือเต็มสีเดียว");
+}
+
 static void testExtremeValues() {
   scenario();
   beds[0].cfg.targetRateHr = 3000; beds[0].cfg.planVolumeMl = 10000;
@@ -404,6 +433,7 @@ int main(int argc, char **argv) {
   testSystemAndSilence();
   printf("ทดสอบค่าสุดขั้ว\n");
   testExtremeValues();
+  testSplash();
   fclose(g_ops);
   if (fails) { printf("รวมล้มเหลว %d รายการ\n", fails); return 1; }
   printf("ผ่านทั้งหมด\n");
