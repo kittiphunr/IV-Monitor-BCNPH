@@ -430,6 +430,39 @@ static void testNoRedundantDraws() {
   }
 }
 
+// [2.5.0-CYD] หน้า TREND: ปุ่ม < > สลับเตียง วนครบ ป้ายแกนเวลาอยู่ใต้กราฟ และสรุปไม่คำนวณใหม่ถ้าไม่มีตัวอย่างใหม่
+static void testTrendScreen() {
+  scenario();
+  ui = UiState(); ui.scr = SCR_TREND; ui.bed = 0;
+  drawNow();
+  auto zoneRect = [&](uint8_t id, Zone &out) { for (uint8_t i = 0; i < zoneCount; i++) if (zones[i].id == id) { out = zones[i]; return true; } return false; };
+  Zone zp, zn, zb, zr;
+  CHECK(zoneRect(Z_TREND_PREV, zp) && zoneRect(Z_TREND_NEXT, zn) && zoneRect(Z_BACKBED, zb) && zoneRect(Z_RANGE, zr), "หน้า TREND ต้องมีปุ่มครบสี่ปุ่ม");
+  Zone all[4] = {zp, zn, zb, zr};
+  for (int i = 0; i < 4; i++) {
+    CHECK(all[i].x >= 0 && all[i].x + all[i].w <= 320 && all[i].y + all[i].h <= 240 && all[i].h >= 40 && all[i].w >= 56, "ปุ่มต้องอยู่ในจอและใหญ่พอแตะด้วยนิ้ว");
+    for (int j = i + 1; j < 4; j++) CHECK(all[i].x + all[i].w <= all[j].x || all[j].x + all[j].w <= all[i].x, "ปุ่มต้องไม่ทับกัน");
+  }
+  CHECK(zp.y + zp.h <= 240 && TR_Y + TR_H + 10 <= 150, "ป้ายแกนเวลาต้องไม่ชนบรรทัดสรุปที่ y=150");
+  const int n = activeBeds;
+  const uint32_t t = g_ms;
+  uiTap(zn.x + 5, zn.y + 5, t);
+  CHECK(ui.bed == 1 % n && ui.needFull, "กด > ต้องไปเตียงถัดไปและวาดเต็มจอ");
+  drawNow();
+  uiTap(zp.x + 5, zp.y + 5, t);
+  uiTap(zp.x + 5, zp.y + 5, t);
+  CHECK(ui.bed == (n - 1) % n, "กด < จากเตียง 1 ต้องวนไปเตียงสุดท้าย");
+  for (int i = 0; i < n; i++) { drawNow(); uiTap(zn.x + 5, zn.y + 5, t); }
+  CHECK(ui.bed == (n - 1) % n, "กด > ครบรอบต้องกลับที่เดิม");
+  // สรุปไม่คำนวณใหม่ทุก 0.5 วินาที: ข้อมูลเท่าเดิม = ไม่มีคำสั่งวาด
+  ui.bed = 0; drawNow();
+  const long m0 = opsEnd();
+  ui.lastRefresh = 0; uiRefresh(g_ms + 600);
+  CHECK(opsEnd() == m0, "หน้า TREND ข้อมูลเท่าเดิมต้องไม่วาดซ้ำ");
+  mark("trend_axis");
+  checkTextBounds("TREND");
+}
+
 static void testSplash() {
   splashDraw();
   mark("splash");
@@ -463,6 +496,11 @@ static void testSplash() {
   CHECK(millis() == t2, "เริ่มระบบนานเกินเวลาโลโก้แล้ว ต้องไม่รอเพิ่มอีก");
 
   // ---- แถบโหลดสไตล์ macOS: รางเทาเข้ม ส่วนขาวยาวขึ้นเรื่อย ๆ เต็มพอดีเมื่อครบเวลา ไม่ล้นราง ----
+  // ยังเริ่มระบบไม่เสร็จ: แถบต้องไม่เต็มค้าง หยุดที่เพดาน 90% แล้วเต็มเมื่อ splashFinish()
+  splashFinished = false;
+  CHECK(splashFillPx((uint32_t)CYD_SPLASH_MS * 10) == SPL_TRACK_W * SPL_CAP_PCT / 100 && splashFillPx((uint32_t)CYD_SPLASH_MS) < SPL_TRACK_W, "ระหว่างเริ่มระบบ แถบต้องหยุดที่เพดาน ไม่เต็มค้าง");
+  CHECK(splashFillPx((uint32_t)CYD_SPLASH_MS / 10) == SPL_TRACK_W / 10, "ช่วงต้นต้องวิ่งตามเวลาตามปกติ (ยังไม่ถึงเพดาน)");
+  splashFinished = true;
   CHECK(splashFillPx(0) == 0 && splashFillPx((uint32_t)CYD_SPLASH_MS) == SPL_TRACK_W && splashFillPx((uint32_t)CYD_SPLASH_MS * 10) == SPL_TRACK_W, "เริ่มที่ว่าง เต็มพอดีเมื่อครบเวลา และไม่เกินรางเมื่อเลยเวลา");
   CHECK(splashFillPx((uint32_t)CYD_SPLASH_MS / 2) == SPL_TRACK_W / 2, "ครึ่งเวลาต้องเต็มครึ่งราง");
   int lastFill = 0;
@@ -493,6 +531,24 @@ static void testSplash() {
   splashTick();
   CHECK(opsEnd() > mark1, "ส่วนเต็มยาวขึ้นต้องวาดใหม่");
   g_ms = 90000; splashDraw(); g_ms += (uint32_t)CYD_SPLASH_MS * 6 / 10; splashTick();
+  // ข้อความขั้นตอนใต้แถบ: วาดเมื่อเปลี่ยนเท่านั้น อยู่ในจอและไม่ทับแถบ และ splashFinish() ปลดเพดาน
+  g_ms = 120000; splashDraw();
+  const long ml0 = opsEnd();
+  splashStage("SD CARD");
+  CHECK(opsEnd() > ml0 && !strcmp(splashLabelShown, "SD CARD"), "เริ่มขั้นตอนใหม่ต้องวาดข้อความ");
+  const long ml1 = opsEnd();
+  splashStage("SD CARD");
+  CHECK(opsEnd() == ml1, "ข้อความเดิมและแถบเท่าเดิมต้องไม่วาดซ้ำ");
+  CHECK(!splashFinished, "ยังไม่เสร็จต้องไม่ปลดเพดาน");
+  g_ms += (uint32_t)CYD_SPLASH_MS * 2;
+  splashTick();
+  CHECK(splashLastFill == SPL_TRACK_W * SPL_CAP_PCT / 100, "เลยเวลาแต่เริ่มระบบยังไม่เสร็จ แถบต้องค้างที่เพดาน");
+  splashFinish();
+  CHECK(splashFinished && splashLastFill == SPL_TRACK_W && !strcmp(splashLabelShown, "READY"), "เริ่มระบบเสร็จแล้วแถบต้องเต็มและขึ้น READY");
+  {
+    const int ly = splashTrackY() + SPL_TRACK_H + 6;
+    CHECK(ly > splashTrackY() + SPL_TRACK_H && ly + 8 <= 240, "ข้อความขั้นตอนต้องอยู่ใต้แถบและในจอ");
+  }
   mark("splash_progress");
   checkTextBounds("SPLASH");
 }
@@ -542,7 +598,7 @@ static void fillStandardTrend() {
   runScenario(trend, tmp, 0, segs, n, now, acc, drops);
 }
 
-static void testTrendScreen() {
+static void testTrendControls() {
   scenario();
   fillStandardTrend();
   ui = UiState(); ui.scr = SCR_BED; ui.bed = 0; drawNow();
@@ -635,6 +691,7 @@ int main(int argc, char **argv) {
   printf("ทดสอบค่าสุดขั้ว\n");
   testExtremeValues();
   testNoRedundantDraws();
+  testTrendControls();
   testSplash();
   testTrendScreen();
   fclose(g_ops);

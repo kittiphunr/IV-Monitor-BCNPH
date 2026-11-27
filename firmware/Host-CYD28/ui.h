@@ -1,7 +1,7 @@
 /**
  * @file      ui.h
  * @brief     หน้าจอ Host (HOME / BED / BED SET / NUMPAD / SYSTEM) และการแตะ แนวนอน 320x240
- * @version   2.4.0-CYD
+ * @version   2.5.0-CYD
  * @date      2026-11-27
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
@@ -19,6 +19,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 2.5.0-CYD | 2026-11-27 | หน้า TREND: ค่าล่าสุด (จุด + NOW) · ป้ายแกนเวลา · ปุ่ม < > สลับเตียงในหน้ากราฟ · สรุปค่าคำนวณเฉพาะเมื่อมีตัวอย่างใหม่ (ไม่วนวงแหวนทุก 0.5 วินาที) |
  * | 2.4.0-CYD | 2026-11-27 | ตัวกันวาดซ้ำ (ลายเซ็นต่อช่อง) หน้า HOME/BED/TREND/SYSTEM วาดเฉพาะส่วนที่ค่าเปลี่ยน ลดทราฟฟิกบัส SPI และอาการกะพริบ · หน้า SYSTEM แสดงสถานะ SD แบบ OK/RETRY/NO |
  * | 2.2.0-CYD | 2026-11-27 | หน้า TREND (กราฟอัตราไหลรายนาที 30/60/240 นาที เส้นเป้าหมาย แถบเตือน ช่วงไม่มีข้อมูล และสรุปค่าเฉลี่ย/สูงสุด/ต่ำสุด/ปริมาตร) เปิดจากปุ่ม GRAPH ในหน้า BED |
  * | 2.1.0-CYD | 2026-11-27 | หน้า BED แสดงชื่อผู้ป่วยต่อท้ายเลขเตียงเมื่อเป็น ASCII ล้วน (ชื่อภาษาไทยแสดงบนเว็บ เพราะฟอนต์ของจอเป็น ASCII) หน้า SYSTEM แสดงชื่อ Wi-Fi ที่ตั้งไว้จริง |
@@ -51,7 +52,7 @@ enum ZoneId : uint8_t {
   Z_KEY = 40,                          // 40..49 = ปุ่มเลข 0..9
   Z_KEY_DOT = 50, Z_KEY_DEL, Z_KEY_OK,
   Z_BEDS_DEC = 60, Z_BEDS_INC, Z_BRI_DEC, Z_BRI_INC, Z_BUZZ_TOGGLE, Z_BUZZ_TEST, Z_CAL,
-  Z_GRAPH = 70, Z_RANGE, Z_BACKBED
+  Z_GRAPH = 70, Z_RANGE, Z_BACKBED, Z_TREND_PREV, Z_TREND_NEXT
 };
 
 struct Zone { int16_t x, y, w, h; uint8_t id; };
@@ -293,7 +294,7 @@ static void drawBed(bool full) {
 }
 
 // ---- หน้า TREND ------------------------------------------------------------------------------
-constexpr int TR_X = 8, TR_Y = 30, TR_W = 304, TR_H = 112;                  // กรอบกราฟ
+constexpr int TR_X = 8, TR_Y = 30, TR_W = 304, TR_H = 100;                  // กรอบกราฟ (เหลือที่ใต้กราฟให้ป้ายแกนเวลา y=132)
 static const int TREND_RANGES[3] = {30, 60, 240};
 
 // พิกัดของตัวอย่างที่เก่า ago นาที ในหน้าต่างกว้าง range นาที (ใหม่สุดอยู่ขวาสุด) และของค่า v บนแกนตั้ง 0..vmax (ฟังก์ชันล้วน ทดสอบได้)
@@ -337,9 +338,25 @@ static void drawTrendChart(const TrendRing &r, int range) {
   char s[24];
   snprintf(s, sizeof(s), "%.0f", (double)vmax);
   txt(TR_X + 3, TR_Y + 3, 1, C_GRAY, C_BLACK, s);
+  // [2.5.0-CYD] เพิ่ม: ค่าล่าสุด (จุดที่ปลายเส้นและตัวเลข NOW มุมขวาบน) ถ้าตัวอย่างล่าสุดมีข้อมูล
+  if (n > 0 && (r.newest(0).flags & TS_VALID)) {
+    const TrendSample &lx = r.newest(0);
+    const int lx_x = trendX(0, range), lx_y = trendY((float)lx.rate, vmax);
+    tft.fillCircle(lx_x, lx_y, 2, (lx.flags & TS_RUNNING) ? C_GREEN : C_CYAN);
+    snprintf(s, sizeof(s), "NOW %u", (unsigned)lx.rate);
+    txt(TR_X + TR_W - 4 - (int)strlen(s) * 6, TR_Y + 3, 1, C_WHITE, C_BLACK, s);
+  }
+  // [2.5.0-CYD] เพิ่ม: ป้ายแกนเวลาใต้กราฟ (ซ้าย = ย้อนหลังสุด กลาง = ครึ่งช่วง ขวา = ปัจจุบัน)
+  tft.fillRect(TR_X, TR_Y + TR_H + 1, TR_W, 9, C_BLACK);
+  snprintf(s, sizeof(s), "-%dm", range);
+  txt(TR_X, TR_Y + TR_H + 2, 1, C_GRAY, C_BLACK, s);
+  snprintf(s, sizeof(s), "-%dm", range / 2);
+  txtc(TR_X, TR_Y + TR_H + 2, TR_W, 1, C_GRAY, C_BLACK, s);
+  txt(TR_X + TR_W - 3 * 6, TR_Y + TR_H + 2, 1, C_GRAY, C_BLACK, "now");
   if (n == 0) txtc(TR_X, TR_Y + TR_H / 2 - 4, TR_W, 1, C_GRAY, C_BLACK, "NO DATA YET (1 SAMPLE PER MINUTE)");
 }
 
+static bool trendSumValid = false;
 static void drawTrend(bool full) {
   const int range = TREND_RANGES[ui.trendRangeIdx % 3];
   const TrendRing &r = trend.ring[ui.bed];
@@ -350,9 +367,12 @@ static void drawTrend(bool full) {
     tft.fillScreen(C_BLACK);
     snprintf(s, sizeof(s), "BED %d TREND", ui.bed + 1);
     topBar(s);
-    uiBtn(Z_BACKBED, "BACK", 4, 190, 96, 46, C_PANEL);
-    uiBtn(Z_RANGE, "RANGE", 108, 190, 96, 46, C_PANEL);
+    uiBtn(Z_BACKBED, "BACK", 4, 190, 76, 46, C_PANEL);
+    uiBtn(Z_RANGE, "RANGE", 84, 190, 76, 46, C_PANEL);
+    uiBtn(Z_TREND_PREV, "<", 188, 190, 60, 46, C_PANEL, C_WHITE, 3);             // [2.5.0-CYD] เพิ่ม: สลับเตียงในหน้ากราฟ ไม่ต้องกลับไปหน้า BED
+    uiBtn(Z_TREND_NEXT, ">", 256, 190, 60, 46, C_PANEL, C_WHITE, 3);
     ui.trendDrawnTotal = 0xFFFFFFFFu;
+    trendSumValid = false;
   }
   snprintf(s, sizeof(s), "%d MIN", range);
   txtOnce(0, 228, 6, 2, C_AMBER, C_PANEL, s);                                 // "240 MIN" กว้าง 84 พิกเซล ชิดขวาไม่ล้น
@@ -360,17 +380,26 @@ static void drawTrend(bool full) {
     ui.trendDrawnTotal = r.totalMinutes;
     drawTrendChart(r, range);
   }
-  const TrendSummary sm = trendSummarize(r, range, beds[ui.bed].cfg.dropFactor);
-  char t[40];
-  snprintf(t, sizeof(t), "AVG %.0f  MIN %u  MAX %u", (double)sm.avgRate, (unsigned)sm.minRate, (unsigned)sm.maxRate);
-  snprintf(s, sizeof(s), "%-31.31s", t);                                       // ข้อความฝั่งซ้ายยาวไม่เกิน 31 ตัว (ไม่ชนคอลัมน์คำอธิบายที่ x=200)
-  txtOnce(1, 8, 150, 1, C_WHITE, C_BLACK, s);
-  snprintf(t, sizeof(t), "GIVEN %.0f mL  IN-RANGE %d%%", (double)sm.totalMl, sm.withinPct);
-  snprintf(s, sizeof(s), "%-31.31s", t);
-  txtOnce(2, 8, 162, 1, C_WHITE, C_BLACK, s);
-  snprintf(t, sizeof(t), "ALERTS %d  NO DATA %d MIN", sm.alertEpisodes, sm.gapMinutes);
-  snprintf(s, sizeof(s), "%-31.31s", t);
-  txtOnce(3, 8, 174, 1, sm.alertEpisodes ? C_AMBER : C_GRAY, C_BLACK, s);
+  // [2.5.0-CYD] แก้: สรุปค่าคำนวณใหม่เฉพาะเมื่อมีตัวอย่างใหม่ (นาทีละครั้ง) เดิมวนทั้งวงแหวน 240 ช่องทุก 0.5 วินาที
+  static char sumL[3][40];
+  static bool sumAmber = false;
+  static uint32_t sumTotal = 0;
+  static int sumRange = 0, sumBed = -1;
+  if (!trendSumValid || sumTotal != r.totalMinutes || sumRange != range || sumBed != ui.bed) {
+    trendSumValid = true; sumTotal = r.totalMinutes; sumRange = range; sumBed = ui.bed;
+    const TrendSummary sm = trendSummarize(r, range, beds[ui.bed].cfg.dropFactor);
+    char t[40];
+    snprintf(t, sizeof(t), "AVG %.0f  MIN %u  MAX %u", (double)sm.avgRate, (unsigned)sm.minRate, (unsigned)sm.maxRate);
+    snprintf(sumL[0], sizeof(sumL[0]), "%-31.31s", t);                         // ข้อความฝั่งซ้ายยาวไม่เกิน 31 ตัว (ไม่ชนคอลัมน์คำอธิบายที่ x=200)
+    snprintf(t, sizeof(t), "GIVEN %.0f mL  IN-RANGE %d%%", (double)sm.totalMl, sm.withinPct);
+    snprintf(sumL[1], sizeof(sumL[1]), "%-31.31s", t);
+    snprintf(t, sizeof(t), "ALERTS %d  NO DATA %d MIN", sm.alertEpisodes, sm.gapMinutes);
+    snprintf(sumL[2], sizeof(sumL[2]), "%-31.31s", t);
+    sumAmber = sm.alertEpisodes != 0;
+  }
+  txtOnce(1, 8, 150, 1, C_WHITE, C_BLACK, sumL[0]);
+  txtOnce(2, 8, 162, 1, C_WHITE, C_BLACK, sumL[1]);
+  txtOnce(3, 8, 174, 1, sumAmber ? C_AMBER : C_GRAY, C_BLACK, sumL[2]);
   if (full) {                                                                  // คำอธิบายสี (คงที่ จึงวาดครั้งเดียว)
     txt(200, 150, 1, C_GREEN, C_BLACK, "GREEN rate");
     txt(200, 162, 1, C_CYAN, C_BLACK, "CYAN target");
@@ -534,6 +563,8 @@ static void uiTap(int x, int y, uint32_t now) {
     case Z_GRAPH:   uiGo(SCR_TREND); break;
     case Z_BACKBED: uiGo(SCR_BED); break;
     case Z_RANGE:   ui.trendRangeIdx = (uint8_t)((ui.trendRangeIdx + 1) % 3); ui.needFull = true; break;
+    case Z_TREND_PREV: ui.bed = (ui.bed + activeBeds - 1) % activeBeds; ui.needFull = true; break;
+    case Z_TREND_NEXT: ui.bed = (ui.bed + 1) % activeBeds; ui.needFull = true; break;
     case Z_NEWBAG:  ui.confirmBag = true; uiDraw(false); break;
     case Z_NO:      ui.confirmBag = false; ui.needFull = true; break;
     case Z_YES:
