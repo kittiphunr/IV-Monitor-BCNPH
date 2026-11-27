@@ -231,6 +231,7 @@ int main(int argc, char** argv) {
     { ALERT_TOO_SLOW,  "13_alert_too_slow" },
     { ALERT_NEAR_END,  "14_alert_near_end" },
     { ALERT_COMPLETE,  "15_alert_finished" },
+    { ALERT_NO_SIGNAL, "15b_alert_no_drop" },
   };
   for (auto &a : alerts) {
     uiAlertCode = a.code;

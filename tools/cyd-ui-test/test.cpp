@@ -374,6 +374,97 @@ static void testSystemAndSilence() {
   CHECK(!snoozed(g_ms), "แตะซ้ำต้องยกเลิกการพัก");
 }
 
+
+// ---- หน้าเปิดเครื่อง: โลโก้บนพื้นดำ + แถบโหลดสไตล์ XP ----
+// อ่านคำสั่งวาด RECT ที่เพิ่มต่อท้ายไฟล์ตั้งแต่ตำแหน่ง from คืนรายการ (x,y,w,h) ของสี color
+struct R4 { int x, y, w, h; };
+static std::vector<R4> rectsSince(long from, unsigned color) {
+  fflush(g_ops);
+  std::vector<R4> out;
+  FILE *f = fopen(g_opsPath.c_str(), "r");
+  fseek(f, from, SEEK_SET);
+  static char line[400000];
+  while (fgets(line, sizeof(line), f)) {
+    if (strncmp(line, "RECT ", 5) != 0) continue;
+    int x, y, w, h, fill; unsigned c;
+    if (sscanf(line, "RECT %d %d %d %d %u %d", &x, &y, &w, &h, &c, &fill) == 6 && c == color && fill == 1) out.push_back({x, y, w, h});
+  }
+  fclose(f);
+  return out;
+}
+static long opsEnd() { fflush(g_ops); return ftell(g_ops); }
+
+static void testSplash() {
+  splashDraw();
+  mark("splash");
+  CHECK(LOGO_PRESENT == 1 && LOGO_W <= 320 && LOGO_H <= 200, "ต้องมีโลโก้จริง และเหลือที่ให้แถบโหลดด้านล่าง");
+  const int trackY = splashTrackY();
+  CHECK(6 + LOGO_H < trackY, "แถบโหลดต้องไม่ทับโลโก้");
+  CHECK(trackY + SPL_TRACK_H <= 240 && splashTrackX() >= 0 && splashTrackX() + SPL_TRACK_W <= 320, "แถบโหลดต้องอยู่ในจอ");
+  // พื้นหลังโลโก้ต้องเป็นสีดำ (ตามที่ขอ) และมีเนื้อภาพจริง
+  uint32_t nonBlack = 0, corner = 0;
+  for (int i = 0; i < LOGO_W * LOGO_H; i++) if (LOGO_DATA[i] != 0x0000) nonBlack++;
+  corner = LOGO_DATA[0] | LOGO_DATA[LOGO_W - 1] | LOGO_DATA[(LOGO_H - 1) * LOGO_W] | LOGO_DATA[LOGO_W * LOGO_H - 1];
+  CHECK(corner == 0, "มุมของภาพ (พื้นหลัง) ต้องเป็นสีดำ");
+  CHECK(nonBlack > 5000 && nonBlack < (uint32_t)(LOGO_W * LOGO_H) * 9 / 10, "ภาพโลโก้ต้องมีเนื้อภาพจริง ไม่ใช่ว่างหรือเต็มสีเดียว");
+  // เวลา: ค้างครบ หักเวลาที่ใช้เริ่มระบบ แตะข้ามได้ ไม่รอเพิ่มถ้าเลยเวลา
+  const uint32_t t0 = millis();
+  CHECK(splashStartMs == t0, "ต้องจำเวลาเริ่มวาดโลโก้");
+  g_ms += 700;
+  const uint32_t before = millis();
+  splashWait([]() { return false; });
+  CHECK(millis() - t0 >= (uint32_t)CYD_SPLASH_MS && millis() - t0 < (uint32_t)CYD_SPLASH_MS + 20, "ต้องรอให้ครบเวลานับจากตอนวาด ไม่ใช่นับจากตอนเรียกรอ");
+  CHECK(millis() - before >= (uint32_t)CYD_SPLASH_MS - 700 - 5, "เวลาที่ใช้ระหว่างเริ่มระบบต้องถูกหักออกจากการรอ");
+  splashDraw();
+  const uint32_t t1 = millis();
+  int calls = 0;
+  splashWait([&]() { return ++calls >= 5; });
+  CHECK(millis() - t1 < 100, "แตะจอต้องข้ามหน้าเปิดเครื่องทันที");
+  splashDraw();
+  g_ms += (uint32_t)CYD_SPLASH_MS + 1000;
+  const uint32_t t2 = millis();
+  splashWait([]() { return false; });
+  CHECK(millis() == t2, "เริ่มระบบนานเกินเวลาโลโก้แล้ว ต้องไม่รอเพิ่มอีก");
+
+  // ---- แถบโหลด XP: บล็อกวิ่งจากซ้ายไปขวาวนซ้ำ ไม่ล้นกรอบ ----
+  const int innerX = splashTrackX() + 2, innerRight = innerX + SPL_INNER_W;
+  CHECK(SPL_BLOCKS == 3 && SPL_CYCLE > SPL_INNER_W, "สามก้อนและต้องวิ่งพ้นขอบก่อนวนใหม่");
+  int lastHead = -1; bool wrapped = false;
+  for (uint32_t step = 0; step < (uint32_t)SPL_CYCLE * 2 + 3; step++) {
+    const int h = splashHeadPos(step * SPL_STEP_MS);
+    if (h < lastHead) wrapped = true; else CHECK(lastHead < 0 || h == lastHead + 1, "ต้องขยับทีละช่อง");
+    lastHead = h;
+  }
+  CHECK(wrapped, "ต้องวนกลับมาเริ่มใหม่");
+  const uint32_t samples[] = {0, 5, 20, 60, (uint32_t)SPL_INNER_W / 2, (uint32_t)SPL_INNER_W, (uint32_t)SPL_INNER_W + 10, (uint32_t)SPL_CYCLE - 1};
+  for (uint32_t st : samples) {
+    g_ms = 50000; splashStartMs = g_ms - st * SPL_STEP_MS;       // ย้อนเวลาเริ่มให้ได้ช่องที่ต้องการพอดี
+    splashLastStep = 0xFFFFFFFFu;
+    const long from = opsEnd();
+    splashTick();
+    auto mids = rectsSince(from, SPL_C_MID);
+    int expect = 0;                                              // นับเองแยกจากโค้ด: ก้อนที่ทับช่วง [0, INNER_W)
+    for (int b = 0; b < SPL_BLOCKS; b++) { const int right = (int)st - b * (SPL_BLOCK_W + SPL_BLOCK_GAP); if (right > 0 && right - SPL_BLOCK_W < SPL_INNER_W) expect++; }
+    CHECK((int)mids.size() == expect, "จำนวนบล็อกที่เห็นต้องตรงตามตำแหน่ง");
+    for (auto &m : mids) {
+      CHECK(m.x >= innerX && m.x + m.w <= innerRight, "บล็อกต้องไม่ล้นกรอบในแนวนอน");
+      CHECK(m.y >= trackY && m.y + m.h <= trackY + SPL_TRACK_H && m.w > 0 && m.w <= SPL_BLOCK_W, "บล็อกต้องอยู่ในกรอบแนวตั้งและกว้างไม่เกินหนึ่งก้อน");
+    }
+  }
+  // ไม่วาดซ้ำในช่องเดียวกัน (เรียกถี่ได้โดยไม่กินเวลา SPI) และขยับเมื่อถึงช่องถัดไป
+  g_ms = 70000; splashStartMs = g_ms; splashLastStep = 0xFFFFFFFFu;
+  splashTick();
+  const long mark1 = opsEnd();
+  splashTick(); splashTick();
+  CHECK(opsEnd() == mark1, "เรียกซ้ำในช่องเดียวกันต้องไม่วาดซ้ำ");
+  g_ms += SPL_STEP_MS;
+  splashTick();
+  CHECK(opsEnd() > mark1, "ถึงช่องถัดไปต้องวาดใหม่");
+  g_ms = 90000; splashDraw(); for (int i = 0; i < 30; i++) { g_ms += SPL_STEP_MS; splashTick(); }
+  mark("splash_progress");
+  checkTextBounds("SPLASH");
+}
+
 static void testExtremeValues() {
   scenario();
   beds[0].cfg.targetRateHr = 3000; beds[0].cfg.planVolumeMl = 10000;
@@ -404,6 +495,7 @@ int main(int argc, char **argv) {
   testSystemAndSilence();
   printf("ทดสอบค่าสุดขั้ว\n");
   testExtremeValues();
+  testSplash();
   fclose(g_ops);
   if (fails) { printf("รวมล้มเหลว %d รายการ\n", fails); return 1; }
   printf("ผ่านทั้งหมด\n");

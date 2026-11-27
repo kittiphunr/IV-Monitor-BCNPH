@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <cstring>
 #include "Arduino.h"
+#include "board.h"
 #include "touch_cal.h"
 #include "protocol.h"
 #include <WiFi.h>
@@ -47,9 +48,16 @@ static bool holdPen = false;
 static int penRx = 0, penRy = 0;
 static int lvl[64], edge, cmdByte, outBits, outBit;
 
+static bool simStarted = false;
+static unsigned long simFirstCall = 0;
 static void simUpdate() {
   if (holdPen) { penDown = true; return; }
   if (!simEnabled) { penDown = false; return; }
+  if (!simStarted) {                                      // ไม่แตะระหว่างหน้าเปิดเครื่อง (แตะจะข้ามโลโก้) เริ่มนับเมื่อโลโก้จบแล้ว
+    if (simFirstCall == 0) simFirstCall = g_ms;           // การอ่านทัชครั้งแรกเกิดตอนรอโลโก้
+    if (g_ms - simFirstCall < (unsigned long)CYD_SPLASH_MS + 50) { penDown = false; return; }
+    simStarted = true; simT0 = g_ms;
+  }
   const unsigned long t = g_ms - simT0, slot = 1100;        // 400 ms ปล่อย + 700 ms กด ต่อหนึ่งจุด
   const unsigned long i = t / slot, ph = t % slot;
   if (i < 3 && ph >= 400) { penDown = true; truthRaw(targets[i].sx, targets[i].sy, penRx, penRy); penRx += (int)(g_ms % 5) - 2; }

@@ -112,6 +112,12 @@ int main(int argc,char** argv){
   stateNeedsRedraw = true; drawPage1Framework(); updatePage1Dynamic(); emitMark("p1_noflow");
   drawEmergencyScreen(ALERT_OCCLUSION); updateEmergencyDynamic(); emitMark("emergency");
 
+  // NO DROP (รหัส 6 จาก Host: ติดต่อได้แต่เซนเซอร์ไม่เคยจับหยดเลย) หน้าเตือนเต็มจอและหน้าหลักแสดงสถานะเดียวกัน
+  uiAlertCode = ALERT_NO_SIGNAL; currentFlowRate_ml_hr = 0; totalDrops = 0; totalVolumeMl = 0;
+  stateNeedsRedraw = true; drawPage1Framework(); updatePage1Dynamic(); emitMark("p1_nodrop");
+  drawEmergencyScreen(ALERT_NO_SIGNAL); updateEmergencyDynamic(); emitMark("emergency_nodrop");
+  totalDrops = 620 * 20; totalVolumeMl = 620;             // คืนค่าให้ภาพถัดไปเหมือนเดิมทุกพิกเซล
+
   // หยุดชั่วคราว + screensaver + หน้าอื่น
   uiAlertCode = ALERT_NONE; isRunning = false;
   stateNeedsRedraw = true; drawPage1Framework(); updatePage1Dynamic(); emitMark("p1_paused");

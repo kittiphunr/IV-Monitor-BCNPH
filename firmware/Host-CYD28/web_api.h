@@ -1,7 +1,7 @@
 /**
  * @file      web_api.h
  * @brief     ตรรกะล้วนของ API เว็บ: สร้าง JSON และตรวจค่าที่รับเข้ามา
- * @version   2.0.3-CYD
+ * @version   2.0.4-CYD
  * @date      2026-11-27
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
@@ -15,6 +15,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 2.0.4-CYD | 2026-11-27 | state JSON เพิ่มฟิลด์ noDropSync (Station เตียงนั้นรู้จัก NO DROP หรือไม่) |
  * | 2.0.3-CYD | 2026-11-27 | เขียนใหม่ด่านที่ 4 (เว็บ นาฬิกา SD ประวัติเหตุการณ์) ไม่นำโค้ดรุ่น 1.x มาปรับ |
  *
  * @warning  ยังไม่ได้ทดสอบบนฮาร์ดแวร์จริง ตรวจด้วยเครื่องมือจำลองบนเครื่อง PC เท่านั้น
@@ -93,12 +94,12 @@ inline ApiErr apiStateJson(char *out, size_t cap, const ApiCtx &c) {
     j.fmt("%s{\"id\":%d,\"state\":", i ? "," : "", i + 1);
     j.str(bedStateText(b, c.now));
     j.fmt(",\"alert\":%u,\"online\":%s,\"running\":%s,\"rate\":%.1f,\"target\":%.1f,\"plan\":%.1f,\"vol\":%.1f,\"drops\":%lu,"
-          "\"df\":%u,\"near\":%u,\"left\":%d,\"link\":%u,\"rssi\":%d,\"batt\":%.2f,\"conflict\":%s,\"ack\":%s,\"resetSeq\":%u}",
+          "\"df\":%u,\"near\":%u,\"left\":%d,\"link\":%u,\"rssi\":%d,\"batt\":%.2f,\"conflict\":%s,\"ack\":%s,\"resetSeq\":%u,\"noDropSync\":%s}",
           (unsigned)b.alert, bedOnline(b, c.now) ? "true" : "false", b.running ? "true" : "false", (double)apiNum(b.flowRateHr),
           (double)apiNum(b.cfg.targetRateHr), (double)apiNum(b.cfg.planVolumeMl), (double)apiNum(bedVolumeMl(b)),
           (unsigned long)b.totalDrops, (unsigned)safeDropFactor(b.cfg.dropFactor), (unsigned)safeNearPct(b.cfg.nearEndPct),
           bedRemainingMin(b), (unsigned)b.linkPct, (int)b.rssi, (double)apiNum(b.batteryV), b.idConflict ? "true" : "false",
-          b.nearEndAck ? "true" : "false", (unsigned)b.cfg.resetSeq);
+          b.nearEndAck ? "true" : "false", (unsigned)b.cfg.resetSeq, b.supportsNoSignal ? "true" : "false");
   }
   j.fmt("]}");
   return j.over ? API_OVERFLOW : API_OK;

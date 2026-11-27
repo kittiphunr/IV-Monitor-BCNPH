@@ -180,9 +180,55 @@ static void testScheduler() {
   CHECK(z.next(t + 5000, 0) == -1, "ไม่มีเตียงเปิดใช้ต้องไม่ส่ง");
 }
 
+
+static void testNoDropCapability() {
+  // Station ประกาศความสามารถผ่านบิต 0x02 ของ flags: ต้องจำเฉพาะเตียงที่ประกาศ และอ่านใหม่ทุกแพ็กเก็ต
+  Bed b; b.cfg.targetRateHr = 60;
+  uint32_t t = 1000;
+  bedIngest(b, pkt(1, true, 0, 0, 0, 0x00), -50, MAC_A, t);
+  CHECK(!b.supportsNoSignal, "Station รุ่นเก่า (ไม่มีบิต) ต้องไม่ถูกจดว่ารองรับ");
+  bedIngest(b, pkt(1, true, 0, 0, 0, MSG_FLAG_NO_SIGNAL_OK), -50, MAC_A, t += 1000);
+  CHECK(b.supportsNoSignal, "ประกาศแล้วต้องจดว่ารองรับ");
+  CHECK(!b.nearEndAck, "บิต 0x02 ต้องไม่ถูกตีเป็นรับทราบใกล้หมด (บิต 0x01)");
+  bedIngest(b, pkt(1, true, 0, 0, 0, MSG_FLAG_NO_SIGNAL_OK | MSG_FLAG_NEAR_END_ACK), -50, MAC_A, t += 1000);
+  CHECK(b.supportsNoSignal, "สองบิตพร้อมกันต้องอ่านได้ทั้งคู่");
+  bedIngest(b, pkt(1, true, 0, 0, 0, 0x00), -50, MAC_A, t += 1000);
+  CHECK(!b.supportsNoSignal, "เปลี่ยนไปใช้ Station รุ่นเก่าในเตียงเดิม ต้องเลิกส่งรหัส 6 ทันที");
+  // รหัสที่ส่งออก
+  b.alert = ALERT_NO_SIGNAL;
+  b.supportsNoSignal = true;
+  CHECK(bedBuildSync(b, 0, 1, 0, t).alertCode == ALERT_NO_SIGNAL, "Station รองรับต้องได้รหัส 6");
+  b.supportsNoSignal = false;
+  CHECK(bedBuildSync(b, 0, 1, 0, t).alertCode == ALERT_NONE, "Station รุ่นเก่าต้องได้ 0 (ไม่รู้จักรหัส 6)");
+  b.alert = ALERT_LOST_LINK; b.supportsNoSignal = true;
+  CHECK(bedBuildSync(b, 0, 1, 0, t).alertCode == ALERT_NONE, "LOST_LINK เป็นรหัสภายใน Host ห้ามหลุดออกไปแม้ Station รองรับ");
+  const uint8_t others[] = {ALERT_NONE, ALERT_TOO_FAST, ALERT_TOO_SLOW, ALERT_NEAR_END, ALERT_COMPLETE, ALERT_OCCLUSION};
+  for (uint8_t code : others) {
+    b.alert = code;
+    b.supportsNoSignal = false; const uint8_t a = bedBuildSync(b, 0, 1, 0, t).alertCode;
+    b.supportsNoSignal = true;  const uint8_t c = bedBuildSync(b, 0, 1, 0, t).alertCode;
+    CHECK(a == code && c == code, "รหัส 0-5 ต้องส่งออกตามจริงไม่ว่า Station จะประกาศหรือไม่");
+  }
+  CHECK(alertCodeForBed(ALERT_NO_SIGNAL, true) == 6 && alertCodeForBed(ALERT_NO_SIGNAL, false) == 0, "alertCodeForBed ตรงๆ");
+  CHECK(MSG_FLAG_NO_SIGNAL_OK == 0x02 && SYNC_FLAG_HEARD == 0x02, "ค่าบิต (อยู่คนละโครงสร้าง จึงใช้เลขเดียวกันได้)");
+  // ตลอดเส้นทางจริง: เตียงที่ประกาศรองรับ ออนไลน์ ไม่เคยมีหยด 90 วินาที -> NO_SIGNAL -> Sync ส่งรหัส 6
+  Bed n; n.cfg.targetRateHr = 60; uint32_t u = 1000;
+  uint8_t code = 0;
+  for (uint32_t e = 0; e < 92000; e += 1000) {
+    u += 1000;
+    bedIngest(n, pkt(1, true, 0, 0, 0, MSG_FLAG_NO_SIGNAL_OK), -50, MAC_A, u);
+    code = bedEvaluate(n, u); n.alert = code;
+  }
+  CHECK(code == ALERT_NO_SIGNAL, "ไม่เคยมีหยด 90 วินาทีต้องเป็น NO_SIGNAL");
+  CHECK(bedBuildSync(n, 0, 1, 0, u).alertCode == 6, "Sync ของเตียงนี้ต้องพก NO DROP ไปให้ Station");
+  bedIngest(n, pkt(1, true, 3, 60, 200, MSG_FLAG_NO_SIGNAL_OK), -50, MAC_A, u += 1000);
+  n.alert = bedEvaluate(n, u);
+  CHECK(bedBuildSync(n, 0, 1, 0, u).alertCode == 0, "มีหยดแล้วต้องเลิกส่งรหัส 6");
+}
+
 int main() {
   testOnlineAndWrap(); testLostLink(); testOcclusion(); testRateDeviation(); testVolumeAlerts();
-  testNoSignal(); testNewBagAndSync(); testPlausibility(); testLinkAndConflict(); testScheduler();
+  testNoSignal(); testNoDropCapability(); testNewBagAndSync(); testPlausibility(); testLinkAndConflict(); testScheduler();
   if (fails) { printf("รวมล้มเหลว %d รายการ\n", fails); return 1; }
   printf("ผ่านทั้งหมด\n");
   return 0;

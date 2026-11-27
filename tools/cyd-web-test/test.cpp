@@ -221,6 +221,29 @@ static void testEventsFlow() {
   clockSynced = false;
 }
 
+
+// เส้นทางจริงทั้งสาย: Station ประกาศรองรับ -> ไม่เคยมีหยด 90 วินาที -> Host ส่งรหัส 6 ให้เตียงนั้นเท่านั้น และเว็บแสดงสถานะ
+static void testNoDropEndToEnd() {
+  reset();
+  clockSynced = false;
+  beds[0].cfg.targetRateHr = 60; beds[1].cfg.targetRateHr = 60;
+  for (int sec = 0; sec < 95; sec++) {
+    inject(mk(1, 1, 0, 0, 0, MSG_FLAG_NO_SIGNAL_OK));      // Station รุ่นใหม่
+    inject(mk(2, 1, 0, 0, 0, 0));                          // Station รุ่นเก่า (ไม่ประกาศ)
+    runMs(1000);
+  }
+  CHECK(beds[0].alert == ALERT_NO_SIGNAL && beds[1].alert == ALERT_NO_SIGNAL, "ทั้งสองเตียงต้องเป็น NO_SIGNAL ที่ Host");
+  int code1 = -1, code2 = -1;
+  for (int i = 0; i < g_sentCount; i++) { if (g_sent[i].stationId == 1) code1 = g_sent[i].alertCode; if (g_sent[i].stationId == 2) code2 = g_sent[i].alertCode; }
+  CHECK(code1 == ALERT_NO_SIGNAL, "Sync ของ Station รุ่นใหม่ต้องมีรหัส 6");
+  CHECK(code2 == ALERT_NONE, "Sync ของ Station รุ่นเก่าต้องเป็น 0 ไม่ถูกรบกวน");
+  CHECK(webCall(HTTP_GET, "/api/state") == 200, "state");
+  CHECK(g_web.body.find("\"noDropSync\":true") != std::string::npos && g_web.body.find("\"noDropSync\":false") != std::string::npos, "เว็บต้องบอกว่าเตียงไหนรองรับ NO DROP");
+  bool sawEvent = false;
+  for (int i = 0; i < events.size(); i++) if (events.newest(i).type == EV_ALERT && events.newest(i).code == ALERT_NO_SIGNAL) sawEvent = true;
+  CHECK(sawEvent, "ต้องลงประวัติ ALERT NO_SIGNAL");
+}
+
 static void testRingAndCsv() {
   EventLog log;
   for (int i = 0; i < 60; i++) log.add(1000u * i, 0, (uint8_t)(1 + i % 5), EV_ALERT, ALERT_TOO_FAST);
@@ -293,6 +316,7 @@ int main() {
   testNewBagAndAck();
   testClock();
   testEventsFlow();
+  testNoDropEndToEnd();
   testRingAndCsv();
   testStateJsonWorstCase();
   testNumbers();

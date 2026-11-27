@@ -17,6 +17,12 @@ public:
   void drawPixel(int x,int y,uint16_t c){ fprintf(g_ops,"RECT %d %d 1 1 %u 1\n",x,y,c); }
   void fillCircle(int x,int y,int r,uint16_t c){ fprintf(g_ops,"CIRC %d %d %d %u\n",x,y,r,c); }
   void drawCircle(int x,int y,int r,uint16_t c){ fprintf(g_ops,"CIRCO %d %d %d %u\n",x,y,r,c); }
+  // ภาพ RGB565 (รับทั้งอาร์เรย์ใน RAM และ PROGMEM เพราะบนพรีวิวสองแบบเหมือนกัน) บันทึกพิกเซลทั้งหมดเป็นเลขฐานสิบหก
+  void drawRGBBitmap(int x,int y,const uint16_t* bm,int w,int h){
+    fprintf(g_ops,"RGBBMP %d %d %d %d ",x,y,w,h);
+    for(int i=0;i<w*h;i++) fprintf(g_ops,"%04x",(unsigned)bm[i]);
+    fprintf(g_ops,"\n");
+  }
   void setTextSize(uint8_t s){ tsize = s ? s : 1; }
   void setTextColor(uint16_t c,uint16_t b){ tcolor=c; tbg=b; }
   void setTextWrap(bool){}

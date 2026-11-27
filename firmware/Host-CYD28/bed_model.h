@@ -1,7 +1,7 @@
 /**
  * @file      bed_model.h
  * @brief     แบบจำลองเตียง: รับแพ็กเก็ต สถานะออนไลน์ การตัดสินรหัสเตือน คุณภาพลิงก์ ตัวจัดช่วงส่ง Sync
- * @version   2.0.3-CYD
+ * @version   2.0.4-CYD
  * @date      2026-11-27
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
@@ -15,6 +15,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 2.0.4-CYD | 2026-11-27 | Bed::supportsNoSignal อ่านจากบิต 0x02 ของแพ็กเก็ตล่าสุด และ bedBuildSync() ส่งรหัส NO DROP (6) ให้เฉพาะเตียงที่ประกาศรองรับ เตียงรุ่นเก่ายังได้ 0 เพื่อไม่ให้ Station ที่ไม่รู้จักรหัสนี้ทำงานผิด |
  * | 2.0.3-CYD | 2026-11-27 | SyncScheduler::isPending() สำหรับทดสอบว่ามีคำขอส่งด่วนค้างหรือไม่ |
  * | 2.0.2-CYD | 2026-11-27 | เพิ่ม bedRemainingMin() สำหรับหน้าจอด่านที่ 3 |
  * | 2.0.1-CYD | 2026-11-27 | เขียนใหม่ด่านที่ 2 (แกนเครือข่าย) ไม่นำโค้ดรุ่น 1.x มาปรับ |
@@ -77,6 +78,7 @@ struct Bed {
   uint8_t  flips = 0;
   uint32_t flipWindowMs = 0;
   bool     idConflict = false;
+  bool     supportsNoSignal = false;   // [2.0.4-CYD] เพิ่ม: Station ประกาศว่ารู้จักรหัส 6 (อ่านใหม่ทุกแพ็กเก็ต)
 };
 
 inline bool bedOnline(const Bed &b, uint32_t now) {
@@ -147,6 +149,7 @@ inline void bedIngest(Bed &b, const struct_message &m, int8_t rssi, const uint8_
   if (b.rxWindow < 0xFFFF) b.rxWindow++;
   b.rxTotal++;
   if ((m.flags & MSG_FLAG_NEAR_END_ACK) && b.cfg.planVolumeMl > 0) b.nearEndAck = true;
+  b.supportsNoSignal = (m.flags & MSG_FLAG_NO_SIGNAL_OK) != 0;   // [2.0.4-CYD] เพิ่ม:
 }
 
 // ตัดสินรหัสเตือนของเตียงเดียว คืนรหัสใหม่ (ผู้เรียกเทียบกับ b.alert เพื่อขอส่ง Sync ด่วน)
@@ -204,7 +207,7 @@ inline struct_host_sync bedBuildSync(const Bed &b, int idx, uint8_t channel, uin
   s.stationId    = (uint8_t)(idx + 1);
   s.targetRateHr = b.cfg.targetRateHr;
   s.totalPlanMl  = b.cfg.planVolumeMl;
-  s.alertCode    = alertCodeForStation(b.alert);
+  s.alertCode    = alertCodeForBed(b.alert, b.supportsNoSignal);   // [2.0.4-CYD] แก้: เดิมแปลง NO DROP เป็น 0 เสมอ
   s.dropFactor   = safeDropFactor(b.cfg.dropFactor);
   s.resetSeq     = b.cfg.resetSeq;
   s.hostChannel  = channel;
