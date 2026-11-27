@@ -1,7 +1,7 @@
 /**
  * @file      Host-CYD28.ino
- * @brief     Host บอร์ด CYD (ESP32-2432S028) เขียนใหม่ ด่านที่ 3: หน้าจอสัมผัสและเสียงเตือน (ต่อจากแกนเครือข่ายด่านที่ 2)
- * @version   2.0.2-CYD
+ * @brief     Host บอร์ด CYD (ESP32-2432S028) เขียนใหม่ ด่านที่ 4 (ครบทุกด่าน): เว็บแดชบอร์ด นาฬิกา SD ประวัติเหตุการณ์
+ * @version   2.0.3-CYD
  * @date      2026-11-27
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
@@ -26,6 +26,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 2.0.3-CYD | 2026-11-27 | เขียนใหม่ด่านที่ 4 ไม่นำโค้ดรุ่น 1.x มาปรับ: จุดเชื่อมต่อ Wi-Fi + เว็บแดชบอร์ดหน้าเดียว (ดูได้ทันที แก้ค่าต้องล็อกอิน), นาฬิกาตั้งจากเบราว์เซอร์ (RTC DS3231 ไม่บังคับ), ประวัติเหตุการณ์ในหน่วยความจำ 48 รายการ + บันทึก CSV ลง SD, คำสั่งแก้ค่าทุกทางผ่านฟังก์ชันเดียว (commitBedConfig/doNewBag/doAck) จึงลงประวัติเหมือนกัน |
  * | 2.0.2-CYD | 2026-11-27 | เขียนใหม่ด่านที่ 3 ไม่นำโค้ดรุ่น 1.x มาปรับ: หน้า HOME/BED/BED SET/NUMPAD/SYSTEM แนวนอน, โซนแตะตารางเดียวกับที่วาด, บัซเซอร์ Active (เตือน/เสียงกด/ใกล้หมด), ปุ่มพักเสียง 2 นาที, ยืนยันก่อนเริ่มถุงใหม่ |
  * | 2.0.1-CYD | 2026-11-27 | เขียนใหม่ด่านที่ 2 ไม่นำโค้ดรุ่น 1.x มาปรับ: คิวรับ ESP-NOW ผู้เขียน/ผู้อ่านคนเดียว, bed_model.h ตรรกะล้วนทดสอบบน PC, ตัวจัดช่องเวลาส่ง Sync, NVS เก็บ resetSeq ถาวร |
  * | 2.0.0-CYD | 2026-11-27 | เขียนใหม่ทั้งหมดด่านที่ 1 (ฐานบอร์ด: จอ ไฟหลังจอ ทัช) |
@@ -50,8 +51,11 @@
 #include "status_screen.h"
 #include "buzzer.h"
 #include "sys_store.h"
+#include "event_log.h"
+#include "clock_sync.h"
+#include "sd_log.h"
 
-#define APP_VERSION "2.0.2-CYD"
+#define APP_VERSION "2.0.3-CYD"
 
 enum AppMode : uint8_t { MODE_UI = 0, MODE_DIAG };
 
@@ -60,6 +64,8 @@ constexpr uint32_t SNOOZE_MS = 120000;       // พักเสียงเต�
 Bed beds[MAX_BEDS];
 uint8_t activeBeds = DEFAULT_ACTIVE_BEDS;
 SyncScheduler syncSched;
+EventLog events;
+static bool wasOnline[MAX_BEDS] = {false};
 AppMode appMode = MODE_UI;
 BuzzerEngine buzz;
 SysSettings sysSet = {SYS_MAGIC, 100, 1};
@@ -69,6 +75,40 @@ uint32_t badPackets = 0, ignoredPackets = 0;
 static uint32_t lastEvalMs = 0, lastLinkTickMs = 0;
 static char cmdLine[64];
 static uint8_t cmdLen = 0;
+
+// ---- ประวัติเหตุการณ์ และการกระทำที่ทุกทาง (หน้าจอ เว็บ Serial) ใช้ร่วมกัน ----------------------------
+static void logEvent(uint8_t bed, uint8_t type, uint8_t code = 0) {
+  events.add(millis(), clockEpoch(), bed, type, code);
+  sdLogEvent(events.newest(0));
+}
+
+// บันทึกค่าตั้งเตียง (resetSeq ใช้ค่าจริงของ Host เสมอ ห้ามรับจากภายนอก ไม่งั้น Station จะล้างตัวนับเอง)
+static void commitBedConfig(int i, BedConfig c) {
+  if (i < 0 || i >= MAX_BEDS) return;
+  c.resetSeq = beds[i].cfg.resetSeq;
+  beds[i].cfg = c;
+  saveBeds(beds, activeBeds);
+  syncSched.request(i);
+  logEvent((uint8_t)(i + 1), EV_CONFIG);
+}
+
+static void doNewBag(int i) {
+  if (i < 0 || i >= MAX_BEDS) return;
+  bedNewBag(beds[i], millis());
+  saveBeds(beds, activeBeds);
+  syncSched.request(i);
+  logEvent((uint8_t)(i + 1), EV_NEWBAG);
+}
+
+// รับทราบเตือนใกล้หมด คืน false ถ้าไม่มีอะไรให้รับทราบ
+static bool doAck(int i) {
+  if (i < 0 || i >= MAX_BEDS) return false;
+  if (beds[i].alert != ALERT_NEAR_END || beds[i].nearEndAck) return false;
+  beds[i].nearEndAck = true;
+  syncSched.request(i);
+  logEvent((uint8_t)(i + 1), EV_ACK);
+  return true;
+}
 
 // ประกาศล่วงหน้า: นิยามอยู่ใน ui.h ซึ่งถูก include ท้ายไฟล์ (ห้ามใส่ค่าปริยายซ้ำที่นิยาม)
 static void uiRequestFull();
@@ -133,7 +173,6 @@ static void handleLine(char *line) {
   float v = 0;
   const int n = sscanf(line, "%11s %d %f", cmd, &a, &v);
   if (n < 1) return;
-  const uint32_t now = millis();
   const int i = bedArg(a);
   if (!strcmp(cmd, "table")) { printTable(); return; }
   if (!strcmp(cmd, "beds") && n >= 2) {
@@ -144,27 +183,27 @@ static void handleLine(char *line) {
   }
   if (!strcmp(cmd, "rate") && n >= 3 && i >= 0) {
     if (!(v >= 0 && v <= MAX_PLAUSIBLE_RATE_HR)) { Serial.println("rate 0-3000"); return; }
-    beds[i].cfg.targetRateHr = v; saveBeds(beds, activeBeds); syncSched.request(i); return;
+    { BedConfig c = beds[i].cfg; c.targetRateHr = v; commitBedConfig(i, c); } return;
   }
   if (!strcmp(cmd, "plan") && n >= 3 && i >= 0) {
     if (!(v >= 0 && v <= 10000)) { Serial.println("plan 0-10000"); return; }
-    beds[i].cfg.planVolumeMl = v; saveBeds(beds, activeBeds); syncSched.request(i); return;
+    { BedConfig c = beds[i].cfg; c.planVolumeMl = v; commitBedConfig(i, c); } return;
   }
   if (!strcmp(cmd, "df") && n >= 3 && i >= 0) {
     const int d = (int)v;
     if (d != 10 && d != 15 && d != 20 && d != 60) { Serial.println("df 10|15|20|60"); return; }
-    beds[i].cfg.dropFactor = (uint8_t)d; saveBeds(beds, activeBeds); syncSched.request(i); return;
+    { BedConfig c = beds[i].cfg; c.dropFactor = (uint8_t)d; commitBedConfig(i, c); } return;
   }
   if (!strcmp(cmd, "near") && n >= 3 && i >= 0) {
     const int p = (int)v;
     if (p < 50 || p > 95) { Serial.println("near 50-95"); return; }
-    beds[i].cfg.nearEndPct = (uint8_t)p; saveBeds(beds, activeBeds); syncSched.request(i); return;
+    { BedConfig c = beds[i].cfg; c.nearEndPct = (uint8_t)p; commitBedConfig(i, c); } return;
   }
   if (!strcmp(cmd, "newbag") && n >= 2 && i >= 0) {
-    bedNewBag(beds[i], now); saveBeds(beds, activeBeds); syncSched.request(i); return;
+    doNewBag(i); return;
   }
   if (!strcmp(cmd, "ack") && n >= 2 && i >= 0) {
-    beds[i].nearEndAck = true; syncSched.request(i); return;
+    doAck(i); return;
   }
   if (!strcmp(cmd, "m")) { setMode(appMode == MODE_UI ? MODE_DIAG : MODE_UI); return; }
   if (!strcmp(cmd, "i")) { panelSetInvert(!g_invert); if (appMode == MODE_DIAG) drawTestScreen(); printSettings(); return; }
@@ -202,11 +241,19 @@ static void serviceRx(uint32_t now) {
 static void serviceAlerts(uint32_t now) {
   for (int i = 0; i < activeBeds; i++) {
     const uint8_t code = bedEvaluate(beds[i], now);
-    if (code != beds[i].alert) syncSched.request(i);                  // รหัสเปลี่ยน ส่งทันทีไม่รอรอบ
+    const bool on = bedOnline(beds[i], now);
+    if (beds[i].seen && on != wasOnline[i]) logEvent((uint8_t)(i + 1), on ? EV_ONLINE : EV_OFFLINE);
+    wasOnline[i] = on;
+    if (code != beds[i].alert) {
+      syncSched.request(i);                                           // รหัสเปลี่ยน ส่งทันทีไม่รอรอบ
+      if (code == ALERT_NONE) logEvent((uint8_t)(i + 1), EV_CLEAR, beds[i].alert);
+      else logEvent((uint8_t)(i + 1), EV_ALERT, code);
+    }
     beds[i].alert = code;
   }
 }
 
+#include "web_server.h"  // เว็บ (ใช้ commitBedConfig doNewBag doAck ด้านบน)
 #include "ui.h"        // หน้าจอทั้งหมด (ต้องอยู่ท้ายไฟล์หลักก่อน setup() เพราะใช้ตัวแปรด้านบน)
 
 void setup() {
@@ -222,10 +269,15 @@ void setup() {
   buzz.enabled = sysSet.buzzerOn;
   touchChip.begin();
   activeBeds = loadBeds(beds);
-  const bool linkOk = linkBegin();
-  Serial.println("Host-CYD28 " APP_VERSION " (stage 3: screens + buzzer)");
+  const bool linkOk = linkBegin(true);   // เปิดจุดเชื่อมต่อ Wi-Fi ของ Host ด้วย (หน้าเว็บ)
+  Serial.println("Host-CYD28 " APP_VERSION " (stage 4: web + clock + SD + events)");
   printSettings();
   Serial.println(linkOk ? "ESP-NOW ready" : "ESP-NOW INIT FAILED");
+  clockBegin();
+  sdLogBegin();
+  webBegin();
+  Serial.println("AP " CYD_AP_SSID " http://192.168.4.1/");
+  logEvent(0, EV_BOOT);
   syncSched.requestAll(activeBeds);
   setMode(MODE_UI);
 }
@@ -233,11 +285,12 @@ void setup() {
 void loop() {
   const uint32_t now = millis();
   handleSerial();
+  webService();
   serviceRx(now);
   if ((uint32_t)(now - lastEvalMs) >= 250) { lastEvalMs = now; serviceAlerts(now); }
   if ((uint32_t)(now - lastLinkTickMs) >= LINK_WINDOW_MS) { lastLinkTickMs = now; bedsLinkTick(beds, MAX_BEDS); }
   const int s = syncSched.next(now, activeBeds);
-  if (s >= 0) linkSendSync(bedBuildSync(beds[s], s, linkChannel(), (uint32_t)time(nullptr), now));
+  if (s >= 0) linkSendSync(bedBuildSync(beds[s], s, linkChannel(), clockEpoch(), now));
   serviceBuzzer(now);
   if (appMode == MODE_UI) uiStep(now); else diagStep();
   if (digitalRead(cyd::BOOT_BTN) == LOW) {            // BOOT สั้น = สลับหน้า · ค้าง 1.5 วินาที = คาลิเบรตใหม่

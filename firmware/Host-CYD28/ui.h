@@ -1,7 +1,7 @@
 /**
  * @file      ui.h
  * @brief     หน้าจอ Host (HOME / BED / BED SET / NUMPAD / SYSTEM) และการแตะ แนวนอน 320x240
- * @version   2.0.2-CYD
+ * @version   2.0.3-CYD
  * @date      2026-11-27
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
@@ -19,6 +19,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 2.0.3-CYD | 2026-11-27 | แก้ค่า/เริ่มถุงใหม่/รับทราบ/พักเสียงผ่านฟังก์ชันกลางของไฟล์หลักเพื่อลงประวัติ หน้า SYSTEM แสดงจุดเชื่อมต่อ Wi-Fi SD และนาฬิกา |
  * | 2.0.2-CYD | 2026-11-27 | เขียนใหม่ด่านที่ 3 ไม่นำโค้ดรุ่น 1.x มาปรับ |
  *
  * @warning  ยังไม่ได้ทดสอบบนฮาร์ดแวร์จริง ตรวจด้วยเครื่องมือจำลองบนเครื่อง PC เท่านั้น
@@ -297,7 +298,7 @@ static void drawNumpad() {
   for (int k = 0; k < 12; k++) {
     const int col = k % 3, row = k / 3;
     char l[2] = {keys[k], 0};
-    const uint8_t id = keys[k] == '.' ? Z_KEY_DOT : keys[k] == '<' ? Z_KEY_DEL : (uint8_t)(Z_KEY + (keys[k] - '0'));
+    const uint8_t id = keys[k] == '.' ? (uint8_t)Z_KEY_DOT : keys[k] == '<' ? (uint8_t)Z_KEY_DEL : (uint8_t)(Z_KEY + (keys[k] - '0'));
     uiBtn(id, l, 152 + col * 56, 30 + row * 52, 52, 48, C_PANEL, C_WHITE, 3);
   }
 }
@@ -331,7 +332,10 @@ static void drawSystem(bool full) {
   const uint32_t up = millis() / 1000;
   snprintf(s, sizeof(s), "v%s  UP %lu:%02lu:%02lu  PANEL %d  ", APP_VERSION, (unsigned long)(up / 3600), (unsigned long)((up / 60) % 60), (unsigned long)(up % 60), (int)CYD_PANEL);
   txt(8, 208, 1, C_GRAY, C_BLACK, s);
-  txt(8, 220, 1, C_GRAY, C_BLACK, "ESP-NOW PROTOCOL V3 - NOT A CERTIFIED ALARM SYSTEM");
+  snprintf(s, sizeof(s), "WIFI %s  %s  SD %s  CLK %s  ", CYD_AP_SSID, "192.168.4.1", sdOk ? "OK" : "NO", clockSynced ? "SET" : "NOT SET");
+  s[52] = 0;
+  txt(8, 220, 1, C_GRAY, C_BLACK, s);
+  txt(8, 231, 1, C_GRAY, C_BLACK, "ESP-NOW PROTOCOL V3 - NOT A CERTIFIED ALARM SYSTEM");
 }
 
 static void uiRequestFull() { ui.needFull = true; }
@@ -385,16 +389,20 @@ static void uiTap(int x, int y, uint32_t now) {
     case Z_SYS:     uiGo(SCR_SYSTEM); break;
     case Z_BACK:    uiGo(SCR_HOME); break;
     case Z_SILENCE:
-      if (worstAlarm(now) != ALERT_NONE) snoozeUntil = snoozed(now) ? 0 : now + SNOOZE_MS;
+      if (worstAlarm(now) != ALERT_NONE) {
+        const bool wasSnoozed = snoozed(now);
+        snoozeUntil = wasSnoozed ? 0 : now + SNOOZE_MS;
+        if (!wasSnoozed) logEvent(0, EV_SILENCE);
+      }
       uiDraw(false); break;
     case Z_SETBTN:  ui.edit = beds[ui.bed].cfg; uiGo(SCR_SET); break;
     case Z_NEWBAG:  ui.confirmBag = true; uiDraw(false); break;
     case Z_NO:      ui.confirmBag = false; ui.needFull = true; break;
     case Z_YES:
-      bedNewBag(beds[ui.bed], now); uiCommitBeds(); syncSched.request(ui.bed);
+      doNewBag(ui.bed);
       ui.confirmBag = false; ui.needFull = true; break;
     case Z_ACK:
-      if (beds[ui.bed].alert == ALERT_NEAR_END && !beds[ui.bed].nearEndAck) { beds[ui.bed].nearEndAck = true; syncSched.request(ui.bed); }
+      doAck(ui.bed);
       break;
     case Z_F_RATE:  numpadStart(NF_RATE); break;
     case Z_F_PLAN:  numpadStart(NF_PLAN); break;
@@ -405,9 +413,7 @@ static void uiTap(int x, int y, uint32_t now) {
       uiGo(SCR_SET); break;
     }
     case Z_SAVE: {
-      BedConfig c = ui.edit;
-      c.resetSeq = beds[ui.bed].cfg.resetSeq;           // ห้ามแตะ resetSeq จากหน้าตั้งค่า ไม่งั้น Station จะล้างตัวนับเอง
-      beds[ui.bed].cfg = c; uiCommitBeds(); syncSched.request(ui.bed);
+      commitBedConfig(ui.bed, ui.edit);                 // ฟังก์ชันกลางคง resetSeq จริงของ Host ไว้เอง (ไม่งั้น Station จะล้างตัวนับ)
       uiGo(SCR_BED); break;
     }
     case Z_CANCEL:  uiGo(ui.scr == SCR_NUMPAD ? SCR_SET : SCR_BED); break;

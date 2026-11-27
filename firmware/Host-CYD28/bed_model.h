@@ -1,7 +1,7 @@
 /**
  * @file      bed_model.h
  * @brief     แบบจำลองเตียง: รับแพ็กเก็ต สถานะออนไลน์ การตัดสินรหัสเตือน คุณภาพลิงก์ ตัวจัดช่วงส่ง Sync
- * @version   2.0.2-CYD
+ * @version   2.0.3-CYD
  * @date      2026-11-27
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
@@ -15,6 +15,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 2.0.3-CYD | 2026-11-27 | SyncScheduler::isPending() สำหรับทดสอบว่ามีคำขอส่งด่วนค้างหรือไม่ |
  * | 2.0.2-CYD | 2026-11-27 | เพิ่ม bedRemainingMin() สำหรับหน้าจอด่านที่ 3 |
  * | 2.0.1-CYD | 2026-11-27 | เขียนใหม่ด่านที่ 2 (แกนเครือข่าย) ไม่นำโค้ดรุ่น 1.x มาปรับ |
  *
@@ -217,6 +218,7 @@ class SyncScheduler {
  public:
   void request(int idx) { if (idx >= 0 && idx < MAX_BEDS) pending |= (uint16_t)(1u << idx); }
   void requestAll(int n) { for (int i = 0; i < n; i++) request(i); }
+  bool isPending(int idx) const { return idx >= 0 && idx < MAX_BEDS && (pending & (1u << idx)) != 0; }
   uint32_t slotMs(int active) const {
     uint32_t n = active < 1 ? 1 : (uint32_t)active;
     uint32_t s = SYNC_INTERVAL_MS / n;

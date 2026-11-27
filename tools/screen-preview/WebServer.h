@@ -8,6 +8,7 @@ public:
   WebServer(int) {}
   void on(const char*, void(*)()) {}
   void on(const char*, int, void(*)()) {}
+  void onNotFound(void(*)()) {}
   void begin() {} void stop() {} void handleClient() {}
   bool authenticate(const char*, const char*) { return true; }
   void requestAuthentication() {}

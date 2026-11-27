@@ -55,7 +55,7 @@ firmware/
 ยังไม่มีเครื่องมือซิงก์อัตโนมัติแบบ Fallout
 
 **อยู่ระหว่างเขียน `Host-CYD28` ใหม่ทั้งหมด (v2.0.0 แบ่งสี่ด่าน ดู `firmware/Host-CYD28/README.md`) บนแบรนช์งาน**
-ด่านที่ 1-3 เสร็จแล้ว ข้อความข้างบนเกี่ยวกับการแตกจาก Touch24 ใช้กับรุ่น 1.x เท่านั้น
+ด่านที่ 1-4 เสร็จแล้ว (ครบทุกด่าน รอทดสอบบนบอร์ดจริงก่อน merge เข้า main) ข้อความข้างบนเกี่ยวกับการแตกจาก Touch24 ใช้กับรุ่น 1.x เท่านั้น
 `tools/cyd-preview/run.sh` และ `tools/cyd-tap-test/run.sh` ใช้กับสเก็ตช์ v2 ไม่ได้ (ออกแบบสำหรับ Host-CYD28 รุ่น 1.x) ให้ใช้ `cyd-ui-test` แทน
 แต่ **ห้ามลบสองโฟลเดอร์นั้น** เพราะ `tools/lvgl-tap-test` ยังใช้ `cases.h` `calib_cases.h` และ `driver.cpp` ของมัน (Host-CYD-LVGL ไม่ถูกแตะ)
 
@@ -171,6 +171,7 @@ bash tools/cyd-preview/run.sh           # คอมไพล์และเร�
 bash tools/cyd-board-test/run.sh        # Host-CYD28 รุ่นเขียนใหม่: ทัช คาลิเบรต และสเก็ตช์ทั้งไฟล์กับ ESP-NOW จำลอง
 bash tools/cyd-bed-test/run.sh          # Host-CYD28 รุ่นเขียนใหม่: ตรรกะเตียง รหัสเตือน ตัวจัดช่องเวลาส่ง Sync
 bash tools/color-test/run.sh            # CYD-ColorTest: ทุกคำสั่ง ทั้งสองชิป ทุกชุดค่า ข้อความไม่ล้นจอ
+bash tools/cyd-web-test/run.sh          # Host-CYD28 รุ่นเขียนใหม่: API เว็บ ล็อกอิน ตรวจค่า ประวัติเหตุการณ์ นาฬิกา JSON หน้าเว็บ
 bash tools/cyd-ui-test/run.sh           # Host-CYD28 รุ่นเขียนใหม่: โซนแตะ เส้นทางหน้าจอ จังหวะบัซเซอร์ และเรนเดอร์ภาพ docs/screens-cyd2/
 bash tools/cyd-tap-test/run.sh          # โซนแตะตรงปุ่มทุกหน้าของ Host CYD ทั้งสองแนว
 bash tools/buzzer-pattern-test/run.sh   # จังหวะเสียงเตือน Station ทั้ง Passive (เหมือนรุ่นก่อน) และ Active
