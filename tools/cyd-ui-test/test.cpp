@@ -393,6 +393,20 @@ static std::vector<R4> rectsSince(long from, unsigned color) {
   fclose(f);
   return out;
 }
+struct RR { int x, y, w, h, r; unsigned c; };
+static std::vector<RR> rrectsSince(long from) {
+  fflush(g_ops);
+  std::vector<RR> out;
+  FILE *f = fopen(g_opsPath.c_str(), "r");
+  fseek(f, from, SEEK_SET);
+  static char line[400000];
+  while (fgets(line, sizeof(line), f)) {
+    RR q; int fill;
+    if (sscanf(line, "RRECT %d %d %d %d %d %u %d", &q.x, &q.y, &q.w, &q.h, &q.r, &q.c, &fill) == 7 && fill == 1) out.push_back(q);
+  }
+  fclose(f);
+  return out;
+}
 static long opsEnd() { fflush(g_ops); return ftell(g_ops); }
 
 static void testSplash() {
@@ -427,41 +441,37 @@ static void testSplash() {
   splashWait([]() { return false; });
   CHECK(millis() == t2, "เริ่มระบบนานเกินเวลาโลโก้แล้ว ต้องไม่รอเพิ่มอีก");
 
-  // ---- แถบโหลด XP: บล็อกวิ่งจากซ้ายไปขวาวนซ้ำ ไม่ล้นกรอบ ----
-  const int innerX = splashTrackX() + 2, innerRight = innerX + SPL_INNER_W;
-  CHECK(SPL_BLOCKS == 3 && SPL_CYCLE > SPL_INNER_W, "สามก้อนและต้องวิ่งพ้นขอบก่อนวนใหม่");
-  int lastHead = -1; bool wrapped = false;
-  for (uint32_t step = 0; step < (uint32_t)SPL_CYCLE * 2 + 3; step++) {
-    const int h = splashHeadPos(step * SPL_STEP_MS);
-    if (h < lastHead) wrapped = true; else CHECK(lastHead < 0 || h == lastHead + 1, "ต้องขยับทีละช่อง");
-    lastHead = h;
-  }
-  CHECK(wrapped, "ต้องวนกลับมาเริ่มใหม่");
-  const uint32_t samples[] = {0, 5, 20, 60, (uint32_t)SPL_INNER_W / 2, (uint32_t)SPL_INNER_W, (uint32_t)SPL_INNER_W + 10, (uint32_t)SPL_CYCLE - 1};
-  for (uint32_t st : samples) {
-    g_ms = 50000; splashStartMs = g_ms - st * SPL_STEP_MS;       // ย้อนเวลาเริ่มให้ได้ช่องที่ต้องการพอดี
-    splashLastStep = 0xFFFFFFFFu;
+  // ---- แถบโหลดสไตล์ macOS: รางเทาเข้ม ส่วนขาวยาวขึ้นเรื่อย ๆ เต็มพอดีเมื่อครบเวลา ไม่ล้นราง ----
+  CHECK(splashFillPx(0) == 0 && splashFillPx((uint32_t)CYD_SPLASH_MS) == SPL_TRACK_W && splashFillPx((uint32_t)CYD_SPLASH_MS * 10) == SPL_TRACK_W, "เริ่มที่ว่าง เต็มพอดีเมื่อครบเวลา และไม่เกินรางเมื่อเลยเวลา");
+  CHECK(splashFillPx((uint32_t)CYD_SPLASH_MS / 2) == SPL_TRACK_W / 2, "ครึ่งเวลาต้องเต็มครึ่งราง");
+  int lastFill = 0;
+  for (uint32_t ms = 0; ms <= (uint32_t)CYD_SPLASH_MS + 100; ms += 7) { const int f = splashFillPx(ms); CHECK(f >= lastFill && f <= SPL_TRACK_W, "ส่วนเต็มต้องไม่ถอยและไม่ล้นราง"); lastFill = f; }
+  const unsigned FILLC = SPL_C_FILL, TRACKC = SPL_C_TRACK;
+  const uint32_t samples[] = {0, 20, (uint32_t)CYD_SPLASH_MS / 3, (uint32_t)CYD_SPLASH_MS / 2, (uint32_t)CYD_SPLASH_MS - 1, (uint32_t)CYD_SPLASH_MS};
+  for (uint32_t ms : samples) {
+    g_ms = 50000; splashStartMs = g_ms - ms;
+    splashLastFill = -1;
     const long from = opsEnd();
     splashTick();
-    auto mids = rectsSince(from, SPL_C_MID);
-    int expect = 0;                                              // นับเองแยกจากโค้ด: ก้อนที่ทับช่วง [0, INNER_W)
-    for (int b = 0; b < SPL_BLOCKS; b++) { const int right = (int)st - b * (SPL_BLOCK_W + SPL_BLOCK_GAP); if (right > 0 && right - SPL_BLOCK_W < SPL_INNER_W) expect++; }
-    CHECK((int)mids.size() == expect, "จำนวนบล็อกที่เห็นต้องตรงตามตำแหน่ง");
-    for (auto &m : mids) {
-      CHECK(m.x >= innerX && m.x + m.w <= innerRight, "บล็อกต้องไม่ล้นกรอบในแนวนอน");
-      CHECK(m.y >= trackY && m.y + m.h <= trackY + SPL_TRACK_H && m.w > 0 && m.w <= SPL_BLOCK_W, "บล็อกต้องอยู่ในกรอบแนวตั้งและกว้างไม่เกินหนึ่งก้อน");
+    auto rr = rrectsSince(from);
+    int tracks = 0, fills = 0;
+    for (auto &q : rr) {
+      CHECK(q.x >= splashTrackX() && q.x + q.w <= splashTrackX() + SPL_TRACK_W && q.y == trackY && q.h == SPL_TRACK_H, "ราง/ส่วนเต็มต้องอยู่ในกรอบที่กำหนด");
+      if (q.c == TRACKC && q.w == SPL_TRACK_W) tracks++;
+      if (q.c == FILLC) { fills++; CHECK(q.w == splashFillPx(ms), "ความกว้างส่วนเต็มต้องตรงสูตร"); CHECK(q.r * 2 <= q.w || q.r == q.w / 2, "รัศมีปลายมนต้องไม่เกินครึ่งความกว้าง"); }
     }
+    CHECK(tracks == 1 && fills == (splashFillPx(ms) > 0 ? 1 : 0), "ต้องวาดรางหนึ่งครั้ง และส่วนเต็มเมื่อมีความยาว");
   }
-  // ไม่วาดซ้ำในช่องเดียวกัน (เรียกถี่ได้โดยไม่กินเวลา SPI) และขยับเมื่อถึงช่องถัดไป
-  g_ms = 70000; splashStartMs = g_ms; splashLastStep = 0xFFFFFFFFu;
+  // ไม่วาดซ้ำถ้าส่วนเต็มไม่ยาวขึ้น (เรียกถี่ได้โดยไม่กินเวลา SPI) และวาดใหม่เมื่อยาวขึ้น
+  g_ms = 70000; splashStartMs = g_ms; splashLastFill = -1;
   splashTick();
   const long mark1 = opsEnd();
   splashTick(); splashTick();
-  CHECK(opsEnd() == mark1, "เรียกซ้ำในช่องเดียวกันต้องไม่วาดซ้ำ");
-  g_ms += SPL_STEP_MS;
+  CHECK(opsEnd() == mark1, "เรียกซ้ำโดยส่วนเต็มเท่าเดิมต้องไม่วาดซ้ำ");
+  g_ms += (uint32_t)CYD_SPLASH_MS / SPL_TRACK_W + 1;
   splashTick();
-  CHECK(opsEnd() > mark1, "ถึงช่องถัดไปต้องวาดใหม่");
-  g_ms = 90000; splashDraw(); for (int i = 0; i < 30; i++) { g_ms += SPL_STEP_MS; splashTick(); }
+  CHECK(opsEnd() > mark1, "ส่วนเต็มยาวขึ้นต้องวาดใหม่");
+  g_ms = 90000; splashDraw(); g_ms += (uint32_t)CYD_SPLASH_MS * 6 / 10; splashTick();
   mark("splash_progress");
   checkTextBounds("SPLASH");
 }
