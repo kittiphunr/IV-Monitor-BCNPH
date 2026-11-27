@@ -5,6 +5,10 @@
 #include <cstring>
 #include "Arduino.h"
 #include "touch_cal.h"
+#include "protocol.h"
+#include <WiFi.h>
+#include <esp_now.h>
+#include <esp_wifi.h>
 
 FILE *g_ops = nullptr;
 SerialClass Serial;
@@ -78,6 +82,25 @@ int digitalRead(int pin) {
   return 1;                                // BOOT ไม่กด
 }
 
+// ---------------- แบบจำลอง ESP-NOW ----------------
+static esp_now_recv_cb_t g_recvCb = nullptr;
+static struct_host_sync g_sent[256];
+static int g_sentCount = 0;
+static int g_initOk = 1;
+WiFiClassStub WiFi;
+int esp_now_init() { return g_initOk ? 0 : -1; }
+int esp_now_deinit() { return 0; }
+int esp_now_register_recv_cb(esp_now_recv_cb_t cb) { g_recvCb = cb; return 0; }
+int esp_now_add_peer(const esp_now_peer_info_t *) { return 0; }
+int esp_now_del_peer(const uint8_t *) { return 0; }
+int esp_now_send(const uint8_t *, const uint8_t *d, int len) {
+  if (len == (int)sizeof(struct_host_sync) && g_sentCount < 256) memcpy(&g_sent[g_sentCount++], d, len);
+  return 0;
+}
+int esp_wifi_get_channel(uint8_t *ch, wifi_second_chan_t *) { *ch = 1; return 0; }
+int esp_wifi_set_channel(uint8_t, wifi_second_chan_t) { return 0; }
+int esp_wifi_set_ps(int) { return 0; }
+
 #include "sketch.cpp"
 
 static int fails = 0;
@@ -139,6 +162,78 @@ static void testMedianAndTracker() {
   CHECK(t2.update(true, 0) == TOUCH_NONE && t2.update(false, 5) == TOUCH_NONE && t2.update(false, 100) == TOUCH_NONE, "สัญญาณกระตุกครั้งเดียวต้องถูกกรอง");
 }
 
+
+// ---------------- ทดสอบแกนเครือข่ายของสเก็ตช์จริง ----------------
+static uint8_t g_mac[6] = {9, 8, 7, 6, 5, 4};
+static void inject(const struct_message &m, int len = sizeof(struct_message), int rssi = -52) {
+  uint8_t src[6]; memcpy(src, g_mac, 6);
+  wifi_pkt_rx_ctrl_t rc = {rssi, 1};
+  esp_now_recv_info_t info = { src, nullptr, &rc };
+  g_recvCb(&info, (const uint8_t *)&m, len);
+}
+static void runMs(int ms) { for (int e = 0; e < ms; e += 5) { g_ms += 5; loop(); } }
+static struct_message mk(int id, int run, uint32_t drops, float rate, uint32_t since) {
+  struct_message m = {}; m.stationId = (uint8_t)id; m.isRunning = (uint8_t)run; m.totalDrops = drops;
+  m.flowRateHr = rate; m.msSinceLastDrop = since; m.batteryVolts = 4.0f; return m;
+}
+static int syncsFor(int bed, int from) { int n = 0; for (int i = from; i < g_sentCount; i++) if (g_sent[i].stationId == bed) n++; return n; }
+
+static void testNetwork() {
+  Serial.println("");                                     // ให้ Serial จำลองถูกเรียกอย่างน้อยหนึ่งครั้ง
+  handleLine((char *)"beds 5");
+  handleLine((char *)"rate 1 60");
+  handleLine((char *)"plan 1 500");
+  g_sentCount = 0;
+  // 1) ได้ยินเตียง 1 แล้ว ทุกเตียงที่เปิดใช้ต้องได้ Sync ภายในหนึ่งรอบ และธง HEARD เฉพาะเตียงที่ได้ยิน
+  inject(mk(1, 1, 5, 60, 400));
+  runMs(1300);
+  for (int b = 1; b <= 5; b++) CHECK(syncsFor(b, 0) >= 1, "ทุกเตียงที่เปิดใช้ต้องได้ Sync ภายในหนึ่งรอบ");
+  CHECK(syncsFor(6, 0) == 0, "เตียงที่ไม่ได้เปิดใช้ต้องไม่ได้ Sync");
+  int s1 = -1, s2 = -1;
+  for (int i = 0; i < g_sentCount; i++) { if (g_sent[i].stationId == 1) s1 = i; if (g_sent[i].stationId == 2) s2 = i; }
+  CHECK(s1 >= 0 && g_sent[s1].targetRateHr == 60 && g_sent[s1].totalPlanMl == 500, "Sync เตียง 1 ต้องมีค่าตั้งที่สั่งทาง Serial");
+  CHECK((g_sent[s1].flags & SYNC_FLAG_HEARD) && (g_sent[s1].flags & SYNC_FLAG_REPORTS), "เตียงที่ได้ยินต้องมีธง HEARD และ REPORTS");
+  CHECK(s2 >= 0 && !(g_sent[s2].flags & SYNC_FLAG_HEARD), "เตียงที่ไม่เคยได้ยินต้องไม่มีธง HEARD");
+  CHECK(g_sent[s1].hostChannel == 1, "Sync ต้องบอกช่องสัญญาณของ Host");
+  // 2) สายพับ: รหัสเปลี่ยนต้องออกไปเร็วโดยไม่รอครบรอบ
+  // รอจนเพิ่งส่ง Sync ของเตียง 1 ไป (รอบปกติจะวนกลับมาเตียง 1 อีกทีในราว 1 วินาที) แล้วค่อยเกิดสายพับ
+  for (int guard = 0; guard < 400; guard++) { int c = g_sentCount; runMs(5); if (g_sentCount > c && g_sent[g_sentCount - 1].stationId == 1) break; }
+  inject(mk(1, 1, 10, 60, 9000));
+  int mark = g_sentCount;
+  runMs(600);
+  bool urgent = false;
+  for (int i = mark; i < g_sentCount; i++) if (g_sent[i].stationId == 1 && g_sent[i].alertCode == ALERT_OCCLUSION) urgent = true;
+  CHECK(urgent, "สายพับต้องส่งรหัส 5 ให้เตียงนั้นภายใน 600 ms (ช้ากว่านี้แปลว่ารอรอบปกติ ไม่ได้ส่งด่วน)");
+  // 3) แพ็กเก็ตเสียต้องถูกนับและไม่กระทบเตียง
+  uint32_t bad0 = badPackets, wl0 = rxWrongLen, ig0 = ignoredPackets;
+  inject(mk(2, 1, 5, 5000, 400));                        // อัตราเกินจริง
+  inject(mk(0, 1, 5, 50, 400));                          // เลขเตียง 0
+  inject(mk(2, 1, 5, 50, 400), 10);                      // ความยาวผิด
+  inject(mk(7, 1, 5, 50, 400));                          // เตียงที่ไม่ได้เปิดใช้
+  runMs(50);
+  CHECK(badPackets - bad0 == 2, "แพ็กเก็ตไม่สมเหตุสมผลสองใบต้องถูกนับ");
+  CHECK(rxWrongLen - wl0 == 1, "ความยาวผิดต้องถูกนับ");
+  CHECK(ignoredPackets - ig0 == 1, "เตียงที่ไม่ได้เปิดใช้ต้องถูกนับว่าเมิน");
+  CHECK(!beds[1].seen, "แพ็กเก็ตเสียต้องไม่ทำให้เตียง 2 ขึ้นออนไลน์");
+  // 4) เริ่มถุงใหม่ resetSeq ต้องเปลี่ยนใน Sync ถัดไป
+  uint8_t seq0 = beds[0].cfg.resetSeq;
+  handleLine((char *)"newbag 1");
+  mark = g_sentCount;
+  runMs(300);
+  bool seqSeen = false;
+  for (int i = mark; i < g_sentCount; i++) if (g_sent[i].stationId == 1 && g_sent[i].resetSeq == (uint8_t)(seq0 + 1)) seqSeen = true;
+  CHECK(seqSeen, "newbag ต้องส่ง resetSeq ใหม่ให้เตียง 1 ทันที");
+  // 5) คิวรับเต็มต้องไม่ล้ม และต้องนับที่ทิ้ง
+  uint32_t drop0 = rxDropped;
+  for (int i = 0; i < 40; i++) inject(mk(1, 1, 20 + i, 60, 300));
+  CHECK(rxDropped - drop0 >= 24, "ใบที่ล้นคิวต้องถูกนับ ไม่ทำให้พัง");
+  runMs(100);
+  CHECK(beds[0].totalDrops >= 20, "ใบที่อยู่ในคิวต้องถูกประมวลผลครบ");
+  handleLine((char *)"table");
+  handleLine((char *)"bogus");
+  printf("  แกนเครือข่าย: ส่ง Sync รวม %d ใบ\n", g_sentCount);
+}
+
 static void testDriverAndSketch() {
   g_ops = fopen("/dev/null", "w");
   touchChip.begin();
@@ -150,7 +245,10 @@ static void testDriverAndSketch() {
   touchCalTargets((int)W, (int)H, targets);
   simT0 = g_ms; simEnabled = true;
   setup();
-  CHECK(cal.valid, "setup() ต้องคาลิเบรตสำเร็จเมื่อยังไม่มีค่าในหน่วยความจำ");
+  CHECK(g_recvCb != nullptr, "setup() ต้องลงทะเบียน callback ESP-NOW");
+  CHECK(!cal.valid, "บูตแล้วระบบเครือข่ายต้องทำงานเลย ไม่บังคับคาลิเบรตก่อน");
+  setMode(MODE_DIAG);                                     // เข้าหน้าทดสอบ: ยังไม่มีค่าคาลิเบรต จึงต้องทำคาลิเบรตก่อน
+  CHECK(cal.valid, "เข้าหน้าทดสอบแล้วต้องคาลิเบรตสำเร็จเมื่อยังไม่มีค่าในหน่วยความจำ");
   float worst = 0;
   for (int i = 0; i < 3; i++) {
     int rx, ry; truthRaw(targets[i].sx, targets[i].sy, rx, ry);
@@ -176,6 +274,9 @@ static void testDriverAndSketch() {
   holdPen = false;
   for (int i = 0; i < 30; i++) { g_ms += 5; loop(); }
   CHECK(brightness == 50, "แตะปุ่ม - ต้องลดความสว่างเป็น 50");
+  setMode(MODE_STATUS);
+  simEnabled = false;
+  testNetwork();
   fclose(g_ops);
 }
 

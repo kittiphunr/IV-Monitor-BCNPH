@@ -54,7 +54,7 @@ firmware/
 ยังไม่มีเครื่องมือซิงก์อัตโนมัติแบบ Fallout
 
 **อยู่ระหว่างเขียน `Host-CYD28` ใหม่ทั้งหมด (v2.0.0 แบ่งสี่ด่าน ดู `firmware/Host-CYD28/README.md`) บนแบรนช์งาน**
-ด่านที่ 1 เสร็จแล้ว ข้อความข้างบนเกี่ยวกับการแตกจาก Touch24 ใช้กับรุ่น 1.x เท่านั้น
+ด่านที่ 1-2 เสร็จแล้ว ข้อความข้างบนเกี่ยวกับการแตกจาก Touch24 ใช้กับรุ่น 1.x เท่านั้น
 ระหว่างนี้ `tools/cyd-preview` และ `tools/cyd-tap-test` ใช้ไม่ได้กับสเก็ตช์ใหม่ จะเขียนใหม่ในด่านที่ 3
 และ `tools/lvgl-*` ยังอ้างอิง `Host-CYD-LVGL` ซึ่งไม่ถูกแตะ
 
@@ -167,7 +167,8 @@ bash tools/rate-test/run.sh             # สูตรคำนวณอัต�
 bash tools/oled-check/run.sh            # คอมไพล์ Host รุ่นจอ OLED
 bash tools/touch-preview/run.sh         # คอมไพล์และเรนเดอร์ Host รุ่นจอสัมผัส
 bash tools/cyd-preview/run.sh           # คอมไพล์และเรนเดอร์ Host รุ่นบอร์ด CYD
-bash tools/cyd-board-test/run.sh        # ฐานบอร์ด Host-CYD28 รุ่นเขียนใหม่: คาลิเบรต ไดรเวอร์ทัช ตัวติดตามนิ้ว
+bash tools/cyd-board-test/run.sh        # Host-CYD28 รุ่นเขียนใหม่: ทัช คาลิเบรต และสเก็ตช์ทั้งไฟล์กับ ESP-NOW จำลอง
+bash tools/cyd-bed-test/run.sh          # Host-CYD28 รุ่นเขียนใหม่: ตรรกะเตียง รหัสเตือน ตัวจัดช่องเวลาส่ง Sync
 bash tools/cyd-tap-test/run.sh          # โซนแตะตรงปุ่มทุกหน้าของ Host CYD ทั้งสองแนว
 bash tools/buzzer-pattern-test/run.sh   # จังหวะเสียงเตือน Station ทั้ง Passive (เหมือนรุ่นก่อน) และ Active
 bash tools/tft28-button-test/run.sh     # ปุ่มเดียวและบัซเซอร์ (Passive/Active) ของ Host-TFT28
