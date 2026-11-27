@@ -1,7 +1,7 @@
 /**
  * @file      Host-CYD28.ino
  * @brief     Host บอร์ด CYD (ESP32-2432S028) เขียนใหม่ ด่านที่ 4 (ครบทุกด่าน): เว็บแดชบอร์ด นาฬิกา SD ประวัติเหตุการณ์
- * @version   2.4.0-CYD
+ * @version   2.5.0-CYD
  * @date      2026-11-27
  * @author    นายกิตติพันธ์ รัตนคร <kittiphun.rut@mcu.ac.th>
  *
@@ -26,6 +26,7 @@
  * @par Revision History
  * | Version | Date | Change |
  * |---|---|---|
+ * | 2.5.0-CYD | 2026-11-27 | หน้าเปิดเครื่อง: แถบไม่เต็มค้างระหว่างเริ่มระบบ + ข้อความขั้นตอน + ไฟหลังจอค่อย ๆ สว่าง · หน้า TREND: ค่าล่าสุด ป้ายแกนเวลา ปุ่ม < > สลับเตียง สรุปคำนวณเฉพาะเมื่อมีตัวอย่างใหม่ |
  * | 2.4.0-CYD | 2026-11-27 | ประสิทธิภาพจอและการบันทึก SD: จอวาดเฉพาะส่วนที่เปลี่ยน · เหตุการณ์ลง SD เป็นก้อนไม่บล็อกลูป · หมุนไฟล์เมื่อใหญ่เกิน · ต่อการ์ดใหม่เมื่อหลุด |
  * | 2.3.2-CYD | 2026-11-27 | หน้าเปิดเครื่อง: แถบโหลดสไตล์ macOS ใต้โลโก้แทนสไตล์ Windows XP (แก้เฉพาะ splash.h) |
  * | 2.3.1-CYD | 2026-11-27 | หน้าเว็บผ่านตัวตรวจ W3C Nu Html Checker และ axe-core WCAG 2.1 AA (แก้เฉพาะ web_dashboard.h) |
@@ -67,7 +68,7 @@
 #include "net_config.h"
 #include "trend.h"
 
-#define APP_VERSION "2.4.0-CYD"
+#define APP_VERSION "2.5.0-CYD"
 
 enum AppMode : uint8_t { MODE_UI = 0, MODE_DIAG };
 
@@ -311,30 +312,31 @@ void setup() {
   panelBegin();
   sysSet = loadSys();
   splashDraw();                          // โลโก้ขึ้นก่อนเริ่ม Wi-Fi/ESP-NOW เพื่อให้เห็นภาพเร็วที่สุด
-  backlightSet(sysSet.brightness);
+  splashFadeIn(sysSet.brightness);       // ไฟหลังจอค่อย ๆ สว่างขึ้นพร้อมโลโก้
   buzz.enabled = sysSet.buzzerOn;
   touchChip.begin();
   activeBeds = loadBeds(beds);
   loadNames(beds);
   netCfg = netLoad();
   bootWifiResetCheck();                  // กด BOOT ค้างตอนเปิดเครื่อง = คืนรหัส Wi-Fi/เว็บเป็นค่าปริยาย (กรณีลืมรหัส)
-  splashTick();
+  splashStage("WI-FI / ESP-NOW");
   const bool linkOk = linkBegin(true, netCfg.ssid, netCfg.wifiPass);   // เปิดจุดเชื่อมต่อ Wi-Fi ของ Host ด้วย (หน้าเว็บ)
   splashTick();
   Serial.println("Host-CYD28 " APP_VERSION " (stage 4+: NO DROP to stations)");
   printSettings();
   Serial.println(linkOk ? "ESP-NOW ready" : "ESP-NOW INIT FAILED");
+  splashStage("CLOCK");
   clockBegin();
-  splashTick();
-  sdLogBegin();                          // เริ่มการ์ด SD ช้าได้ถึงราววินาที จึงขยับแถบโหลดก่อนและหลัง
-  splashTick();
+  splashStage("SD CARD");               // เริ่มการ์ด SD ช้าได้ถึงราววินาที จึงบอกขั้นตอนก่อนเริ่ม
+  sdLogBegin();
+  splashStage("WEB SERVER");
   webBegin();
-  splashTick();
   Serial.print("AP ");
   Serial.print(netCfg.ssid);
   Serial.println(" http://192.168.4.1/");
   logEvent(0, EV_BOOT);
   syncSched.requestAll(activeBeds);
+  splashFinish();                        // เริ่มระบบเสร็จ ปลดเพดานแถบ 90%
   splashWait([]() { int16_t a, b, c; return touchChip.read(a, b, c); });   // ค้างโลโก้ให้ครบเวลา แตะเพื่อข้าม
   setMode(MODE_UI);
 }
